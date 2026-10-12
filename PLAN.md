@@ -1,8 +1,20 @@
 # websrt-gateway-cpp — Plan
 
-**Status: planned — refinement pending; nothing implemented yet.** The plan
-below was recovered from libwebsrt's history (where the gateway was phases
-P3/P4) and will be refined with the human before implementation starts.
+**Status: P3 implemented (unpushed); P4 pending.** Steps 1–6 of P3 are built
+(`./build.sh test`: 18/18 green) and the **browser gate passes**: an unmodified
+WebSRT player page connects to this gateway over WebTransport, the SRT session
+carries the stream (3.4k packets / 2.4 MB, 0 loss / 0 retransmit, 0.2 ms
+RTT), and audio decodes — SRT stats indistinguishable from the Rust gateway's.
+Video decode fails in the player with `VideoDecoder.configure() →
+"Unsupported configuration"`; the identical failure occurs against the **Rust**
+gateway in the same browser (Chrome 151), so it is a pre-existing
+WebSRT-player/Chrome issue, **not** a gateway defect (H.264 `isConfigSupported`
+is true in that browser). Still to do: the 50-viewer concurrency gate, the
+Rust-oracle bin runs (`wt_hs_probe`, `mock_obs`), and the parity matrix; then
+P4 (hot reload, stats page, webhooks, packaging, CI).
+
+The plan below was recovered from libwebsrt's history (where the gateway was
+phases P3/P4) and was refined with the human before implementation started.
 Companion repos: `libwebsrt` (submodule `deps/libwebsrt` — the client
 library whose exports this gateway consumes), `WebSRT` (Rust — the reference
 implementation and interop oracle, **never modified from this repo**), and
