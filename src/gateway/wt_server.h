@@ -163,8 +163,8 @@ public:
     /// Contract: loop thread (inline in the accept path), must not block.
     using AdmissionCheck = std::function<Decision(const WtSessionStart&)>;
 
-    /// `cert` supplies the TLS identity (SSL_CTX built once via
-    /// ea_lookup_cert / ea_get_ssl_ctx - SNI is ignored, one identity).
+    /// `cert` supplies the TLS identity (SSL_CTX built once and handed to
+    /// lsquic through ea_get_ssl_ctx - SNI is ignored, one identity).
     /// `policy` decides every incoming CONNECT (must not block). `listener`
     /// must outlive the server. `admission` (optional) is the pre-200
     /// admission gate above. Supported teardown: Close() then destroy,

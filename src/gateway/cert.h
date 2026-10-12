@@ -16,13 +16,13 @@
 // key matches the certificate's public key; the browser then uses normal
 // PKI validation (no pinned hash).
 //
-// WT-server wiring (G3): lsquic takes server certificates through
-// ea_lookup_cert, which returns an SSL_CTX. Build it with
-// NewServerSslCtx() below (the identity reference stays with this
-// provider; the SSL_CTX takes its own reference) - the HTTPS web server
-// (G7) builds its listener through the same helper so both listeners
-// present EXACTLY the same certificate, which is what lets one pinned
-// hash (cert-hash.js) cover the page AND the WebTransport handshake.
+// WT-server wiring (G3): lsquic takes the server SSL_CTX through
+// ea_get_ssl_ctx (wt_server.cpp builds it with NewServerSslCtx() below -
+// the identity reference stays with this provider; the SSL_CTX takes its
+// own reference) - the HTTPS web server (G7) builds its listener through
+// the same helper so both listeners present EXACTLY the same certificate,
+// which is what lets one pinned hash (cert-hash.js) cover the page AND
+// the WebTransport handshake.
 
 #ifndef WEBSRT_GATEWAY_CERT_H
 #define WEBSRT_GATEWAY_CERT_H

@@ -453,16 +453,8 @@ struct WtServerCallbacks
 
     // Server certificate plumbing: one identity for every SNI. The engine
     // fetches the SSL_CTX per connection through ea_get_ssl_ctx (peer ctx
-    // = the WtServer pointer passed to lsquic_engine_packet_in) and
-    // refreshes it per SNI through ea_lookup_cert (the cert_cb path,
-    // src/liblsquic/lsquic_enc_sess_ietf.c:1348); both return the same
-    // ctx built from the CertProvider.
-    static SSL_CTX* LookupCert(void* ctx, const struct sockaddr* /*local*/, const char* /*sni*/)
-    {
-        auto* server = static_cast<WtServer*>(ctx);
-        return server->ssl_ctx_;
-    }
-
+    // = the WtServer pointer passed to lsquic_engine_packet_in); ea_lookup
+    // / ea_cert_lu_ctx stay unset - see the note at the engine setup below.
     static SSL_CTX* GetSslCtx(void* peer_ctx, const struct sockaddr* /*local*/)
     {
         auto* server = static_cast<WtServer*>(peer_ctx);
@@ -636,12 +628,24 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     api.ea_packets_out_ctx = this;
     api.ea_stream_if       = &WtServerCallbacks::kStreamIf;
     api.ea_stream_if_ctx   = this;
-    api.ea_lookup_cert     = WtServerCallbacks::LookupCert;
-    api.ea_cert_lu_ctx     = this;
-    api.ea_get_ssl_ctx     = WtServerCallbacks::GetSslCtx;
-    api.ea_hsi_if          = &WtHsetIf::kIf;
-    api.ea_hsi_ctx         = nullptr;
-    engine_                = lsquic_engine_new(LSENG_HTTP_SERVER, &api);
+    // ea_get_ssl_ctx ALONE, never ea_lookup_cert: the per-SNI cert_cb is a
+    // second, optional way to fetch an SSL_CTX (lsquic_enc_sess_ietf.c:
+    // 1484-1485), but iquic_lookup_cert REFUSES to return anything when the
+    // ClientHello carries no SNI on an HTTP engine (same file, 1335-1342),
+    // failing the handshake with a BoringSSL cert_cb error - which the
+    // client sees as TLS alert 80 (internal_error), QUIC CONNECTION_CLOSE
+    // 0x100 + "TLS alert 80". Browsers send no SNI for an IP literal (RFC
+    // 6066 s.3), so https://127.0.0.1:4434 - the closed-network WebSRT
+    // default, and the P3 browser gate's URL - could never complete. The
+    // callback would only ever hand back ssl_ctx_ anyway: one identity for
+    // every name, so the lookup is pure overhead with a fatal gate bolted
+    // on. iquic_esfi_init_server builds each server SSL from
+    // ea_get_ssl_ctx's ctx (1454), so the certificate, key and the h3 ALPN
+    // selector below all still apply.
+    api.ea_get_ssl_ctx = WtServerCallbacks::GetSslCtx;
+    api.ea_hsi_if      = &WtHsetIf::kIf;
+    api.ea_hsi_ctx     = nullptr;
+    engine_            = lsquic_engine_new(LSENG_HTTP_SERVER, &api);
     if (engine_ == nullptr)
     {
         Log("lsquic_engine_new failed");
