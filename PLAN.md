@@ -198,8 +198,79 @@ paths.
   *Gates:* unmodified browser pages play from the C++ gateway; Rust
   `wt_hs_probe` / `mock_obs` pass against it; 50-viewer concurrency
   (ticker avg < 5 ms, zero viewer lag); parity matrix vs the Rust gateway.
-- **P4 — Hardening.** SIGHUP config hot-reload, HTTP stats page,
-  on_connect/on_close webhooks, packaging, docs, CI polish.
+- **P4 — Hardening.** Session-ready breakdown (run as separate agent tasks,
+  one commit each, in this order):
+
+  **P4.1 — SIGHUP config hot-reload.** On SIGHUP: re-parse the config file,
+  validate, and swap what is safely swappable at runtime; everything else
+  keeps running unchanged and is logged as "requires restart". Runtime-
+  swappable: the stream allowlist (rebuild `StreamAllowlistPolicy` from the
+  new `[[stream]]` entries and swap the `shared_ptr<const SessionPolicy>`
+  the WtServer consults — existing sessions keep their already-granted
+  access; only new CONNECTs see the new policy), `max_viewers` (cap check
+  is per-attach), webhook settings (P4.3), log level. Restart-required:
+  ports/binds, `cert_mode`/PEM paths, `latency_ms`, `broadcast_capacity`,
+  ingest settings (document each). *Verify:* reload test — start with a
+  one-stream config, connect a viewer (allowed), SIGHUP with the stream
+  removed → new CONNECT gets 404, the existing viewer keeps streaming;
+  SIGHUP with an invalid config → old config stays, error logged, gateway
+  healthy; unit tests for the policy swap path.
+
+  **P4.2 — HTTP stats page.** The JSON `/stats` exists (web_server.cpp);
+  add a human-readable rendering: when the request's `Accept` prefers
+  `text/html` (or at `/stats.html` — pick one, keep JSON the default for
+  curl/scripts), serve a minimal dependency-free HTML table (streams,
+  sessions, ticker, ingest counters — same data as the JSON, server-side
+  rendered, auto-refresh meta tag). SLS-parity feature. *Verify:* web test
+  asserting both representations from the same live state; JSON shape
+  unchanged (parity doc unaffected).
+
+  **P4.3 — on_connect/on_close webhooks.** Config: `[webhooks]` table with
+  `on_event_url` (SLS name) + timeout. POST a small JSON on session
+  lifecycle events (viewer connect/disconnect, publisher connect/disconnect,
+  publisher end/stream end) with: event type, stream name, role, remote
+  ip:port, session id, timestamp. Fire-and-forget from a dedicated worker
+  thread (never the event loop); bounded queue with drop-counting; retry
+  once on failure. *Verify:* test with a local receiver (the web server
+  itself or a tiny socket listener) asserting delivery, payload shape, and
+  that the loop never blocks (tick max unchanged).
+
+  **P4.4 — Packaging & docs.** `cmake --install` target (binary, example
+  conf, supervisord conf); finalize `scripts/websrt-cpp.conf` (log paths,
+  user) and a deployment note (supervisord copy path mirrors the other
+  repos' pattern); README quickstart: build → config → run → browser page →
+  ffmpeg publish via `websrt://` AND plain `srt://` ingest → health check;
+  final pass over `scripts/gateway.example.conf` comments; link
+  `docs/parity.md` from the README. *Verify:* fresh-clone simulation
+  (submodules init incl. post-push GitHub URLs, `./build.sh setup && lib &&
+  gateway && test` green, binary runs from the install prefix).
+
+  **P4.5 — CI.** GitHub Actions: (a) build+test job (needs the GitHub repos
+  to exist and pins pushed — `deps/libwebsrt` gitlink must resolve; boringssl
+  fetch needs network + go + nasm — apt install in the runner); live-oracle
+  tests self-skip (SKIP_RETURN_CODE 77) on runners without the Rust gateway;
+  (b) format job: `clang-format --dry-run --Werror` on our sources;
+  (c) optional tidy job on changed files. Keep it one workflow file,
+  `scripts/ci.yml` → `.github/workflows/`. *Verify:* green run on GitHub
+  after the human pushes.
+
+  **P4.6 — Close-out.** AGENTS.md refresh (final build-order and commands,
+  P4 features in the tour), this PLAN's status header updated to "P4
+  complete", any carry-overs moved to the todo list.
+
+  *P4 gates:* all existing tests green (19 + new); hot-reload test green;
+  webhook delivery test green; fresh-clone build green; CI green on GitHub.
+
+  **Carry-overs (not P4 blockers, record in the todo):** libwebsrt
+  `Publisher::End()` consumes its full 30 s ACK-drain budget under 50-viewer
+  fanout (client-side; EOF is clean everywhere — consider tuning the drain
+  budget in libwebsrt); per-ingest-connection TS-continuity counters
+  (Rust `cc_gaps`/`cc_checks`) not surfaced in our `/health` (data exists
+  in `/stats` — parity gap documented in docs/parity.md);
+  `send_failures` counter semantics differ from the oracle (documented);
+  the sim-loss P1 residual in libwebsrt's todo (needs a `--sim-loss` Rust
+  gateway rebuild); VAAPI machines need the player's "Prefer Software"
+  decode (documented in libwebsrt's todo).
 
 ## Rust-gateway defects the C++ gateway must not reproduce
 
