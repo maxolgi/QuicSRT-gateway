@@ -1,0 +1,19 @@
+# Build directories
+build/
+build-*/
+
+# Fetched (not submoduled) dependency, lives inside the libwebsrt submodule
+# checkout (deps/libwebsrt/deps/boringssl - ignored by its own .gitignore;
+# mirrored here for symmetry)
+deps/boringssl/
+
+# Runtime-generated
+cert-hash.js
+
+# Tooling artifacts
+compile_commands.json
+.cache/
+
+# Object/archive files outside build dirs
+*.o
+*.a

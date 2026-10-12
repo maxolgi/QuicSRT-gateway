@@ -1,0 +1,19 @@
+# Curated checks for our C++20 code. Submodules are excluded via HeaderFilterRegex.
+Checks: >
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  misc-*,
+  -bugprone-easily-swappable-parameters,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes
+
+HeaderFilterRegex: '^(include|src)/'
+
+FormatStyle: file
