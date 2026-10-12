@@ -164,6 +164,17 @@ bool SrtIngest::SetupListener(std::string* error)
 {
     do
     {
+        // libsrt's runtime is process-global and refcounted; holding a
+        // reference keeps another holder's srt_cleanup() (libwebsrt client
+        // sessions do exactly that on teardown) from stopping the garbage
+        // collector and force-breaking this listener.
+        if (srt_startup() < 0)
+        {
+            *error = "srt_startup failed";
+            break;
+        }
+        srt_runtime_ = true;
+
         listener_ = srt_create_socket();
         if (listener_ == SRT_INVALID_SOCK)
         {
@@ -259,10 +270,9 @@ void SrtIngest::CloseAllSockets()
 {
     if (listener_ != SRT_INVALID_SOCK)
     {
-        if (epoll_ != SRT_ERROR)
-        {
-            srt_epoll_remove_usock(epoll_, listener_);
-        }
+        // No explicit srt_epoll_remove_usock: srt_close drops the socket
+        // from every epoll it is subscribed to (CUDT::closeInternal), and
+        // doing it twice makes the library log a spurious error.
         srt_close(listener_);
         listener_ = SRT_INVALID_SOCK;
     }
@@ -270,6 +280,13 @@ void SrtIngest::CloseAllSockets()
     {
         srt_epoll_release(epoll_);
         epoll_ = SRT_ERROR;
+    }
+    // Released only once every socket of ours is closed - a stray srt_close
+    // racing the reference drop would be force-broken by the collector.
+    if (srt_runtime_)
+    {
+        srt_cleanup();
+        srt_runtime_ = false;
     }
 }
 
@@ -380,7 +397,7 @@ void SrtIngest::AcceptOne()
     // this name may be published at all (PLAN.md refinement item 2 - an
     // ingest publisher that no [[stream]] entry with publish = true covers
     // is refused, the connection-refused analogue of the WT 403).
-    if (sink_.publish_gate && !sink_.publish_gate(stream))
+    if (!GateOnLoop(stream))
     {
         Bump(rejected_);
         Bump(rejected_gate_);
@@ -529,10 +546,9 @@ void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
     }
 
     ReleaseOnLoop(stream);
-    if (epoll_ != SRT_ERROR)
-    {
-        srt_epoll_remove_usock(epoll_, sock);
-    }
+    // No explicit srt_epoll_remove_usock: srt_close drops the socket from
+    // every epoll it is subscribed to (CUDT::closeInternal), and asking
+    // twice makes the library log a spurious "not found" error.
     srt_close(sock);
     conns_.erase(it);
     Bump(ended_);
@@ -586,6 +602,22 @@ SrtIngestStats SrtIngest::Stats() const
     out.tail_flushes         = tail_flushes_.load(std::memory_order_relaxed);
     out.connections          = snapshot_;
     return out;
+}
+
+bool SrtIngest::GateOnLoop(const std::string& stream)
+{
+    if (!sink_.publish_gate)
+    {
+        return true;
+    }
+    if (!loop_.IsRunning())
+    {
+        return false;
+    }
+    std::promise<bool> done;
+    auto               future = done.get_future();
+    loop_.Post([this, &done, stream] { done.set_value(sink_.publish_gate(stream)); });
+    return future.get();
 }
 
 bool SrtIngest::ClaimOnLoop(const std::string& stream)

@@ -164,6 +164,29 @@ std::optional<std::string> ParseQueryParam(std::string_view query, std::string_v
     return std::nullopt;
 }
 
+std::string PercentEncodeQueryValue(std::string_view value)
+{
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string           out;
+    out.reserve(value.size());
+    for (const char c : value)
+    {
+        const auto byte       = static_cast<unsigned char>(c);
+        const bool unreserved = (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+                                (byte >= '0' && byte <= '9') || byte == '-' || byte == '_' || byte == '.' ||
+                                byte == '~';
+        if (unreserved)
+        {
+            out.push_back(c);
+            continue;
+        }
+        out.push_back('%');
+        out.push_back(kHex[byte >> 4]);
+        out.push_back(kHex[byte & 0x0F]);
+    }
+    return out;
+}
+
 bool ConstantTimeEquals(std::string_view a, std::string_view b) noexcept
 {
     // Length difference folds into the accumulator; every byte position of

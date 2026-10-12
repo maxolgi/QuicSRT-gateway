@@ -7,9 +7,10 @@
 // (refinement item 2).
 //
 // P3 step 4: the WebTransport accept path, the ring and first-wins occupancy
-// are live. NOT YET WIRED (later P3 steps, logged at startup when their
-// config port is set): the SRT/UDP ingest (G6), the health/stats endpoint and
-// the static web server (G7), and the cert-hash.js emission next to web/dist.
+// are live. P3 step 5: so is the SRT/UDP ingest (a stock libsrt listener that
+// publishes into the same ring). NOT YET WIRED (later P3 steps, logged at
+// startup when their config port is set): the health/stats endpoint and the
+// static web server (G7), and the cert-hash.js emission next to web/dist.
 
 #include <atomic>
 #include <chrono>
@@ -24,6 +25,7 @@
 #include "gateway/cert.h"
 #include "gateway/config.h"
 #include "gateway/gateway.h"
+#include "gateway/ingest/srt_ingest.h"
 #include "gateway/policy.h"
 #include "gateway/selftest.h"
 
@@ -50,11 +52,14 @@ int Run(const std::optional<std::string>& config_path)
     std::optional<std::string>                      key_pem;
     std::shared_ptr<websrt::gateway::SessionPolicy> policy;
     websrt::gateway::GatewayConfig                  gateway_config;
-    std::uint16_t                                   wt_bind_port = 4433;
-    std::string                                     wt_bind      = "127.0.0.1";
-    std::uint16_t                                   ingest_port  = 0;
-    std::uint16_t                                   health_port  = 0;
-    std::uint16_t                                   web_port     = 0;
+    std::uint16_t                                   wt_bind_port      = 4433;
+    std::string                                     wt_bind           = "127.0.0.1";
+    std::uint16_t                                   ingest_port       = 0;
+    std::string                                     ingest_bind       = "127.0.0.1";
+    std::uint64_t                                   ingest_latency_ms = 120;
+    std::optional<std::string>                      ingest_passphrase;
+    std::uint16_t                                   health_port = 0;
+    std::uint16_t                                   web_port    = 0;
 
     if (config_path.has_value())
     {
@@ -79,6 +84,9 @@ int Run(const std::optional<std::string>& config_path)
         wt_bind_port                           = s.wt_port;
         wt_bind                                = s.wt_bind;
         ingest_port                            = s.srt_ingest_port;
+        ingest_bind                            = s.srt_ingest_bind;
+        ingest_latency_ms                      = s.latency_ms;
+        ingest_passphrase                      = s.srt_passphrase;
         health_port                            = s.health_port;
         web_port                               = s.web_port;
         std::printf("websrt-gateway: config: %zu stream(s), allowlist mode "
@@ -109,13 +117,6 @@ int Run(const std::optional<std::string>& config_path)
     }
     std::fflush(stdout);
 
-    if (ingest_port != 0)
-    {
-        std::fprintf(stderr,
-                     "websrt-gateway: NOT YET IMPLEMENTED: the SRT/UDP ingest on port %u "
-                     "(P3 step 5) is configured but will not listen\n",
-                     ingest_port);
-    }
     if (health_port != 0)
     {
         std::fprintf(stderr,
@@ -168,6 +169,60 @@ int Run(const std::optional<std::string>& config_path)
         return 1;
     }
 
+    // SRT/UDP ingest (P3 step 5). The ingest owns an ordinary stock libsrt
+    // socket on a real UDP port and feeds the SAME broadcaster ring as a WT
+    // publisher; it posts every framed message onto the gateway loop and
+    // claims/releases the publisher slot there, so first-wins occupancy is
+    // shared with WT publishers. It is owned by a scope that ends BEFORE
+    // gateway.Shutdown(): its posts ride that loop.
+    std::optional<websrt::gateway::SrtIngest> ingest;
+    if (ingest_port != 0)
+    {
+        websrt::gateway::SrtIngestConfig ingest_config;
+        ingest_config.bind       = ingest_bind;
+        ingest_config.port       = ingest_port;
+        ingest_config.latency_ms = ingest_latency_ms;
+        ingest_config.passphrase = ingest_passphrase;
+
+        websrt::gateway::SrtIngest::Sink sink;
+        // Publish gate = the policy half of the WT accept path: ask the very
+        // policy the WebTransport publisher is judged by whether this
+        // streamid may publish at all (a synthetic ?publish= request; an
+        // unconfigured name, publish=false, or a token-protected entry the
+        // streamid cannot present refuses the connection).
+        sink.publish_gate = [policy](const std::string& name)
+        {
+            // Named string: SessionRequest::query is a string_view, so a
+            // temporary spliced straight into it would dangle before Decide
+            // reads it.
+            const std::string               query = "publish=" + websrt::gateway::PercentEncodeQueryValue(name);
+            websrt::gateway::SessionRequest req;
+            req.path  = "/wt";
+            req.query = query;
+            return policy->Decide(req) == websrt::gateway::Decision::Accept;
+        };
+        // Admission + media + teardown all run on the gateway loop.
+        sink.claim   = [&gateway](const std::string& name) { return gateway.ClaimIngestPublish(name); };
+        sink.publish = [&gateway](const std::string& name, const void* data, std::size_t len)
+        { gateway.PublishMedia(name, data, len); };
+        sink.release = [&gateway](const std::string& name) { gateway.ReleaseIngestPublish(name); };
+
+        ingest.emplace(std::move(ingest_config), std::move(sink), gateway.Loop());
+        std::string ingest_error;
+        if (!ingest->Start(&ingest_error))
+        {
+            std::fprintf(stderr, "websrt-gateway: SRT ingest error: %s\n", ingest_error.c_str());
+            gateway.Shutdown();
+            return 1;
+        }
+        std::printf("websrt-gateway: SRT/UDP ingest on %s:%u (passphrase: %s, latency %llu ms)\n",
+                    ingest_bind.c_str(),
+                    ingest_port,
+                    ingest_passphrase.has_value() ? "set" : "none",
+                    static_cast<unsigned long long>(ingest_latency_ms));
+        std::fflush(stdout);
+    }
+
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
     while (g_stop == 0)
@@ -175,6 +230,10 @@ int Run(const std::optional<std::string>& config_path)
         std::this_thread::sleep_for(std::chrono::milliseconds{100});
     }
     std::fprintf(stderr, "websrt-gateway: signal received, draining\n");
+    if (ingest.has_value())
+    {
+        ingest->Stop(); // closes the publishers, releases their claims
+    }
     gateway.Shutdown();
     return 0;
 }

@@ -53,6 +53,15 @@
 // EventLoop MUST outlive SrtIngest: a claim/release that cannot be answered
 // is skipped rather than waited on, and posted media is dropped with the
 // loop.
+//
+// THE PROCESS-GLOBAL srt RUNTIME. libsrt's startup is refcounted
+// (srt_startup/srt_cleanup) and its teardown is GLOBAL: when the last holder
+// calls srt_cleanup() the garbage collector stops and force-breaks EVERY
+// socket in the process. libwebsrt's Subscriber/Publisher each hold a
+// reference, so in the gateway the ingest MUST hold one too - otherwise the
+// end of any browser session would yank the ingest listener out from under
+// the next OBS connection. SetupListener takes the reference, CloseAllSockets
+// releases it (after every socket is closed).
 
 #ifndef WEBSRT_GATEWAY_INGEST_SRT_INGEST_H
 #define WEBSRT_GATEWAY_INGEST_SRT_INGEST_H
@@ -207,6 +216,7 @@ private:
     [[nodiscard]] static std::string PeerText(const sockaddr_storage& peer);
 
     // ---- loop-thread round-trips (issued from, and blocked on, the ingest thread) ----
+    [[nodiscard]] bool GateOnLoop(const std::string& stream);
     [[nodiscard]] bool ClaimOnLoop(const std::string& stream);
     void               ReleaseOnLoop(const std::string& stream);
 
@@ -219,6 +229,7 @@ private:
     sockaddr_in               local_{};
     std::thread               thread_;
     std::map<SRTSOCKET, Conn> conns_;
+    bool                      srt_runtime_ = false; ///< holds an srt_startup() reference
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> running_{false};

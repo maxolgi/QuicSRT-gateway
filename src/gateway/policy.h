@@ -80,6 +80,13 @@ struct SessionRequest
 /// yields the empty string.
 [[nodiscard]] std::optional<std::string> ParseQueryParam(std::string_view query, std::string_view key);
 
+/// Percent-encode `value` so that ParseQueryParam returns it back unchanged
+/// when it is spliced into `key=value`. '%', '&', '=', '#', '+', '?' and
+/// every byte outside printable ASCII become %XX. The SRT/UDP ingest uses it
+/// to reuse the WT publish decision on a synthetic request (its streamid
+/// arrives out-of-band, not in a query).
+[[nodiscard]] std::string PercentEncodeQueryValue(std::string_view value);
+
 /// Constant-time string equality: the accumulation has no data-dependent
 /// branch or early exit, so token validation leaks no timing side-channel
 /// (the C++ counterpart of subtle::ConstantTimeEq in AuthTokenPolicy).
