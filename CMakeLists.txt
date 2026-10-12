@@ -36,8 +36,20 @@ target_include_directories(websrtgw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(websrtgw PUBLIC gateway_warnings Threads::Threads websrt::websrt websrt::wt-deps)
 
 # Thin CLI binary over the core library.
+#
+# toml++ (header-only, deps/tomlplusplus) is a gateway-binary-side
+# dependency by design (refinement item 2): config parsing lives in
+# websrtgw_config, never in the embeddable websrtgw core.
+add_library(tomlplusplus INTERFACE)
+target_include_directories(tomlplusplus INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/tomlplusplus/include)
+
+add_library(websrtgw_config STATIC src/gateway/config.cpp)
+target_compile_features(websrtgw_config PUBLIC cxx_std_20)
+set_target_properties(websrtgw_config PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(websrtgw_config PUBLIC gateway_warnings websrtgw tomlplusplus)
+
 add_executable(websrt-gateway src/main.cpp)
-target_link_libraries(websrt-gateway PRIVATE websrtgw)
+target_link_libraries(websrt-gateway PRIVATE websrtgw_config)
 
 enable_testing()
 
@@ -48,6 +60,13 @@ set_target_properties(policy_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(policy_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME policy_test COMMAND policy_test)
 set_tests_properties(policy_test PROPERTIES TIMEOUT 30)
+
+add_executable(config_test tests/config_test.cpp)
+target_compile_features(config_test PRIVATE cxx_std_20)
+set_target_properties(config_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(config_test PRIVATE gateway_warnings websrtgw_config)
+add_test(NAME config_test COMMAND config_test)
+set_tests_properties(config_test PROPERTIES TIMEOUT 30)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).

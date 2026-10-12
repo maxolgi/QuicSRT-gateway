@@ -1,0 +1,102 @@
+// TOML configuration for the gateway CLI (refinement item 2): [server]
+// scalars + [[stream]] allowlist entries, parsed strictly (unknown keys are
+// errors) into a Config that can build a StreamAllowlistPolicy.
+//
+// This is a gateway-BINARY-side dependency by design: TOML parsing and
+// --config live only in the CLI; embedded consumers of the websrtgw core
+// library supply a SessionPolicy in code and never link toml++.
+
+#ifndef WEBSRT_GATEWAY_CONFIG_H
+#define WEBSRT_GATEWAY_CONFIG_H
+
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "gateway/policy.h"
+
+namespace websrt::gateway
+{
+
+/// Parse/validation failure with context (file, table, key, line when
+/// known). Thrown by ParseConfig/LoadConfig.
+class ConfigError : public std::runtime_error
+{
+public:
+    explicit ConfigError(const std::string& message)
+        : std::runtime_error(message)
+    {
+    }
+};
+
+/// [server] scalar knobs. Defaults mirror the Rust gateway CLI
+/// (crates/websrt-gateway/src/main.rs). Rust CLI knobs deliberately
+/// deferred (documented):
+///   - no_gui / no_web / web_root      binary-side flags; the C++ gateway is
+///                                      CLI-only and serves web/dist as-is
+///   - input / fixture*                Rust dev file-source; the C++ gateway
+///                                      sources are SRT ingest + WT publish
+///   - srt_mode / srt_call / srt_streamid  ingest here is always
+///                                      listener-mode UDP; streamid comes
+///                                      from the allowlist
+///   - sim_loss / sim_seed             sim-loss feature not ported
+///   - auth_token / allowed_origins    superseded by [[stream]] tokens; an
+///                                      origin knob returns with its own key
+///                                      when needed
+struct ServerConfig
+{
+    std::uint16_t              wt_port            = 4433;
+    std::string                wt_bind            = "127.0.0.1";
+    std::uint16_t              srt_ingest_port    = 9000;
+    std::string                srt_ingest_bind    = "127.0.0.1";
+    std::uint64_t              latency_ms         = 120; ///< SRT TSBPD latency (floor 10 ms, PLAN.md)
+    std::uint64_t              max_bandwidth_kbps = 0;   ///< 0 = unlimited
+    std::uint16_t              health_port        = 0;   ///< 0 = disabled
+    std::string                health_bind        = "127.0.0.1";
+    std::uint16_t              web_port           = 5173; ///< static web server, 0 disables
+    std::string                web_bind           = "127.0.0.1";
+    std::uint32_t              max_viewers        = 16;     ///< per-stream viewer cap
+    std::string                cert_mode          = "self"; ///< "self" | "mkcert"
+    std::optional<std::string> cert_pem;                    ///< mkcert mode: required
+    std::optional<std::string> key_pem;                     ///< mkcert mode: required
+    std::optional<std::string> srt_passphrase;              ///< SRT PBKEYLEN passphrase (10-79 chars)
+};
+
+/// One [[stream]] entry. `name` is an exact name or a glob ('*' any chars,
+/// '?' one char) - matched against the percent-decoded stream name.
+struct StreamConfig
+{
+    std::string                name;
+    bool                       publish   = true;
+    bool                       subscribe = true;
+    std::optional<std::string> token; ///< optional per-stream ?token=
+};
+
+/// Parsed configuration: server scalars + ordered stream allowlist.
+struct Config
+{
+    ServerConfig              server;
+    std::vector<StreamConfig> streams;
+};
+
+/// Parse TOML text (source names errors). Throws ConfigError on invalid
+/// TOML, unknown keys (reported with key and table), wrong types, and
+/// validation failures (port ranges, latency floor, cert requirements,
+/// non-empty name/token, passphrase length, duplicate names).
+[[nodiscard]] Config ParseConfig(std::string_view text, const std::string& source);
+
+/// Read + parse a config file. Throws ConfigError (including unreadable
+/// file).
+[[nodiscard]] Config LoadConfig(const std::string& path);
+
+/// Build the StreamAllowlistPolicy from the config's [[stream]] entries,
+/// in file order (first matching entry wins at decide time).
+[[nodiscard]] std::shared_ptr<StreamAllowlistPolicy> BuildAllowlistPolicy(const Config& config);
+
+} // namespace websrt::gateway
+
+#endif // WEBSRT_GATEWAY_CONFIG_H
