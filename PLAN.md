@@ -9,6 +9,21 @@ implementation and interop oracle, **never modified from this repo**), and
 `maxolgi/srt` (fork of Haivision/srt, consumed transitively via libwebsrt's
 own submodule).
 
+## Refinement queue (agreed with the human, before P3 implementation starts)
+
+1. **Gateway core as an embeddable library + thin CLI binary** (mirrors the
+   Rust split: `crates/websrt` library vs `websrt-gateway` reference binary).
+   The library owns accept loop, per-session SRT initiators, broadcaster
+   ring/registry, cert modes; the binary only wires CLI/config/ingest.
+   Motivation: embedded-device scenario — a C++ app linking the gateway core
+   in-process and handing it MPEG-TS bytes through an API (no separate
+   process, no local SRT-loopback hop). Browsers can only dial out, so any
+   device serving websrt video to a web page needs this WT-server/SRT-initiator
+   role somewhere; embedding it beats running a sidecar process. Decide during
+   refinement: the in-process TS source API shape, how the CLI binary's
+   ingest paths (SRT-UDP, WT publish) map onto it, and what stays binary-only
+   (supervisord, web/dist serving policy).
+
 ## Deliverable
 
 **The C++ gateway** — full CLI-parity replacement of the Rust WebSRT
