@@ -32,6 +32,12 @@
 // matches. /stats is the C++ addition (P4's "HTTP stats page" in the
 // oracle's terms): the same evidence with the stream/session/ingest
 // detail the oracle's GatewayStats struct carries but does not expose.
+// Since P4 step 2 the same /stats also renders as HTML when the
+// request's Accept names text/html (the SLS-parity stats page:
+// server-side-rendered tables, auto-refresh meta, same data as the
+// JSON); every other client - curl's */*, a script's
+// application/json, a missing header - keeps the JSON, whose shape
+// never changes for it.
 //
 // THREAD MODEL. One accept thread (poll on the listener, so Stop() never
 // has to interrupt a blocking accept) plus thread-per-connection, capped
@@ -150,7 +156,11 @@ private:
     void ReapWorkers();
     /// Route + render one request; false closes the connection after the
     /// response was written.
-    bool Handle(Wire& wire, const std::string& method, const std::string& target, const std::string& if_none_match);
+    bool Handle(Wire&              wire,
+                const std::string& method,
+                const std::string& target,
+                const std::string& if_none_match,
+                const std::string& accept);
 
     static void SendJson(Wire& wire, const std::string& body, bool head);
     static void SendSimple(Wire&                                                   wire,
@@ -166,6 +176,9 @@ private:
     [[nodiscard]] std::string HealthJson() const;
     /// /stats - the C++ addition: the same evidence, untruncated.
     [[nodiscard]] std::string StatsJson() const;
+    /// /stats for a browser Accept - the same evidence as StatsJson,
+    /// server-side rendered as auto-refreshing HTML (P4 step 2).
+    [[nodiscard]] std::string StatsHtml() const;
 
     WebServerConfig                       config_;
     int                                   listen_fd_ = -1;

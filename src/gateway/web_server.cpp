@@ -283,6 +283,46 @@ void AppendString(std::string& out, const char* key, const std::string& value)
     AppendJsonString(out, value);
 }
 
+// ---- HTML ----
+
+/// /stats content negotiation, deliberately q-value-free: HTML exactly
+/// when the Accept header names text/html - every browser navigation
+/// does, and nothing in play ever sends text/html;q=0. curl's */*, a
+/// script's application/json and a missing header all keep the JSON.
+bool PrefersHtml(const std::string& accept)
+{
+    std::string lowered = accept;
+    Lower(lowered);
+    return lowered.find("text/html") != std::string::npos;
+}
+
+/// The one rule the stats page needs beyond string building: whatever a
+/// client chose (stream names, remotes) is interpolated into the page
+/// and must not carry markup into it.
+void AppendHtmlEscaped(std::string& out, const std::string& value)
+{
+    for (const char c : value)
+    {
+        switch (c)
+        {
+        case '&':
+            out += "&amp;";
+            break;
+        case '<':
+            out += "&lt;";
+            break;
+        case '>':
+            out += "&gt;";
+            break;
+        case '"':
+            out += "&quot;";
+            break;
+        default:
+            out.push_back(c);
+        }
+    }
+}
+
 } // namespace
 
 // ---- Wire ----
@@ -648,6 +688,7 @@ void WebServer::Serve(int fd, const std::shared_ptr<std::atomic<bool>>& done)
         }
 
         std::string if_none_match;
+        std::string accept;
         bool        client_close = false;
         std::size_t pos          = 0;
         while (pos < headers.size())
@@ -670,6 +711,10 @@ void WebServer::Serve(int fd, const std::shared_ptr<std::atomic<bool>>& done)
                 {
                     if_none_match = value;
                 }
+                else if (name == "accept")
+                {
+                    accept = value;
+                }
                 else if (name == "connection")
                 {
                     Lower(value);
@@ -683,7 +728,7 @@ void WebServer::Serve(int fd, const std::shared_ptr<std::atomic<bool>>& done)
             pos = eol + 2;
         }
 
-        keep_going = Handle(wire, method, target, if_none_match);
+        keep_going = Handle(wire, method, target, if_none_match, accept);
         if (!keep_going || client_close)
         {
             break;
@@ -706,7 +751,8 @@ void WebServer::Serve(int fd, const std::shared_ptr<std::atomic<bool>>& done)
 bool WebServer::Handle(Wire&              wire,
                        const std::string& method,
                        const std::string& target,
-                       const std::string& if_none_match)
+                       const std::string& if_none_match,
+                       const std::string& accept)
 {
     if (method != "GET" && method != "HEAD")
     {
@@ -731,7 +777,20 @@ bool WebServer::Handle(Wire&              wire,
     }
     if (path == "/stats")
     {
-        SendJson(wire, StatsJson(), head);
+        if (PrefersHtml(accept))
+        {
+            SendSimple(wire,
+                       200,
+                       ReasonPhrase(200),
+                       "text/html; charset=utf-8",
+                       StatsHtml(),
+                       head,
+                       {{"Cache-Control", "no-store"}});
+        }
+        else
+        {
+            SendJson(wire, StatsJson(), head);
+        }
         return true;
     }
 
@@ -1190,6 +1249,194 @@ std::string WebServer::StatsJson() const
     }
 
     out += "}\n";
+    return out;
+}
+
+std::string WebServer::StatsHtml() const
+{
+    const std::vector<StreamStats> streams =
+        config_.gateway != nullptr ? config_.gateway->SnapshotStreams() : std::vector<StreamStats>{};
+    const std::vector<SessionSnapshot> sessions =
+        config_.gateway != nullptr ? config_.gateway->Sessions().SnapshotSessions() : std::vector<SessionSnapshot>{};
+
+    std::size_t alive   = 0;
+    std::size_t viewers = 0;
+    for (const StreamStats& stream : streams)
+    {
+        alive += stream.publisher_live ? 1 : 0;
+        viewers += stream.viewers;
+    }
+
+    std::string out = "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n"
+                      // The page is its own dashboard; the refresh keeps the tables live.
+                      "<meta http-equiv=\"refresh\" content=\"5\">\n"
+                      "<title>websrt-gateway stats</title>\n"
+                      "<style>\n"
+                      "body{font-family:sans-serif;margin:1em}\n"
+                      "table{border-collapse:collapse;margin:0 0 1em}\n"
+                      "th,td{border:1px solid #999;padding:2px 8px;text-align:left}\n"
+                      "caption{caption-side:top;text-align:left;font-weight:bold;padding:4px 0}\n"
+                      "</style>\n</head>\n<body>\n<h1>websrt-gateway stats</h1>\n";
+
+    // A label/value row of a two-column table (summary, ticker, server,
+    // ingest) - the HTML counterpart of the JSON's flat number keys.
+    const auto kv = [&out](const char* key, std::uint64_t value)
+    {
+        out += "<tr><th>";
+        out += key;
+        out += "</th><td>";
+        out += std::to_string(value);
+        out += "</td></tr>\n";
+    };
+    const auto td = [&out](const std::string& cell)
+    {
+        out += "<td>";
+        out += cell;
+        out += "</td>";
+    };
+    const auto yes_no = [](bool value) { return value ? "yes" : "no"; };
+
+    out += "<table>\n";
+    kv("uptime_ms",
+       static_cast<std::uint64_t>(
+           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_).count()));
+    kv("stream_count", streams.size());
+    kv("alive_streams", alive);
+    kv("viewers", viewers);
+    kv("max_viewers", config_.gateway != nullptr ? config_.gateway->MaxViewers() : 0);
+    kv("active_sessions", sessions.size());
+    out += "</table>\n";
+
+    out += "<table>\n<caption>ticker</caption>\n";
+    kv("count", config_.gateway != nullptr ? config_.gateway->TickCount() : 0);
+    kv("avg_us", config_.gateway != nullptr ? config_.gateway->Sessions().TickAvgUs() : 0);
+    kv("max_us", config_.gateway != nullptr ? config_.gateway->TickMaxUs() : 0);
+    out += "</table>\n";
+
+    out += "<table>\n<caption>server</caption>\n";
+    if (config_.gateway != nullptr)
+    {
+        const WtServer& server = config_.gateway->Server();
+        kv("sessions_accepted", static_cast<std::uint64_t>(server.SessionsAccepted()));
+        kv("sessions_rejected", static_cast<std::uint64_t>(server.SessionsRejected()));
+        kv("datagrams_received", static_cast<std::uint64_t>(server.DatagramsReceived()));
+        kv("datagrams_written", static_cast<std::uint64_t>(server.DatagramsWritten()));
+        kv("datagrams_dropped", static_cast<std::uint64_t>(server.DatagramsDropped()));
+    }
+    else
+    {
+        kv("sessions_accepted", 0);
+        kv("sessions_rejected", 0);
+        kv("datagrams_received", 0);
+        kv("datagrams_written", 0);
+        kv("datagrams_dropped", 0);
+    }
+    out += "</table>\n";
+
+    out += "<table>\n<caption>streams</caption>\n"
+           "<tr><th>name</th><th>alive</th><th>viewers</th><th>ring_size</th><th>messages_sent</th>"
+           "<th>send_failures</th><th>ring_drops</th><th>oversize_drops</th></tr>\n";
+    for (const StreamStats& stream : streams)
+    {
+        out += "<tr>";
+        out += "<td>";
+        AppendHtmlEscaped(out, stream.name);
+        out += "</td>";
+        td(yes_no(stream.publisher_live));
+        td(std::to_string(stream.viewers));
+        td(std::to_string(stream.ring_size));
+        td(std::to_string(stream.messages_sent));
+        td(std::to_string(stream.send_failures));
+        td(std::to_string(stream.ring_drops));
+        td(std::to_string(stream.oversize_drops));
+        out += "</tr>\n";
+    }
+    if (streams.empty())
+    {
+        out += "<tr><td colspan=\"8\">none</td></tr>\n";
+    }
+    out += "</table>\n";
+
+    out += "<table>\n<caption>sessions</caption>\n"
+           "<tr><th>session_id</th><th>stream</th><th>publisher</th><th>connected</th><th>max_payload</th>"
+           "<th>messages_sent</th><th>messages_received</th><th>backlog_size</th><th>backlog_start_drops</th>"
+           "<th>backlog_overflow_drops</th><th>tx_data</th><th>tx_retransmit</th><th>tx_loss</th>"
+           "<th>tx_buffered</th><th>rtt_ms</th></tr>\n";
+    for (const SessionSnapshot& session : sessions)
+    {
+        out += "<tr>";
+        td(std::to_string(session.session_id));
+        out += "<td>";
+        AppendHtmlEscaped(out, session.info.stream_name);
+        out += "</td>";
+        td(yes_no(session.info.publisher_role));
+        td(yes_no(session.info.connected));
+        td(std::to_string(session.info.max_payload));
+        td(std::to_string(session.info.messages_sent));
+        td(std::to_string(session.info.messages_received));
+        td(std::to_string(session.info.backlog_size));
+        td(std::to_string(session.info.backlog_start_drops));
+        td(std::to_string(session.info.backlog_overflow_drops));
+        td(std::to_string(static_cast<std::uint64_t>(session.srt.pktSentTotal)));
+        td(std::to_string(static_cast<std::uint64_t>(session.srt.pktRetransTotal)));
+        td(std::to_string(static_cast<std::uint64_t>(session.srt.pktSndLossTotal)));
+        td(std::to_string(static_cast<std::uint64_t>(session.srt.pktSndBuf)));
+        td(std::to_string(static_cast<std::uint64_t>(session.srt.msRTT)));
+        out += "</tr>\n";
+    }
+    if (sessions.empty())
+    {
+        out += "<tr><td colspan=\"15\">none</td></tr>\n";
+    }
+    out += "</table>\n";
+
+    if (config_.ingest == nullptr)
+    {
+        out += "<table>\n<caption>ingest</caption>\n<tr><td>inactive</td></tr>\n</table>\n";
+    }
+    else
+    {
+        const SrtIngestStats stats = config_.ingest->Stats();
+        out += "<table>\n<caption>ingest</caption>\n";
+        kv("publishers_accepted", stats.publishers_accepted);
+        kv("publishers_rejected", stats.publishers_rejected);
+        kv("rejected_no_streamid", stats.rejected_no_streamid);
+        kv("rejected_not_allowed", stats.rejected_not_allowed);
+        kv("rejected_occupied", stats.rejected_occupied);
+        kv("publishers_ended", stats.publishers_ended);
+        kv("messages_in", stats.messages_in);
+        kv("bytes_in", stats.bytes_in);
+        kv("chunks_out", stats.chunks_out);
+        kv("bytes_out", stats.bytes_out);
+        kv("tail_flushes", stats.tail_flushes);
+        out += "</table>\n";
+
+        out += "<table>\n<caption>ingest connections</caption>\n"
+               "<tr><th>stream</th><th>remote</th><th>bytes_in</th><th>messages_in</th><th>chunks_out</th>"
+               "<th>tail_bytes</th></tr>\n";
+        for (const SrtConnectionStats& conn : stats.connections)
+        {
+            out += "<tr>";
+            out += "<td>";
+            AppendHtmlEscaped(out, conn.stream);
+            out += "</td>";
+            out += "<td>";
+            AppendHtmlEscaped(out, conn.remote);
+            out += "</td>";
+            td(std::to_string(conn.bytes_in));
+            td(std::to_string(conn.messages_in));
+            td(std::to_string(conn.chunks_out));
+            td(std::to_string(conn.tail_bytes));
+            out += "</tr>\n";
+        }
+        if (stats.connections.empty())
+        {
+            out += "<tr><td colspan=\"6\">none</td></tr>\n";
+        }
+        out += "</table>\n";
+    }
+
+    out += "</body>\n</html>\n";
     return out;
 }
 

@@ -420,6 +420,20 @@ std::uint64_t NumberAfter(const std::string& body, const std::string& key)
     return std::strtoull(body.c_str() + at + key.size() + 3, nullptr, 10);
 }
 
+/// The number in the stats page's `<th>key</th><td>N</td>` row - the
+/// HTML twin of NumberAfter, so the two representations of /stats can be
+/// compared key by key.
+std::uint64_t HtmlNumberAfter(const std::string& body, const std::string& key)
+{
+    const std::string marker = "<th>" + key + "</th><td>";
+    const std::size_t at     = body.find(marker);
+    if (at == std::string::npos)
+    {
+        return 0;
+    }
+    return std::strtoull(body.c_str() + at + marker.size(), nullptr, 10);
+}
+
 } // namespace
 
 int main()
@@ -655,6 +669,27 @@ int main()
                   "3: /stats");
         CheckKeys(response.body, {"sessions_accepted", "datagrams_received", "datagrams_dropped"}, "3: /stats server");
         Check(response.body.find(Q("count") + ":") != std::string::npos, "3: /stats reports the ticker count");
+
+        // P4 step 2: /stats negotiation. JSON stays the default - curl's
+        // Accept is */*, scripts send none or application/json - and the
+        // HTML rendering goes only to a client that names text/html (a
+        // browser navigation).
+        Check(client.Exchange("/stats", &response, "Accept: */*\r\n"), "2: /stats with curl's Accept answered");
+        Check(response.status == 200 && response.Header("content-type") == "application/json",
+              "2: curl's */* Accept keeps the JSON");
+        Check(client.Exchange("/stats", &response, "Accept: application/json\r\n"),
+              "2: /stats with a script's Accept answered");
+        Check(response.Header("content-type") == "application/json", "2: application/json keeps the JSON");
+        Check(client.Exchange("/stats", &response), "2: /stats with no Accept answered");
+        Check(response.Header("content-type") == "application/json", "2: no Accept header keeps the JSON");
+        Check(client.Exchange(
+                  "/stats", &response, "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"),
+              "2: /stats with a browser's Accept answered");
+        Check(response.status == 200 && response.Header("content-type") == "text/html; charset=utf-8",
+              "2: a browser's Accept gets the HTML page");
+        Check(response.body.find("<meta http-equiv=\"refresh\"") != std::string::npos,
+              "2: the HTML page auto-refreshes");
+        Check(response.body.find(">none<") != std::string::npos, "2: the idle page renders empty tables as none");
     }
 
     // ---- 3. live state: a real publisher + subscriber through the core ----
@@ -775,6 +810,75 @@ int main()
                   "3: /stats ingest");
         Check(response.body.find(Q("stream") + ":\"g7-ingest\"") != std::string::npos,
               "3: the ingest connection is listed");
+
+        // P4 step 2: both representations of /stats from the same live
+        // state - the JSON and the HTML are read back to back with the
+        // sessions held, and the stable fields must agree (only the
+        // fields a live gateway advances - uptime, the ticker, the byte
+        // counters - may move between the two reads).
+        HttpResponse json_view;
+        Check(client.Exchange("/stats", &json_view, "Accept: application/json\r\n"), "3: /stats JSON view answered");
+        HttpResponse html_view;
+        Check(client.Exchange("/stats", &html_view, "Accept: text/html,application/xhtml+xml,*/*;q=0.8\r\n"),
+              "3: /stats HTML view answered");
+        Check(json_view.Header("content-type") == "application/json" &&
+                  html_view.Header("content-type") == "text/html; charset=utf-8",
+              "3: the two views negotiate to their content types");
+        Check(json_view.body.find(Q("name") + ":\"g7-live\"") != std::string::npos &&
+                  html_view.body.find("g7-live") != std::string::npos &&
+                  json_view.body.find(Q("name") + ":\"g7-ingest\"") != std::string::npos &&
+                  html_view.body.find("g7-ingest") != std::string::npos,
+              "3: both views name both live streams");
+        for (const char* key : {"stream_count", "alive_streams", "viewers", "active_sessions", "publishers_accepted"})
+        {
+            Check(HtmlNumberAfter(html_view.body, key) == NumberAfter(json_view.body, key),
+                  (std::string("3: both views agree on ") + key).c_str());
+        }
+        Check(NumberAfter(json_view.body, "stream_count") == 2, "3: two live streams are reported");
+        Check(NumberAfter(json_view.body, "active_sessions") == 2,
+              "3: the publisher and subscriber sessions are reported");
+        Check(NumberAfter(json_view.body, "count") > 0 &&
+                  HtmlNumberAfter(html_view.body, "count") >= NumberAfter(json_view.body, "count"),
+              "3: both views carry the advancing ticker");
+        Check(html_view.body.find("<meta http-equiv=\"refresh\"") != std::string::npos,
+              "3: the live page auto-refreshes");
+        // And the JSON shape is unchanged by the HTML addition.
+        CheckKeys(json_view.body,
+                  {"uptime_ms",
+                   "stream_count",
+                   "alive_streams",
+                   "viewers",
+                   "max_viewers",
+                   "active_sessions",
+                   "ticker",
+                   "server",
+                   "streams",
+                   "sessions",
+                   "ingest"},
+                  "3: /stats JSON shape unchanged");
+
+        // The HTML escapes what it interpolates: a stream name is caller
+        // data (this one arrives as an ingest streamid), and it must never
+        // reach the page as markup.
+        std::string  esc_err;
+        SrtPublisher esc_pub;
+        Check(esc_pub.Connect(ingest_port, "g7-<&>\"", &esc_err), "3: the markup-named ingest publisher connected");
+        for (int i = 0; i < 8; ++i)
+        {
+            esc_pub.Send(reinterpret_cast<const char*>(chunk.data()), static_cast<int>(chunk.size()));
+        }
+        Check(WaitUntil(
+                  [&client, &html_view]
+                  {
+                      return client.Exchange("/stats", &html_view, "Accept: text/html\r\n") &&
+                             html_view.body.find("g7-&lt;&amp;&gt;&quot;") != std::string::npos;
+                  },
+                  10000),
+              "3: the HTML view escapes the stream name");
+        Check(html_view.body.find("g7-<&>") == std::string::npos, "3: raw markup never reaches the page");
+        Check(client.Exchange("/stats", &json_view, "Accept: application/json\r\n"),
+              "3: the JSON view of the markup name answered");
+        Check(json_view.body.find("g7-<&>") != std::string::npos, "3: the JSON carries the stream name raw, as before");
 
         pub.Stop();
         sub.Stop();
