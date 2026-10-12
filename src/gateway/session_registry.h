@@ -95,6 +95,17 @@ struct SessionInfo
     std::uint64_t backlog_overflow_drops = 0;     ///< drop-oldest when the backlog bound was hit
 };
 
+/// One live session's evidence in one shot (SnapshotSessions): the C++
+/// counterpart of the oracle's snapshot_sessions(), which /health's
+/// per_session array is built from.
+struct SessionSnapshot
+{
+    std::uint64_t   session_id = 0; ///< WtSessionHandle::Id()
+    SessionInfo     info{};
+    bool            srt_valid = false; ///< `srt` is populated (the initiator has stats)
+    SRT_TRACEBSTATS srt{};
+};
+
 /// Consumer callbacks. ALL fire on the EventLoop thread and may call back
 /// into the registry (e.g. CloseSession from OnSessionEnded).
 class SessionRegistryListener
@@ -157,13 +168,26 @@ public:
     void CloseSession(WtSessionHandle handle, const std::string& reason);
 
     /// Thread-safe evidence.
-    [[nodiscard]] bool          SessionInfoFor(WtSessionHandle handle, SessionInfo* out) const;
-    [[nodiscard]] bool          IsConnected(WtSessionHandle handle) const;
-    [[nodiscard]] bool          Stats(WtSessionHandle handle, SRT_TRACEBSTATS* out) const;
-    [[nodiscard]] int           ActiveSessionCount() const;
-    [[nodiscard]] std::uint64_t TickCount() const { return tick_count_.load(); }
+    [[nodiscard]] bool SessionInfoFor(WtSessionHandle handle, SessionInfo* out) const;
+    /// Every live (not-yet-finished) session's identity + counters + SRT
+    /// stats, in handle order (health/stats). Thread-safe: the same map
+    /// mutex SessionInfoFor takes, so an off-loop health worker may call it.
+    [[nodiscard]] std::vector<SessionSnapshot> SnapshotSessions() const;
+    [[nodiscard]] bool                         IsConnected(WtSessionHandle handle) const;
+    [[nodiscard]] bool                         Stats(WtSessionHandle handle, SRT_TRACEBSTATS* out) const;
+    [[nodiscard]] int                          ActiveSessionCount() const;
+    [[nodiscard]] std::uint64_t                TickCount() const { return tick_count_.load(); }
     /// Longest tick so far, microseconds (the Rust tick budget monitor).
     [[nodiscard]] std::uint64_t TickMaxUs() const { return tick_max_us_.load(); }
+    /// Mean tick over the process lifetime, microseconds. The oracle's
+    /// ticker.avg_us in /health is a rolling window average; ours is
+    /// cumulative, because a moving window would have to be shared with
+    /// the ticker under a lock for no decision ever reads it.
+    [[nodiscard]] std::uint64_t TickAvgUs() const
+    {
+        const std::uint64_t count = tick_count_.load(std::memory_order_relaxed);
+        return count == 0 ? 0 : tick_total_us_.load(std::memory_order_relaxed) / count;
+    }
 
 private:
     // ---- WtServerListener (loop thread) ----
@@ -203,6 +227,7 @@ private:
     // Ticker evidence.
     std::atomic<std::uint64_t> tick_count_{0};
     std::atomic<std::uint64_t> tick_max_us_{0};
+    std::atomic<std::uint64_t> tick_total_us_{0};
 };
 
 } // namespace websrt::gateway

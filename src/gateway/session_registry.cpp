@@ -85,6 +85,31 @@ struct RegistryEntry
     std::atomic<std::uint64_t> messages_received{0};
 };
 
+namespace
+{
+
+/// The evidence both SessionInfoFor and SnapshotSessions report (one
+/// definition, so the two views can never disagree).
+SessionInfo InfoOf(RegistryEntry& entry)
+{
+    SessionInfo info;
+    info.stream_name            = entry.stream_name;
+    info.publisher_role         = entry.publisher_role;
+    info.connected              = entry.connected_seen.load(std::memory_order_relaxed);
+    info.max_payload            = entry.initiator->max_payload();
+    info.messages_sent          = entry.messages_sent.load(std::memory_order_relaxed);
+    info.messages_received      = entry.messages_received.load(std::memory_order_relaxed);
+    info.backlog_start_drops    = entry.backlog_start_drops;
+    info.backlog_overflow_drops = entry.backlog_overflow_drops;
+    {
+        const std::lock_guard<std::mutex> lock(entry.backlog_mutex);
+        info.backlog_size = entry.backlog.size();
+    }
+    return info;
+}
+
+} // namespace
+
 SessionRegistry::SessionRegistry(websrt::EventLoop& loop, SessionRegistryListener& listener, RegistryConfig config)
     : loop_(loop)
     , listener_(listener)
@@ -256,6 +281,7 @@ void SessionRegistry::Tick()
     {
         tick_max_us_.store(static_cast<std::uint64_t>(us), std::memory_order_relaxed);
     }
+    tick_total_us_.fetch_add(static_cast<std::uint64_t>(us), std::memory_order_relaxed);
     if (elapsed > std::chrono::milliseconds{2})
     {
         Log("tick exceeded the 2 ms budget: %lld us across %zu sessions", static_cast<long long>(us), n);
@@ -425,19 +451,30 @@ bool SessionRegistry::SessionInfoFor(WtSessionHandle handle, SessionInfo* out) c
     {
         return false;
     }
-    out->stream_name            = entry->stream_name;
-    out->publisher_role         = entry->publisher_role;
-    out->connected              = entry->connected_seen.load(std::memory_order_relaxed);
-    out->max_payload            = entry->initiator->max_payload();
-    out->messages_sent          = entry->messages_sent.load(std::memory_order_relaxed);
-    out->messages_received      = entry->messages_received.load(std::memory_order_relaxed);
-    out->backlog_start_drops    = entry->backlog_start_drops;
-    out->backlog_overflow_drops = entry->backlog_overflow_drops;
-    {
-        const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
-        out->backlog_size = entry->backlog.size();
-    }
+    *out = InfoOf(*entry);
     return true;
+}
+
+std::vector<SessionSnapshot> SessionRegistry::SnapshotSessions() const
+{
+    std::vector<SessionSnapshot>      out;
+    const std::lock_guard<std::mutex> lock(entries_mutex_);
+    out.reserve(entries_.size());
+    for (const auto& entry : entries_)
+    {
+        // Finished entries are on their way out; the oracle filters them
+        // out of snapshot_sessions for the same reason.
+        if (entry.second->finished.load(std::memory_order_relaxed))
+        {
+            continue;
+        }
+        SessionSnapshot snapshot;
+        snapshot.session_id = entry.first;
+        snapshot.info       = InfoOf(*entry.second);
+        snapshot.srt_valid  = entry.second->initiator->StatsOut(&snapshot.srt);
+        out.push_back(snapshot);
+    }
+    return out;
 }
 
 bool SessionRegistry::IsConnected(WtSessionHandle handle) const

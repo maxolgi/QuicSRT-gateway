@@ -361,4 +361,25 @@ void CertProvider::WriteCertHashJs(const std::string& path, std::uint16_t wt_por
     }
 }
 
+SSL_CTX* NewServerSslCtx(const CertProvider& cert)
+{
+    // Ownership stays with the provider; the SSL_CTX takes its own
+    // references (wt_server.cpp's note). TLS 1.3 only, as the WT server
+    // already pinned it: both listeners speak the same floor, so a pinned
+    // hash means the same thing on either.
+    SSL_CTX* ctx = SSL_CTX_new(TLS_method());
+    if (ctx == nullptr)
+    {
+        return nullptr;
+    }
+    if (SSL_CTX_use_certificate(ctx, cert.Cert()) != 1 || SSL_CTX_use_PrivateKey(ctx, cert.Key()) != 1 ||
+        SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) != 1 ||
+        SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) != 1)
+    {
+        SSL_CTX_free(ctx);
+        return nullptr;
+    }
+    return ctx;
+}
+
 } // namespace websrt::gateway

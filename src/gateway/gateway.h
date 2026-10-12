@@ -136,9 +136,11 @@ public:
     /// no viewers are dropped, so an idle waiting stream shows up exactly
     /// while it is waiting.
     [[nodiscard]] std::vector<StreamStats> SnapshotStreams() const;
-    [[nodiscard]] int                      ActiveSessionCount() const { return registry_.ActiveSessionCount(); }
-    [[nodiscard]] const SessionRegistry&   Sessions() const { return registry_; }
-    [[nodiscard]] const WtServer&          Server() const { return server_; }
+    /// Per-stream viewer cap as configured (health's max_viewers).
+    [[nodiscard]] std::size_t            MaxViewers() const { return streams_.MaxViewers(); }
+    [[nodiscard]] int                    ActiveSessionCount() const { return registry_.ActiveSessionCount(); }
+    [[nodiscard]] const SessionRegistry& Sessions() const { return registry_; }
+    [[nodiscard]] const WtServer&        Server() const { return server_; }
     /// The gateway's event loop - the thread every loop-thread-only API
     /// above belongs to. An off-loop source (the SRT/UDP ingest) Posts its
     /// media here to reach PublishMedia.

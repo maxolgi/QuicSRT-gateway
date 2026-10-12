@@ -18,8 +18,11 @@
 //
 // WT-server wiring (G3): lsquic takes server certificates through
 // ea_lookup_cert, which returns an SSL_CTX. Build it with
-// SSL_CTX_use_certificate(ctx, Cert()) and SSL_CTX_use_PrivateKey(ctx,
-// Key()) - ownership stays here, SSL_CTX takes its own references.
+// NewServerSslCtx() below (the identity reference stays with this
+// provider; the SSL_CTX takes its own reference) - the HTTPS web server
+// (G7) builds its listener through the same helper so both listeners
+// present EXACTLY the same certificate, which is what lets one pinned
+// hash (cert-hash.js) cover the page AND the WebTransport handshake.
 
 #ifndef WEBSRT_GATEWAY_CERT_H
 #define WEBSRT_GATEWAY_CERT_H
@@ -29,6 +32,7 @@
 #include <string>
 
 #include <openssl/evp.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 
 namespace websrt::gateway
@@ -111,6 +115,14 @@ private:
     X509*     cert_ = nullptr;
     EVP_PKEY* key_  = nullptr;
 };
+
+/// A TLS 1.3-only server SSL_CTX carrying `cert`'s identity. Shared by the
+/// WebTransport server (wt_server.cpp, which adds its h3 ALPN selector to
+/// the result) and the HTTPS web server (web_server.cpp), so both listeners
+/// present the same certificate and one pinned hash covers both. Returns
+/// nullptr on BoringSSL failure; the caller owns the SSL_CTX (SSL_CTX_free)
+/// and the provider keeps owning the certificate and key.
+[[nodiscard]] SSL_CTX* NewServerSslCtx(const CertProvider& cert);
 
 } // namespace websrt::gateway
 

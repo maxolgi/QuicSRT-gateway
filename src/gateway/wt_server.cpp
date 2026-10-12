@@ -603,22 +603,14 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
 
     // The TLS identity: one SSL_CTX for every connection and SNI
     // (cert.h's WT-server wiring note; ownership stays with us).
-    ssl_ctx_ = SSL_CTX_new(TLS_method());
-    if (ssl_ctx_ == nullptr || SSL_CTX_use_certificate(ssl_ctx_, cert_.Cert()) != 1 ||
-        SSL_CTX_use_PrivateKey(ssl_ctx_, cert_.Key()) != 1)
+    ssl_ctx_ = NewServerSslCtx(cert_);
+    if (ssl_ctx_ == nullptr)
     {
         Log("SSL_CTX setup failed");
-        if (ssl_ctx_ != nullptr)
-        {
-            SSL_CTX_free(ssl_ctx_);
-            ssl_ctx_ = nullptr;
-        }
         ::close(fd_);
         fd_ = -1;
         return false;
     }
-    SSL_CTX_set_min_proto_version(ssl_ctx_, TLS1_3_VERSION);
-    SSL_CTX_set_max_proto_version(ssl_ctx_, TLS1_3_VERSION);
     SSL_CTX_set_alpn_select_cb(ssl_ctx_, SelectAlpn, nullptr);
 
     struct lsquic_engine_settings settings;
