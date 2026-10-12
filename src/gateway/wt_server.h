@@ -219,6 +219,13 @@ public:
     /// No-op for an unknown handle or an unknown/closing server.
     void CloseConnection(WtSessionHandle handle, const std::string& reason);
 
+    /// Loop thread only. Swap the policy consulted on NEW CONNECTs (the
+    /// P4.1 SIGHUP hot reload): Decide() runs on this thread in
+    /// ProcessConnectHeaders, so an inline assignment cannot race an
+    /// in-flight consult. Sessions already accepted keep their
+    /// already-granted access - the policy is never re-asked about them.
+    void SetPolicy(std::shared_ptr<const SessionPolicy> policy) { policy_ = std::move(policy); }
+
     /// Evidence getters (thread-safe).
     [[nodiscard]] int SessionsAccepted() const { return sessions_accepted_.load(); }
     [[nodiscard]] int SessionsRejected() const { return sessions_rejected_.load(); }

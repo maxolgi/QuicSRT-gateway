@@ -27,6 +27,7 @@
 #include "gateway/gateway.h"
 #include "gateway/ingest/srt_ingest.h"
 #include "gateway/policy.h"
+#include "gateway/reload.h"
 #include "gateway/selftest.h"
 #include "gateway/web_server.h"
 #include "wt/client.h"
@@ -34,13 +35,21 @@
 namespace
 {
 
-// Set from the signal handler; the run loop polls it. sig_atomic_t is the
-// only type a handler may portably touch.
-volatile std::sig_atomic_t g_stop = 0;
+// Set from the signal handlers; the run loop polls them. sig_atomic_t is
+// the only type a handler may portably touch.
+volatile std::sig_atomic_t g_stop   = 0;
+volatile std::sig_atomic_t g_reload = 0;
 
 extern "C" void OnSignal(int /*signo*/)
 {
     g_stop = 1;
+}
+
+// SIGHUP only flips the flag: the handler must not parse the config
+// (malloc/iostreams are off limits there); the run loop does the work.
+extern "C" void OnReloadSignal(int /*signo*/)
+{
+    g_reload = 1;
 }
 
 int Run(const std::optional<std::string>& config_path, const std::optional<std::string>& log_level)
@@ -76,6 +85,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     std::string                                     web_bind    = "127.0.0.1";
     std::optional<std::string>                      web_root;
     bool                                            web_tls = true;
+    // The applied config, diff base and fallback of every SIGHUP reload.
+    websrt::gateway::Config live_config;
 
     if (config_path.has_value())
     {
@@ -109,6 +120,13 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         web_bind                               = s.web_bind;
         web_root                               = s.web_root;
         web_tls                                = s.web_tls;
+        // The file may carry its own lsquic level (P4.1 reload swaps it);
+        // the CLI flag wins at boot. Still before any engine exists.
+        if (!log_level.has_value() && s.log_level.has_value())
+        {
+            websrt::SetLsquicLogLevel(s.log_level->c_str());
+            std::printf("websrt-gateway: lsquic log level: %s (config)\n", s.log_level->c_str());
+        }
         std::printf("websrt-gateway: config: %zu stream(s), allowlist mode "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
                     "broadcast_capacity %u)\n",
@@ -123,6 +141,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                     s.web_port,
                     s.max_viewers,
                     s.broadcast_capacity);
+        live_config = std::move(config);
     }
     else
     {
@@ -197,22 +216,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         ingest_config.passphrase = ingest_passphrase;
 
         websrt::gateway::SrtIngest::Sink sink;
-        // Publish gate = the policy half of the WT accept path: ask the very
-        // policy the WebTransport publisher is judged by whether this
-        // streamid may publish at all (a synthetic ?publish= request; an
-        // unconfigured name, publish=false, or a token-protected entry the
-        // streamid cannot present refuses the connection).
-        sink.publish_gate = [policy](const std::string& name)
-        {
-            // Named string: SessionRequest::query is a string_view, so a
-            // temporary spliced straight into it would dangle before Decide
-            // reads it.
-            const std::string               query = "publish=" + websrt::gateway::PercentEncodeQueryValue(name);
-            websrt::gateway::SessionRequest req;
-            req.path  = "/wt";
-            req.query = query;
-            return policy->Decide(req) == websrt::gateway::Decision::Accept;
-        };
+        // Publish gate = the policy half of the WT accept path: the gateway
+        // consults the CURRENT policy (hot-reloadable, P4.1) through a
+        // synthetic ?publish= request - an unconfigured name, publish=false,
+        // or a token-protected entry the streamid cannot present refuses
+        // the connection.
+        sink.publish_gate = [&gateway](const std::string& name) { return gateway.PublishAllowed(name); };
         // Admission + media + teardown all run on the gateway loop.
         sink.claim   = [&gateway](const std::string& name) { return gateway.ClaimIngestPublish(name); };
         sink.publish = [&gateway](const std::string& name, const void* data, std::size_t len)
@@ -357,8 +366,29 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
 
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
+    std::signal(SIGHUP, OnReloadSignal);
     while (g_stop == 0)
     {
+        if (g_reload != 0)
+        {
+            g_reload = 0;
+            if (config_path.has_value())
+            {
+                // P4.1 hot reload. ReloadConfig re-parses and validates
+                // BEFORE swapping; on failure the old config stays active
+                // and the gateway stays healthy.
+                std::string reload_error;
+                if (const auto reloaded =
+                        websrt::gateway::ReloadConfig(*config_path, gateway, live_config, &reload_error))
+                {
+                    live_config = std::move(*reloaded);
+                }
+            }
+            else
+            {
+                std::fprintf(stderr, "websrt-gateway: SIGHUP ignored: no config file (open mode)\n");
+            }
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds{100});
     }
     std::fprintf(stderr, "websrt-gateway: signal received, draining\n");

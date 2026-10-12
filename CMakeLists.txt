@@ -55,7 +55,9 @@ target_link_libraries(websrtgw PUBLIC gateway_warnings Threads::Threads websrt::
 add_library(tomlplusplus INTERFACE)
 target_include_directories(tomlplusplus INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/tomlplusplus/include)
 
-add_library(websrtgw_config STATIC src/gateway/config.cpp)
+add_library(websrtgw_config STATIC
+    src/gateway/config.cpp
+    src/gateway/reload.cpp)
 target_compile_features(websrtgw_config PUBLIC cxx_std_20)
 set_target_properties(websrtgw_config PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(websrtgw_config PUBLIC gateway_warnings websrtgw tomlplusplus)
@@ -146,6 +148,16 @@ set_target_properties(concurrency_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(concurrency_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME concurrency_test COMMAND concurrency_test)
 set_tests_properties(concurrency_test PROPERTIES TIMEOUT 180)
+
+# P4.1: SIGHUP config hot-reload - ReloadConfig (the reload entry point
+# behind the signal flag) against a live gateway core over WT loopback
+# (127.0.0.1:4437, ephemeral fallback inside the test).
+add_executable(reload_test tests/reload_test.cpp)
+target_compile_features(reload_test PRIVATE cxx_std_20)
+set_target_properties(reload_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(reload_test PRIVATE gateway_warnings websrtgw_config)
+add_test(NAME reload_test COMMAND reload_test)
+set_tests_properties(reload_test PROPERTIES TIMEOUT 120)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).

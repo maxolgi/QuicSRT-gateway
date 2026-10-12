@@ -78,6 +78,7 @@ cert_mode = "mkcert"
 cert_pem = "cert.pem"
 key_pem = "key.pem"
 srt_passphrase = "0123456789"
+log_level = "debug"
 
 [[stream]]
 name = "test"
@@ -112,6 +113,7 @@ subscribe = false
     Check(c.server.cert_pem == std::optional<std::string>("cert.pem"), "cert_pem parsed");
     Check(c.server.key_pem == std::optional<std::string>("key.pem"), "key_pem parsed");
     Check(c.server.srt_passphrase == std::optional<std::string>("0123456789"), "srt_passphrase parsed");
+    Check(c.server.log_level == std::optional<std::string>("debug"), "log_level parsed");
     Check(c.streams.size() == 4, "stream count");
     Check(c.streams[0].name == "test" && c.streams[0].publish && c.streams[0].subscribe &&
               !c.streams[0].token.has_value(),
@@ -136,6 +138,7 @@ bool TestDefaults()
     Check(c.server.max_viewers == 16, "default max_viewers");
     Check(c.server.cert_mode == "self" && !c.server.cert_pem.has_value() && !c.server.key_pem.has_value(),
           "default cert mode");
+    Check(!c.server.log_level.has_value(), "default: no log_level");
     Check(c.streams.empty(), "no streams by default");
     return true;
 }
@@ -197,6 +200,7 @@ cert_mode = "magic"
                 R"("self" or "mkcert")");
     CheckThrows("[server]\ncert_mode = \"mkcert\"\n", "mkcert without pems", "requires both cert_pem and key_pem");
     CheckThrows("[server]\nsrt_passphrase = \"short\"\n", "short passphrase", "10-79 characters");
+    CheckThrows("[server]\nlog_level = \"chatty\"\n", "bad log_level lists valid values", "'log_level' must be one of");
     CheckThrows("[server]\nwt_bind = \"\"\n", "empty bind", "must not be empty");
     CheckThrows("stream = 3\n", "stream not array of tables", "array of tables");
     CheckThrows("[[stream]]\nname = \"x\"\n\n[[stream]]\nname = \"x\"\n",

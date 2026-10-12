@@ -149,7 +149,8 @@ ServerConfig ParseServer(Table& table)
                                                  "cert_mode",
                                                  "cert_pem",
                                                  "key_pem",
-                                                 "srt_passphrase"};
+                                                 "srt_passphrase",
+                                                 "log_level"};
     CheckKnownKeys(table, kKnown, "[server]");
 
     ServerConfig s;
@@ -203,6 +204,21 @@ ServerConfig ParseServer(Table& table)
         if (len < 10 || len > 79)
         {
             throw ConfigError("[server]: 'srt_passphrase' must be 10-79 characters, got " + std::to_string(len));
+        }
+    }
+    s.log_level = OptString(table, "log_level", "[server]");
+    if (s.log_level.has_value())
+    {
+        // The exact set lsquic_set_log_level understands (lsquic_logger.c
+        // lsquic_str_to_log_level); a typo must fail the parse, not silently
+        // leave the level unchanged (lsquic_set_log_level returns -1).
+        static const std::set<std::string> kLevels = {
+            "emerg", "alert", "crit", "error", "warn", "notice", "info", "debug"};
+        if (kLevels.find(*s.log_level) == kLevels.end())
+        {
+            throw ConfigError("[server]: 'log_level' must be one of emerg, alert, crit, error, warn, notice, "
+                              "info, debug, got \"" +
+                              *s.log_level + "\"");
         }
     }
     return s;

@@ -77,8 +77,9 @@ const char* DecisionText(Decision d)
 
 Gateway::Gateway(const CertProvider& cert, std::shared_ptr<const SessionPolicy> policy, GatewayConfig config)
     : streams_{StreamRegistryConfig{.max_viewers = config.max_viewers, .broadcast_capacity = config.broadcast_capacity}}
+    , policy_{std::move(policy)}
     , registry_{loop_, *this, config.registry}
-    , server_{loop_, cert, std::move(policy), registry_, [this](const WtSessionStart& start) { return Admit(start); }}
+    , server_{loop_, cert, policy_, registry_, [this](const WtSessionStart& start) { return Admit(start); }}
 {
     // The registry needs the server it serves (egress + close); the server
     // is constructed after it, so the wiring happens here.
@@ -168,6 +169,34 @@ void Gateway::CancelHousekeeping()
         loop_.CancelTimer(housekeeping_timer_);
         housekeeping_timer_ = websrt::EventLoop::kInvalidTimerId;
     }
+}
+
+void Gateway::ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy, std::size_t max_viewers)
+{
+    // One posted function = one atomic swap: a CONNECT the engine admits
+    // meanwhile is judged by the fully-old or the fully-new config, never
+    // a mix. Off-loop callers wait for the swap to land (the
+    // SnapshotStreams discipline) so a reload that returned HAS applied.
+    const auto apply = [this, &policy, max_viewers]
+    {
+        policy_ = policy;
+        server_.SetPolicy(policy_);
+        streams_.SetMaxViewers(max_viewers);
+        Log("runtime config applied (max_viewers %zu)", streams_.MaxViewers());
+    };
+    if (loop_.OnLoopThread() || !loop_.IsRunning())
+    {
+        apply();
+        return;
+    }
+    std::promise<void> done;
+    loop_.Post(
+        [&]
+        {
+            apply();
+            done.set_value();
+        });
+    done.get_future().wait();
 }
 
 // ---- SessionRegistryListener (loop thread) ----
@@ -360,6 +389,19 @@ bool Gateway::ClaimIngestPublish(const std::string& stream)
 void Gateway::ReleaseIngestPublish(const std::string& stream)
 {
     EndPublish(stream, "ingest source ended");
+}
+
+bool Gateway::PublishAllowed(const std::string& stream) const
+{
+    // The synthetic ?publish= request the WT CONNECT path would have
+    // judged (wt_server.cpp ProcessConnectHeaders): path /wt, the name
+    // percent-encoded into the query. A named string - SessionRequest's
+    // query is a string_view, so a temporary spliced into it would dangle.
+    const std::string query = "publish=" + PercentEncodeQueryValue(stream);
+    SessionRequest    req;
+    req.path  = "/wt";
+    req.query = query;
+    return policy_->Decide(req) == Decision::Accept;
 }
 
 std::vector<StreamStats> Gateway::SnapshotStreams() const

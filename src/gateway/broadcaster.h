@@ -159,6 +159,14 @@ public:
 
     void DetachViewer(WtSessionHandle handle) { viewers_.erase(handle.Id()); }
 
+    /// Hot-reload the viewer cap (P4.1): the cap is checked at every
+    /// attach, so attached viewers stay and only future attaches see the
+    /// new limit. Loop thread (same discipline as AttachViewer).
+    void SetMaxViewers(std::size_t max_viewers)
+    {
+        config_.max_viewers = max_viewers == 0 ? std::size_t{1} : max_viewers;
+    }
+
     /// The viewer's SRT handshake completed (drop_backlog): snap its cursor
     /// to the live edge - everything appended until now is dropped - and
     /// refresh its negotiated payload ceiling. False for an unknown viewer.

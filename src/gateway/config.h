@@ -78,6 +78,12 @@ struct ServerConfig
     std::optional<std::string> cert_pem;                    ///< mkcert mode: required
     std::optional<std::string> key_pem;                     ///< mkcert mode: required
     std::optional<std::string> srt_passphrase;              ///< SRT PBKEYLEN passphrase (10-79 chars)
+    /// lsquic diagnostic log level, lsquic's own set ("emerg".."debug").
+    /// Absent leaves the process default; the CLI --log-level flag
+    /// overrides the file at boot. Runtime-swappable on SIGHUP reload
+    /// (P4.1) - the one config setting besides the [[stream]] allowlist
+    /// and max_viewers that a reload applies without a restart.
+    std::optional<std::string> log_level;
 };
 
 /// One [[stream]] entry. `name` is an exact name or a glob ('*' any chars,

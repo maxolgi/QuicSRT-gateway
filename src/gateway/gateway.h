@@ -97,6 +97,18 @@ public:
     /// Idempotent; the Gateway cannot be restarted.
     void Shutdown();
 
+    /// Thread-safe (P4.1 SIGHUP hot reload). Atomically - in ONE loop
+    /// post, so no CONNECT can observe a half-applied reload - swaps the
+    /// runtime-reconfigurable state and returns only once applied:
+    ///   - `policy` becomes the policy consulted on every NEW CONNECT
+    ///     (the WtServer) and by the ingest publish gate (PublishAllowed);
+    ///     sessions already accepted keep their already-granted access.
+    ///   - `max_viewers` becomes the per-stream viewer cap, checked at
+    ///     every attach; attached viewers stay.
+    /// Every other config setting is restart-only; the CLI's reload path
+    /// (gateway/reload.cpp) logs those that change.
+    void ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy, std::size_t max_viewers);
+
     /// Whether Start() succeeded and Shutdown() has not run yet.
     [[nodiscard]] bool Running() const { return running_; }
 
@@ -126,6 +138,13 @@ public:
     /// the stream's viewers with a clean EOF - the publisher-end path
     /// OnSessionEnded runs for a WT publisher. Loop thread only.
     void ReleaseIngestPublish(const std::string& stream);
+
+    /// The SRT ingest's PUBLISH GATE - the policy half of the WT accept
+    /// path ("may this caller address this name at all"): judges `stream`
+    /// by the CURRENT policy through a synthetic ?publish= request, so a
+    /// hot-reloaded allowlist gates new ingest connections too. Loop
+    /// thread only (SrtIngest consults it through a Post).
+    [[nodiscard]] bool PublishAllowed(const std::string& stream) const;
 
     // ---- evidence ----
 
@@ -180,10 +199,12 @@ private:
         bool        publisher = false;
     };
 
-    websrt::EventLoop                   loop_;
-    StreamRegistry                      streams_;
-    SessionRegistry                     registry_;
-    WtServer                            server_;
+    websrt::EventLoop loop_;
+    StreamRegistry    streams_;
+    std::shared_ptr<const SessionPolicy>
+                    policy_; ///< consulted on new CONNECTs; swapped by ApplyRuntimeConfig (loop thread)
+    SessionRegistry registry_;
+    WtServer        server_;
     std::map<std::uint64_t, SessionRec> sessions_;
     std::vector<WtSessionHandle>        pending_prime_; // awaiting drop_backlog
     websrt::EventLoop::TimerId          housekeeping_timer_ = websrt::EventLoop::kInvalidTimerId;

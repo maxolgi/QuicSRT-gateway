@@ -62,6 +62,19 @@ public:
     [[nodiscard]] std::size_t MaxViewers() const { return config_.max_viewers; }
     [[nodiscard]] std::size_t BroadcastCapacity() const { return config_.capacity; }
 
+    /// Hot-reload the viewer cap (P4.1): applies to the admission consult
+    /// AND every live broadcaster's per-attach check, so a stream created
+    /// under the old cap enforces the new one too. Attached viewers stay.
+    /// Loop thread (same discipline as AttachViewer).
+    void SetMaxViewers(std::size_t max_viewers)
+    {
+        config_.max_viewers = max_viewers == 0 ? std::size_t{1} : max_viewers;
+        for (auto& [_, bc] : streams_)
+        {
+            bc->SetMaxViewers(config_.max_viewers);
+        }
+    }
+
     // ---- admission (side-effect free, consultable before the WT 200) ----
 
     /// Whether a publisher may claim `stream` right now: true when no live
