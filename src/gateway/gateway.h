@@ -147,6 +147,9 @@ public:
     websrt::EventLoop& Loop() { return loop_; }
     /// Longest registry tick so far, microseconds (the Rust tick monitor).
     [[nodiscard]] std::uint64_t TickMaxUs() const { return registry_.TickMaxUs(); }
+    /// Mean registry tick over the process lifetime, microseconds
+    /// (SessionRegistry::TickAvgUs - the concurrency gate's budget check).
+    [[nodiscard]] std::uint64_t TickAvgUs() const { return registry_.TickAvgUs(); }
     [[nodiscard]] std::uint64_t TickCount() const { return registry_.TickCount(); }
 
 private:

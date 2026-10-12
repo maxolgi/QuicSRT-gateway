@@ -137,6 +137,16 @@ target_link_libraries(web_server_test PRIVATE gateway_warnings websrtgw_config)
 add_test(NAME web_server_test COMMAND web_server_test)
 set_tests_properties(web_server_test PROPERTIES TIMEOUT 120)
 
+# G8: the 50-viewer concurrency gate - one gateway core, 50 Subscriber
+# threads + 1 Publisher at a realistic ~2.7 Mbps rate for ~15 s (ephemeral
+# fallback inside the test; default 127.0.0.1:4436).
+add_executable(concurrency_test tests/concurrency_test.cpp)
+target_compile_features(concurrency_test PRIVATE cxx_std_20)
+set_target_properties(concurrency_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(concurrency_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME concurrency_test COMMAND concurrency_test)
+set_tests_properties(concurrency_test PROPERTIES TIMEOUT 180)
+
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
 add_test(NAME gateway_selftest COMMAND websrt-gateway --selftest)
