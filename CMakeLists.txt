@@ -23,14 +23,19 @@ endif()
 
 find_package(Threads REQUIRED)
 
+# Gateway core library (refinement item 1): everything the embeddable
+# gateway owns - accept loop machinery, session policy seam, registry - so a
+# C++ app can link the gateway in-process. The CLI binary only wires
+# CLI/config/ingest. Include dir exposes "gateway/..." headers.
+add_library(websrtgw STATIC src/gateway/selftest.cpp)
+target_compile_features(websrtgw PUBLIC cxx_std_20)
+set_target_properties(websrtgw PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(websrtgw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(websrtgw PUBLIC gateway_warnings Threads::Threads websrt::websrt websrt::wt-deps)
+
+# Thin CLI binary over the core library.
 add_executable(websrt-gateway src/main.cpp)
-target_compile_features(websrt-gateway PRIVATE cxx_std_20)
-set_target_properties(websrt-gateway PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(websrt-gateway PRIVATE
-    gateway_warnings
-    Threads::Threads
-    websrt::websrt
-    websrt::wt-deps)
+target_link_libraries(websrt-gateway PRIVATE websrtgw)
 
 enable_testing()
 
