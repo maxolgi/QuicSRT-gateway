@@ -29,6 +29,7 @@
 #include "gateway/policy.h"
 #include "gateway/selftest.h"
 #include "gateway/web_server.h"
+#include "wt/client.h"
 
 namespace
 {
@@ -42,8 +43,18 @@ extern "C" void OnSignal(int /*signo*/)
     g_stop = 1;
 }
 
-int Run(const std::optional<std::string>& config_path)
+int Run(const std::optional<std::string>& config_path, const std::optional<std::string>& log_level)
 {
+    // lsquic's own diagnostic logging, routed to stderr by libwebsrt.
+    // Must happen before any engine exists: the logger is process-wide
+    // and installed once, so this is the first thing Run does. Off
+    // (absent flag) leaves lsquic's default level untouched.
+    if (log_level.has_value())
+    {
+        websrt::SetLsquicLogLevel(log_level->c_str());
+        std::printf("websrt-gateway: lsquic log level: %s\n", log_level->c_str());
+        std::fflush(stdout);
+    }
     // Cert mode comes from the config when present, self mode otherwise
     // (the Rust gateway's default). Self mode ALWAYS generates a fresh
     // cert on every boot - nothing is persisted to disk, so the hash
@@ -374,7 +385,11 @@ int Run(const std::optional<std::string>& config_path)
 
 void Usage()
 {
-    std::fprintf(stderr, "usage: websrt-gateway [--selftest] [--config FILE]\n");
+    std::fprintf(stderr,
+                 "usage: websrt-gateway [--selftest] [--config FILE] [--log-level LEVEL]\n"
+                 "\n"
+                 "  --log-level LEVEL  lsquic diagnostic logging on stderr (e.g. debug, info,\n"
+                 "                     warn, error, none). Off when omitted.\n");
 }
 
 } // namespace
@@ -383,6 +398,7 @@ int main(int argc, char** argv)
 {
     bool                       selftest = false;
     std::optional<std::string> config_path;
+    std::optional<std::string> log_level;
     for (int i = 1; i < argc; ++i)
     {
         if (std::strcmp(argv[i], "--selftest") == 0)
@@ -392,6 +408,10 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
         {
             config_path = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--log-level") == 0 && i + 1 < argc)
+        {
+            log_level = argv[++i];
         }
         else
         {
@@ -404,5 +424,5 @@ int main(int argc, char** argv)
     {
         return websrt::gateway::RunSelftest();
     }
-    return Run(config_path);
+    return Run(config_path, log_level);
 }
