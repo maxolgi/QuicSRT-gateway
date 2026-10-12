@@ -80,6 +80,7 @@
 #include <netinet/in.h>
 
 #include "core/event_loop.h"
+#include "gateway/webhooks.h"
 #include "srt.h"
 
 namespace websrt::gateway
@@ -159,6 +160,13 @@ public:
         /// The publisher went away: release the slot and close the stream's
         /// viewers (publisher-end parity with the WT path).
         std::function<void(const std::string& stream)> release;
+        /// P4.3 webhooks: publisher_connect / publisher_disconnect for the
+        /// ingest's own connections (the WT side notifies from the
+        /// gateway's session callbacks). Unlike the four above this fires
+        /// ON THE INGEST THREAD - the sink must only enqueue, never
+        /// deliver (Gateway::NotifyWebhook is exactly that). Unset = no
+        /// events.
+        std::function<void(const WebhookEvent&)> webhook;
     };
 
     /// `sink` must outlive the ingest; `loop` must outlive it too and must be
@@ -194,6 +202,7 @@ private:
         SRTSOCKET                 sock = SRT_INVALID_SOCK;
         std::string               stream;
         std::string               remote;
+        std::uint64_t             session_id = 0; ///< webhook identity (ingest-minted, nothing else consumes it)
         std::vector<char>         recv_buf;
         std::vector<std::uint8_t> pending; ///< sub-188 carry-over, in stream order
         std::uint64_t             bytes_in    = 0;
@@ -229,7 +238,8 @@ private:
     sockaddr_in               local_{};
     std::thread               thread_;
     std::map<SRTSOCKET, Conn> conns_;
-    bool                      srt_runtime_ = false; ///< holds an srt_startup() reference
+    std::uint64_t             next_webhook_session_id_ = 1;     ///< mints Conn::session_id
+    bool                      srt_runtime_             = false; ///< holds an srt_startup() reference
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> running_{false};

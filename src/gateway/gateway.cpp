@@ -73,10 +73,18 @@ const char* DecisionText(Decision d)
     return "?";
 }
 
+/// One webhook payload, minus the timestamp (Notify stamps it).
+WebhookEvent LifecycleEvent(
+    const char* event, const std::string& stream, const char* role, const std::string& remote, std::uint64_t session_id)
+{
+    return WebhookEvent{.event = event, .stream = stream, .role = role, .remote = remote, .session_id = session_id};
+}
+
 } // namespace
 
 Gateway::Gateway(const CertProvider& cert, std::shared_ptr<const SessionPolicy> policy, GatewayConfig config)
-    : streams_{StreamRegistryConfig{.max_viewers = config.max_viewers, .broadcast_capacity = config.broadcast_capacity}}
+    : webhooks_{config.webhooks}
+    , streams_{StreamRegistryConfig{.max_viewers = config.max_viewers, .broadcast_capacity = config.broadcast_capacity}}
     , policy_{std::move(policy)}
     , registry_{loop_, *this, config.registry}
     , server_{loop_, cert, policy_, registry_, [this](const WtSessionStart& start) { return Admit(start); }}
@@ -171,17 +179,20 @@ void Gateway::CancelHousekeeping()
     }
 }
 
-void Gateway::ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy, std::size_t max_viewers)
+void Gateway::ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy,
+                                 std::size_t                          max_viewers,
+                                 WebhookSettings                      webhooks)
 {
     // One posted function = one atomic swap: a CONNECT the engine admits
     // meanwhile is judged by the fully-old or the fully-new config, never
     // a mix. Off-loop callers wait for the swap to land (the
     // SnapshotStreams discipline) so a reload that returned HAS applied.
-    const auto apply = [this, &policy, max_viewers]
+    const auto apply = [this, &policy, max_viewers, &webhooks]
     {
         policy_ = policy;
         server_.SetPolicy(policy_);
         streams_.SetMaxViewers(max_viewers);
+        webhooks_.SetSettings(webhooks);
         Log("runtime config applied (max_viewers %zu)", streams_.MaxViewers());
     };
     if (loop_.OnLoopThread() || !loop_.IsRunning())
@@ -262,7 +273,8 @@ void Gateway::OnSessionStart(WtSessionHandle handle, const WtSessionStart& start
         return;
     }
 
-    sessions_.emplace(handle.Id(), SessionRec{.stream = role.stream, .publisher = role.publisher});
+    sessions_.emplace(handle.Id(),
+                      SessionRec{.stream = role.stream, .publisher = role.publisher, .remote = start.remote});
     if (!role.publisher)
     {
         // The drop_backlog marker may already have been raised (the tick
@@ -275,6 +287,14 @@ void Gateway::OnSessionStart(WtSessionHandle handle, const WtSessionStart& start
         handle.Id(),
         role.publisher ? "publishing" : "viewing",
         role.stream.c_str());
+    // P4.3 webhook: the session's claim succeeded, so it is live - one
+    // connect event per accepted session, WT only (ingest publishers
+    // notify from their own accept path).
+    NotifyWebhook(LifecycleEvent(role.publisher ? "publisher_connect" : "viewer_connect",
+                                 role.stream,
+                                 role.publisher ? "publisher" : "viewer",
+                                 start.remote,
+                                 handle.Id()));
 }
 
 void Gateway::OnSessionEnded(WtSessionHandle handle, const std::string& reason)
@@ -290,10 +310,14 @@ void Gateway::OnSessionEnded(WtSessionHandle handle, const std::string& reason)
 
     if (rec.publisher)
     {
+        // P4.3 webhook: the publisher's connection went away; EndPublish
+        // below emits the stream-level publisher_end.
+        NotifyWebhook(LifecycleEvent("publisher_disconnect", rec.stream, "publisher", rec.remote, handle.Id()));
         EndPublish(rec.stream, reason);
     }
     else
     {
+        NotifyWebhook(LifecycleEvent("viewer_disconnect", rec.stream, "viewer", rec.remote, handle.Id()));
         streams_.DetachViewer(rec.stream, handle);
     }
 }
@@ -322,6 +346,10 @@ void Gateway::EndPublish(const std::string& stream, const std::string& reason)
         registry_.CloseSession(viewer, "stream ended");
     }
     Log("stream '%s' publisher ended (%s); %zu viewer(s) closed", stream.c_str(), reason.c_str(), closing.size());
+    // P4.3 webhook: the stream-level end - no single connection owns it,
+    // so remote/session_id carry no peer identity (empty/0). Both source
+    // kinds (WT publisher session, SRT ingest) land here.
+    NotifyWebhook(LifecycleEvent("publisher_end", stream, "publisher", "", 0));
 }
 
 // ---- admission ----

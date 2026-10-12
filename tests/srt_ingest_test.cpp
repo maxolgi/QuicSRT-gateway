@@ -358,11 +358,16 @@ int main()
     }
     const std::string hash = cert.Sha256Hex();
 
-    // The real ingest, wired exactly as src/main.cpp wires it.
+    // The real ingest, wired exactly as src/main.cpp wires it - including
+    // the P4.3 webhook sink, whose events this test records (the recorder
+    // is the "dispatcher" here: enqueue-only, on the ingest thread).
     websrt::gateway::SrtIngestConfig ingest_config;
     ingest_config.bind       = "127.0.0.1";
     ingest_config.port       = ingest_port;
     ingest_config.latency_ms = config.server.latency_ms;
+
+    std::mutex                                 wh_mutex;
+    std::vector<websrt::gateway::WebhookEvent> wh_events;
 
     websrt::gateway::SrtIngest::Sink sink;
     sink.publish_gate = [&policy](const std::string& name) { return PublishAllowed(*policy, name); };
@@ -370,6 +375,11 @@ int main()
     sink.publish      = [&gateway](const std::string& name, const void* data, std::size_t len)
     { gateway.PublishMedia(name, data, len); };
     sink.release = [&gateway](const std::string& name) { gateway.ReleaseIngestPublish(name); };
+    sink.webhook = [&wh_mutex, &wh_events](const websrt::gateway::WebhookEvent& event)
+    {
+        const std::lock_guard<std::mutex> lock(wh_mutex);
+        wh_events.push_back(event);
+    };
 
     websrt::gateway::SrtIngest ingest(std::move(ingest_config), std::move(sink), gateway.Loop());
     std::string                ingest_error;
@@ -459,6 +469,39 @@ int main()
         Check(st.bytes_out == payload.size(), "1: the ingest forwarded every byte");
         Check(st.publishers_accepted == 1, "1: exactly one publisher was accepted");
         Check(StreamNamed(gateway.SnapshotStreams(), "g6-happy").publisher_live, "1: the stream is live");
+    }
+
+    // P4.3 webhook hooks (the recorder wired into the sink above): part
+    // 1's publisher connected and hung up; both facts must carry the
+    // connection's identity. (The stream-level publisher_end is the
+    // gateway's event - webhook_test part B covers that hook.)
+    {
+        const auto has_event = [&wh_mutex, &wh_events](const char* event, const char* stream)
+        {
+            const std::lock_guard<std::mutex> lock(wh_mutex);
+            for (const websrt::gateway::WebhookEvent& ev : wh_events)
+            {
+                if (ev.event == event && ev.stream == stream)
+                {
+                    return true;
+                }
+            }
+            return false;
+        };
+        Check(WaitUntil([&] { return has_event("publisher_connect", "g6-happy"); }, 8000),
+              "wh: publisher_connect fired for the ingest publisher");
+        Check(WaitUntil([&] { return has_event("publisher_disconnect", "g6-happy"); }, 8000),
+              "wh: publisher_disconnect fired when it hung up");
+        const std::lock_guard<std::mutex> lock(wh_mutex);
+        for (const websrt::gateway::WebhookEvent& ev : wh_events)
+        {
+            if (ev.stream == "g6-happy")
+            {
+                Check(ev.role == "publisher", "wh: ingest events carry the publisher role");
+                Check(ev.remote.rfind("127.0.0.1:", 0) == 0, "wh: ingest events carry the peer ip:port");
+                Check(ev.session_id > 0, "wh: ingest events carry a session id");
+            }
+        }
     }
 
     // ---- 2. empty streamid rejected ----

@@ -417,11 +417,13 @@ void SrtIngest::AcceptOne()
         return;
     }
 
-    const std::string remote = PeerText(peer);
-    Conn              conn;
-    conn.sock   = ns;
-    conn.stream = stream;
-    conn.remote = remote;
+    const std::string   remote     = PeerText(peer);
+    const std::uint64_t session_id = next_webhook_session_id_++;
+    Conn                conn;
+    conn.sock       = ns;
+    conn.stream     = stream;
+    conn.remote     = remote;
+    conn.session_id = session_id;
     conn.recv_buf.resize(kRecvBufBytes);
     conns_.emplace(ns, std::move(conn));
     Bump(accepted_);
@@ -433,6 +435,16 @@ void SrtIngest::AcceptOne()
         return;
     }
     Log("publisher connected: stream '%s' from %s", stream.c_str(), remote.c_str());
+    // P4.3 webhook - the ingest's publisher_connect (enqueue-only; the
+    // gateway's dispatcher owns delivery on its own thread).
+    if (sink_.webhook)
+    {
+        sink_.webhook(WebhookEvent{.event      = "publisher_connect",
+                                   .stream     = stream,
+                                   .role       = "publisher",
+                                   .remote     = remote,
+                                   .session_id = session_id});
+    }
 }
 
 void SrtIngest::Drain(SRTSOCKET sock)
@@ -528,11 +540,12 @@ void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
     {
         return;
     }
-    const std::string   stream   = it->second.stream;
-    const std::string   remote   = it->second.remote;
-    const std::uint64_t messages = it->second.messages_in;
-    const std::uint64_t bytes    = it->second.bytes_in;
-    const std::uint64_t chunks   = it->second.chunks_out;
+    const std::string   stream     = it->second.stream;
+    const std::string   remote     = it->second.remote;
+    const std::uint64_t session_id = it->second.session_id;
+    const std::uint64_t messages   = it->second.messages_in;
+    const std::uint64_t bytes      = it->second.bytes_in;
+    const std::uint64_t chunks     = it->second.chunks_out;
 
     // A sub-188 tail is not a whole TS packet, but dropping it would lose
     // bytes: libwebsrt's publisher flushes it on End()
@@ -559,6 +572,17 @@ void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
         static_cast<unsigned long long>(bytes),
         static_cast<unsigned long long>(chunks),
         why.c_str());
+    // P4.3 webhook - the ingest's publisher_disconnect. Emitted after the
+    // release round-trip so the matching publisher_end (EndPublish, on the
+    // gateway loop) is observed after it.
+    if (sink_.webhook)
+    {
+        sink_.webhook(WebhookEvent{.event      = "publisher_disconnect",
+                                   .stream     = stream,
+                                   .role       = "publisher",
+                                   .remote     = remote,
+                                   .session_id = session_id});
+    }
 }
 
 void SrtIngest::RefreshSnapshot()

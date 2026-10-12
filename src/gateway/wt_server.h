@@ -106,6 +106,7 @@ struct WtSessionStart
     std::string                query;          ///< raw query string (after '?')
     std::optional<std::string> publish_name;   ///< ?publish= if present
     std::optional<std::string> subscribe_name; ///< ?stream=/ ?subscribe= if present
+    std::string                remote;         ///< "ip:port" of the peer ("" when unavailable; webhooks, P4.3)
 };
 
 /// Consumer callbacks. ALL of them fire on the WtServer's event-loop thread

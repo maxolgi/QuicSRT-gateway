@@ -1125,6 +1125,22 @@ std::string WebServer::StatsJson() const
     }
     out += "}";
 
+    // P4.3 webhook evidence: the dropped counter is the one an operator
+    // watching a stuck receiver needs first.
+    out += ",\"webhooks\":{";
+    {
+        const WebhookSnapshot webhooks =
+            config_.gateway != nullptr ? config_.gateway->WebhookStats() : WebhookSnapshot{};
+        AppendBool(out, "enabled", webhooks.enabled);
+        out += ",";
+        AppendNum(out, "delivered", webhooks.delivered);
+        out += ",";
+        AppendNum(out, "dropped", webhooks.dropped);
+        out += ",";
+        AppendNum(out, "failed", webhooks.failed);
+    }
+    out += "}";
+
     out += ",\"streams\":[";
     for (std::size_t i = 0; i < streams.size(); ++i)
     {
@@ -1330,6 +1346,18 @@ std::string WebServer::StatsHtml() const
         kv("datagrams_received", 0);
         kv("datagrams_written", 0);
         kv("datagrams_dropped", 0);
+    }
+    out += "</table>\n";
+
+    // P4.3 webhooks - same evidence as the JSON's webhooks object.
+    out += "<table>\n<caption>webhooks</caption>\n";
+    {
+        const WebhookSnapshot webhooks =
+            config_.gateway != nullptr ? config_.gateway->WebhookStats() : WebhookSnapshot{};
+        kv("enabled", webhooks.enabled ? 1 : 0);
+        kv("delivered", webhooks.delivered);
+        kv("dropped", webhooks.dropped);
+        kv("failed", webhooks.failed);
     }
     out += "</table>\n";
 

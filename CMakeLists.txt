@@ -41,6 +41,7 @@ add_library(websrtgw STATIC
     src/gateway/srt_initiator.cpp
     src/gateway/ingest/srt_ingest.cpp
     src/gateway/web_server.cpp
+    src/gateway/webhooks.cpp
     src/gateway/wt_server.cpp)
 target_compile_features(websrtgw PUBLIC cxx_std_20)
 set_target_properties(websrtgw PROPERTIES CXX_EXTENSIONS OFF)
@@ -158,6 +159,18 @@ set_target_properties(reload_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(reload_test PRIVATE gateway_warnings websrtgw_config)
 add_test(NAME reload_test COMMAND reload_test)
 set_tests_properties(reload_test PROPERTIES TIMEOUT 120)
+
+# P4.3: on_connect/on_close webhooks - the dispatcher against a tiny local
+# HTTP receiver (delivery, payload shape, retry-once, bounded-queue drop
+# counting, settings swap) plus a live gateway core whose full session
+# lifecycle must reach the receiver without ever blocking the loop
+# (127.0.0.1:4438, ephemeral fallback inside the test).
+add_executable(webhook_test tests/webhook_test.cpp)
+target_compile_features(webhook_test PRIVATE cxx_std_20)
+set_target_properties(webhook_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(webhook_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME webhook_test COMMAND webhook_test)
+set_tests_properties(webhook_test PROPERTIES TIMEOUT 120)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).

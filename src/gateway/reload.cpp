@@ -2,7 +2,8 @@
 // flips a sig_atomic_t flag (main.cpp); this function is everything behind
 // it, so tests drive it directly. The swappable state rides ONE
 // Gateway::ApplyRuntimeConfig post - no CONNECT can observe a half-applied
-// reload.
+// reload. Since P4 step 3 the webhook settings ([webhooks], previously
+// deferred) ride the same post.
 
 #include "gateway/reload.h"
 
@@ -88,10 +89,19 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
         return std::nullopt;
     }
 
-    // The swappable three. Policy + viewer cap land atomically on the
-    // loop; the log level is process-wide state, applied here.
+    // The swappable set. Policy + viewer cap + webhook settings land
+    // atomically on the loop; the log level is process-wide state, applied
+    // here.
     gateway.ApplyRuntimeConfig(Chain(std::make_shared<PathPolicy>("/wt"), BuildAllowlistPolicy(next)),
-                               next.server.max_viewers);
+                               next.server.max_viewers,
+                               WebhookSettings{.url     = next.webhooks.on_event_url,
+                                               .timeout = std::chrono::milliseconds{next.webhooks.timeout_ms}});
+    if (next.webhooks.on_event_url != current.webhooks.on_event_url)
+    {
+        std::fprintf(stderr,
+                     "websrt-gateway: reload: webhooks -> %s\n",
+                     next.webhooks.on_event_url.empty() ? "off" : next.webhooks.on_event_url.c_str());
+    }
     if (next.server.log_level != current.server.log_level)
     {
         if (next.server.log_level.has_value())

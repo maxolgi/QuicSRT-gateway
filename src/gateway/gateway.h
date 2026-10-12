@@ -57,6 +57,7 @@
 #include "gateway/policy.h"
 #include "gateway/session_registry.h"
 #include "gateway/stream_registry.h"
+#include "gateway/webhooks.h"
 #include "gateway/wt_server.h"
 
 namespace websrt::gateway
@@ -70,6 +71,8 @@ struct GatewayConfig
     std::size_t broadcast_capacity = 32768;
     /// Ticker/pacing knobs, passed through to the SessionRegistry.
     RegistryConfig registry{};
+    /// Webhook delivery (P4.3); an empty URL leaves the feature off.
+    WebhookSettings webhooks{};
 };
 
 class Gateway final : public SessionRegistryListener
@@ -105,12 +108,26 @@ public:
     ///     sessions already accepted keep their already-granted access.
     ///   - `max_viewers` becomes the per-stream viewer cap, checked at
     ///     every attach; attached viewers stay.
+    ///   - `webhooks` becomes the webhook URL/timeout (P4.3) - swapped on
+    ///     the dispatcher the same instant, so the events queued behind
+    ///     the post drain under the new settings.
     /// Every other config setting is restart-only; the CLI's reload path
     /// (gateway/reload.cpp) logs those that change.
-    void ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy, std::size_t max_viewers);
+    void
+    ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy, std::size_t max_viewers, WebhookSettings webhooks);
 
     /// Whether Start() succeeded and Shutdown() has not run yet.
     [[nodiscard]] bool Running() const { return running_; }
+
+    /// Thread-safe, non-blocking (P4.3): enqueue one webhook event for
+    /// delivery. The SRT ingest reaches the SAME dispatcher through its
+    /// Sink (main.cpp wires this), so every lifecycle event of the process
+    /// - WT and ingest alike - funnels through here. A disabled dispatcher
+    /// (empty URL) drops nothing and queues nothing.
+    void NotifyWebhook(WebhookEvent event) { webhooks_.Notify(std::move(event)); }
+
+    /// Webhook evidence (the /stats webhooks object; thread-safe).
+    [[nodiscard]] WebhookSnapshot WebhookStats() const { return webhooks_.Snapshot(); }
 
     // ---- the ingest source contract (G6 feeds this; the WT publisher
     // ---- path reaches it through the registry's OnMedia) ----
@@ -197,9 +214,11 @@ private:
     {
         std::string stream;
         bool        publisher = false;
+        std::string remote; ///< the session's "ip:port" (webhook payloads)
     };
 
     websrt::EventLoop loop_;
+    WebhookDispatcher webhooks_; ///< declared early: destroyed LAST of the state - teardown callbacks may still notify
     StreamRegistry    streams_;
     std::shared_ptr<const SessionPolicy>
                     policy_; ///< consulted on new CONNECTs; swapped by ApplyRuntimeConfig (loop thread)

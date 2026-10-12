@@ -25,12 +25,14 @@ namespace websrt::gateway
 /// post): the stream allowlist (a new SessionPolicy consulted on new
 /// CONNECTs and new ingest connections only - sessions already accepted
 /// keep their already-granted access), max_viewers (checked at every
-/// attach) and log_level (lsquic diagnostics; the --log-level flag is
-/// boot-time only, a reload follows the file). Restart-required settings
-/// that CHANGED are logged; unchanged ones keep running as they are.
-/// `current` is the previously applied config (the diff base, and the
-/// config that stays active on failure). Returns the new config on
-/// success; nullopt with *error set on a parse/validation failure.
+/// attach), log_level (lsquic diagnostics; the --log-level flag is
+/// boot-time only, a reload follows the file) and the [webhooks] settings
+/// (P4.3: on_event_url/timeout, on<->off - events still queued drain
+/// under the new settings). Restart-required settings that CHANGED are
+/// logged; unchanged ones keep running as they are. `current` is the
+/// previously applied config (the diff base, and the config that stays
+/// active on failure). Returns the new config on success; nullopt with
+/// *error set on a parse/validation failure.
 [[nodiscard]] std::optional<Config>
 ReloadConfig(const std::string& path, Gateway& gateway, const Config& current, std::string* error);
 

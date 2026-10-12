@@ -1054,11 +1054,14 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
     {
         subscribe = ParseQueryParam(query, "subscribe");
     }
+    const std::string remote_text =
+        peer != nullptr ? std::string{remote_host} + ":" + std::to_string(ntohs(peer->sin_port)) : std::string{};
     const WtSessionStart start{
         .path           = std::string{path},
         .query          = std::string{query},
         .publish_name   = ParseQueryParam(query, "publish"),
         .subscribe_name = std::move(subscribe),
+        .remote         = remote_text,
     };
 
     // Admission: the gateway's own runtime gate (first-wins occupancy,

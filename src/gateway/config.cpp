@@ -238,6 +238,33 @@ StreamConfig ParseStream(Table& table, std::size_t index)
     return st;
 }
 
+WebhooksConfig ParseWebhooks(Table& table)
+{
+    static const std::set<std::string> kKnown = {"on_event_url", "timeout_ms"};
+    CheckKnownKeys(table, kKnown, "[webhooks]");
+
+    WebhooksConfig w;
+    w.on_event_url = OptString(table, "on_event_url", "[webhooks]").value_or("");
+    if (!w.on_event_url.empty())
+    {
+        // Plain HTTP only (SLS-style webhooks target local receivers; the
+        // dispatcher's socket is plain by design) - reject the shape here
+        // so a misconfigured https:// URL fails the parse, not every
+        // delivery at runtime. The host runs to the first ':' (port) or
+        // '/' (path); the port itself is validated at delivery time.
+        const std::string prefix   = "http://";
+        const std::string rest     = w.on_event_url.starts_with(prefix) ? w.on_event_url.substr(prefix.size()) : "";
+        const std::size_t host_end = rest.find_first_of(":/");
+        if (rest.empty() || rest.substr(0, host_end).empty())
+        {
+            throw ConfigError("[webhooks]: 'on_event_url' must be \"http://host[:port][/path]\", got \"" +
+                              w.on_event_url + "\"");
+        }
+    }
+    w.timeout_ms = OptInt(table, "timeout_ms", "[webhooks]", w.timeout_ms, 1, 60'000);
+    return w;
+}
+
 } // namespace
 
 Config ParseConfig(std::string_view text, const std::string& source)
@@ -275,10 +302,18 @@ Config ParseConfig(std::string_view text, const std::string& source)
                 config.streams.push_back(ParseStream(*entry.as_table(), index++));
             }
         }
+        else if (key.str() == "webhooks")
+        {
+            if (!value.is_table())
+            {
+                throw ConfigError("'webhooks' must be a table ([webhooks])" + At(value));
+            }
+            config.webhooks = ParseWebhooks(*value.as_table());
+        }
         else
         {
             throw ConfigError("unknown key '" + std::string(key.str()) + "'" + At(value) +
-                              " at top level (expected [server] or [[stream]])");
+                              " at top level (expected [server], [[stream]] or [webhooks])");
         }
     }
 

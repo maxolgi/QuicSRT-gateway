@@ -108,18 +108,20 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         const websrt::gateway::ServerConfig& s = config.server;
         gateway_config.max_viewers             = s.max_viewers;
         gateway_config.broadcast_capacity      = s.broadcast_capacity;
-        wt_bind_port                           = s.wt_port;
-        wt_bind                                = s.wt_bind;
-        ingest_port                            = s.srt_ingest_port;
-        ingest_bind                            = s.srt_ingest_bind;
-        ingest_latency_ms                      = s.latency_ms;
-        ingest_passphrase                      = s.srt_passphrase;
-        health_port                            = s.health_port;
-        health_bind                            = s.health_bind;
-        web_port                               = s.web_port;
-        web_bind                               = s.web_bind;
-        web_root                               = s.web_root;
-        web_tls                                = s.web_tls;
+        gateway_config.webhooks                = websrt::gateway::WebhookSettings{
+                           .url = config.webhooks.on_event_url, .timeout = std::chrono::milliseconds{config.webhooks.timeout_ms}};
+        wt_bind_port      = s.wt_port;
+        wt_bind           = s.wt_bind;
+        ingest_port       = s.srt_ingest_port;
+        ingest_bind       = s.srt_ingest_bind;
+        ingest_latency_ms = s.latency_ms;
+        ingest_passphrase = s.srt_passphrase;
+        health_port       = s.health_port;
+        health_bind       = s.health_bind;
+        web_port          = s.web_port;
+        web_bind          = s.web_bind;
+        web_root          = s.web_root;
+        web_tls           = s.web_tls;
         // The file may carry its own lsquic level (P4.1 reload swaps it);
         // the CLI flag wins at boot. Still before any engine exists.
         if (!log_level.has_value() && s.log_level.has_value())
@@ -141,6 +143,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                     s.web_port,
                     s.max_viewers,
                     s.broadcast_capacity);
+        if (!config.webhooks.on_event_url.empty())
+        {
+            std::printf("websrt-gateway: webhooks on: POST session events to %s (timeout %llu ms)\n",
+                        config.webhooks.on_event_url.c_str(),
+                        static_cast<unsigned long long>(config.webhooks.timeout_ms));
+        }
         live_config = std::move(config);
     }
     else
@@ -227,6 +235,9 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         sink.publish = [&gateway](const std::string& name, const void* data, std::size_t len)
         { gateway.PublishMedia(name, data, len); };
         sink.release = [&gateway](const std::string& name) { gateway.ReleaseIngestPublish(name); };
+        // P4.3: the ingest's publisher_connect/disconnect ride the SAME
+        // dispatcher the WT session lifecycle notifies through.
+        sink.webhook = [&gateway](const websrt::gateway::WebhookEvent& event) { gateway.NotifyWebhook(event); };
 
         ingest.emplace(std::move(ingest_config), std::move(sink), gateway.Loop());
         std::string ingest_error;

@@ -81,8 +81,8 @@ struct ServerConfig
     /// lsquic diagnostic log level, lsquic's own set ("emerg".."debug").
     /// Absent leaves the process default; the CLI --log-level flag
     /// overrides the file at boot. Runtime-swappable on SIGHUP reload
-    /// (P4.1) - the one config setting besides the [[stream]] allowlist
-    /// and max_viewers that a reload applies without a restart.
+    /// (P4.1) - one of the reload-swappable settings besides the
+    /// [[stream]] allowlist, max_viewers and [webhooks] (P4 step 3).
     std::optional<std::string> log_level;
 };
 
@@ -96,11 +96,21 @@ struct StreamConfig
     std::optional<std::string> token; ///< optional per-stream ?token=
 };
 
-/// Parsed configuration: server scalars + ordered stream allowlist.
+/// [webhooks] (P4 step 3, SLS names): on_event_url + timeout. Absent
+/// table => empty url => the feature is off.
+struct WebhooksConfig
+{
+    std::string   on_event_url;      ///< "http://host[:port][/path]"; empty = off
+    std::uint64_t timeout_ms = 2000; ///< per-attempt POST timeout
+};
+
+/// Parsed configuration: server scalars + ordered stream allowlist + the
+/// webhook knobs.
 struct Config
 {
     ServerConfig              server;
     std::vector<StreamConfig> streams;
+    WebhooksConfig            webhooks;
 };
 
 /// Parse TOML text (source names errors). Throws ConfigError on invalid

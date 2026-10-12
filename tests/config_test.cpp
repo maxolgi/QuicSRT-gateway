@@ -236,6 +236,38 @@ bool TestOpenModeDefault()
     return true;
 }
 
+bool TestWebhooks()
+{
+    // Absent table: the feature is off.
+    {
+        const Config c = ParseConfig("[server]\n", "test.conf");
+        Check(c.webhooks.on_event_url.empty(), "webhooks: absent table = off");
+        Check(c.webhooks.timeout_ms == 2000, "webhooks: default timeout 2000 ms");
+    }
+    // Present table: the SLS-named URL and the timeout parse.
+    {
+        const Config c =
+            ParseConfig("[webhooks]\non_event_url = \"http://127.0.0.1:9090/hook\"\ntimeout_ms = 500\n", "test.conf");
+        Check(c.webhooks.on_event_url == "http://127.0.0.1:9090/hook", "webhooks: on_event_url parses");
+        Check(c.webhooks.timeout_ms == 500, "webhooks: timeout_ms parses");
+    }
+    // A table with no URL is still valid (off) - only unknown keys error.
+    {
+        const Config c = ParseConfig("[webhooks]\ntimeout_ms = 1000\n", "test.conf");
+        Check(c.webhooks.on_event_url.empty(), "webhooks: table without url = off");
+    }
+    CheckThrows("[webhooks]\non_event_url = \"https://127.0.0.1/hook\"\n",
+                "webhooks: https URL rejected",
+                "must be \"http://host[:port][/path]\"");
+    CheckThrows("[webhooks]\non_event_url = \"http://\"\n", "webhooks: empty host rejected", "http://host");
+    CheckThrows("[webhooks]\non_event_url = \"http:///path\"\n", "webhooks: path-only URL rejected", "http://host");
+    CheckThrows("[webhooks]\nflavor = \"hot\"\n", "webhooks: unknown key", "unknown key 'flavor'");
+    CheckThrows("[webhooks]\ntimeout_ms = 0\n", "webhooks: zero timeout", "between 1 and 60000");
+    CheckThrows("[webhooks]\ntimeout_ms = 60001\n", "webhooks: timeout ceiling", "between 1 and 60000");
+    CheckThrows("webhooks = 3\n", "webhooks not a table", "must be a table");
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -253,6 +285,7 @@ int main()
         {.name = "invalid-toml", .fn = TestInvalidToml},
         {.name = "unknown-keys", .fn = TestUnknownKeys},
         {.name = "missing-invalid-fields", .fn = TestMissingAndInvalidFields},
+        {.name = "webhooks", .fn = TestWebhooks},
         {.name = "load-config-file", .fn = TestLoadConfigFile},
         {.name = "open-mode-default", .fn = TestOpenModeDefault},
     };
