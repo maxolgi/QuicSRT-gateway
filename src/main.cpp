@@ -1,27 +1,43 @@
 // websrt-gateway: CLI-parity C++ replacement of the Rust WebSRT gateway.
 // Thin CLI over the websrtgw core library (refinement item 1): argument
-// wiring lives here, gateway machinery lives in src/gateway/. --selftest is
-// the ctest smoke entry (the consumer gate); --config FILE loads the
-// stream-allowlist TOML (refinement item 2).
+// wiring, TOML config, signal handling and the run-until-signalled loop live
+// here; the accept loop, per-session SRT initiators and the broadcaster
+// ring live in src/gateway/. --selftest is the ctest smoke entry (the
+// consumer gate); --config FILE loads the stream-allowlist TOML
+// (refinement item 2).
 //
-// P3 IN PROGRESS: startup beyond config + cert handling is not implemented
-// yet (the accept loop arrives with later P3 steps) - main() deliberately
-// binds nothing, writes no cert-hash.js, and exits 0 after logging the
-// cert line.
+// P3 step 4: the WebTransport accept path, the ring and first-wins occupancy
+// are live. NOT YET WIRED (later P3 steps, logged at startup when their
+// config port is set): the SRT/UDP ingest (G6), the health/stats endpoint and
+// the static web server (G7), and the cert-hash.js emission next to web/dist.
 
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include "gateway/cert.h"
 #include "gateway/config.h"
+#include "gateway/gateway.h"
 #include "gateway/policy.h"
 #include "gateway/selftest.h"
 
 namespace
 {
+
+// Set from the signal handler; the run loop polls it. sig_atomic_t is the
+// only type a handler may portably touch.
+volatile std::sig_atomic_t g_stop = 0;
+
+extern "C" void OnSignal(int /*signo*/)
+{
+    g_stop = 1;
+}
 
 int Run(const std::optional<std::string>& config_path)
 {
@@ -33,6 +49,13 @@ int Run(const std::optional<std::string>& config_path)
     std::optional<std::string>                      cert_pem;
     std::optional<std::string>                      key_pem;
     std::shared_ptr<websrt::gateway::SessionPolicy> policy;
+    websrt::gateway::GatewayConfig                  gateway_config;
+    std::uint16_t                                   wt_bind_port = 4433;
+    std::string                                     wt_bind      = "127.0.0.1";
+    std::uint16_t                                   ingest_port  = 0;
+    std::uint16_t                                   health_port  = 0;
+    std::uint16_t                                   web_port     = 0;
+
     if (config_path.has_value())
     {
         websrt::gateway::Config config;
@@ -51,8 +74,16 @@ int Run(const std::optional<std::string>& config_path)
         cert_pem  = config.server.cert_pem;
         key_pem   = config.server.key_pem;
         const websrt::gateway::ServerConfig& s = config.server;
+        gateway_config.max_viewers             = s.max_viewers;
+        gateway_config.broadcast_capacity      = s.broadcast_capacity;
+        wt_bind_port                           = s.wt_port;
+        wt_bind                                = s.wt_bind;
+        ingest_port                            = s.srt_ingest_port;
+        health_port                            = s.health_port;
+        web_port                               = s.web_port;
         std::printf("websrt-gateway: config: %zu stream(s), allowlist mode "
-                    "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u)\n",
+                    "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
+                    "broadcast_capacity %u)\n",
                     config.streams.size(),
                     s.wt_bind.c_str(),
                     s.wt_port,
@@ -62,7 +93,8 @@ int Run(const std::optional<std::string>& config_path)
                     s.health_port,
                     s.web_bind.c_str(),
                     s.web_port,
-                    s.max_viewers);
+                    s.max_viewers,
+                    s.broadcast_capacity);
     }
     else
     {
@@ -74,8 +106,31 @@ int Run(const std::optional<std::string>& config_path)
         policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
                                         std::make_shared<websrt::gateway::AcceptAll>());
         std::printf("websrt-gateway: config: 0 stream(s), open mode\n");
-        std::fflush(stdout);
     }
+    std::fflush(stdout);
+
+    if (ingest_port != 0)
+    {
+        std::fprintf(stderr,
+                     "websrt-gateway: NOT YET IMPLEMENTED: the SRT/UDP ingest on port %u "
+                     "(P3 step 5) is configured but will not listen\n",
+                     ingest_port);
+    }
+    if (health_port != 0)
+    {
+        std::fprintf(stderr,
+                     "websrt-gateway: NOT YET IMPLEMENTED: the health/stats endpoint on port %u "
+                     "(P3 step 6) is configured but will not listen\n",
+                     health_port);
+    }
+    if (web_port != 0)
+    {
+        std::fprintf(stderr,
+                     "websrt-gateway: NOT YET IMPLEMENTED: the static web server on port %u "
+                     "(P3 step 6) is configured but will not listen; no cert-hash.js is written\n",
+                     web_port);
+    }
+    std::fflush(stderr);
 
     websrt::gateway::CertProvider cert;
     try
@@ -104,11 +159,23 @@ int Run(const std::optional<std::string>& config_path)
         std::fprintf(stderr, "websrt-gateway: cert error: %s\n", e.what());
         return 1;
     }
+    std::fflush(stdout);
 
-    (void)policy; // handed to the accept loop when P3 wires it in
-    (void)cert;   // handed to the WT server/web server when P3 wires them in
+    websrt::gateway::Gateway gateway(cert, policy, gateway_config);
+    if (!gateway.Start(wt_bind, wt_bind_port))
+    {
+        std::fprintf(stderr, "websrt-gateway: cannot serve WebTransport on %s:%u\n", wt_bind.c_str(), wt_bind_port);
+        return 1;
+    }
 
-    std::fprintf(stderr, "websrt-gateway: server startup not implemented yet (P3 in progress); exiting\n");
+    std::signal(SIGINT, OnSignal);
+    std::signal(SIGTERM, OnSignal);
+    while (g_stop == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+    }
+    std::fprintf(stderr, "websrt-gateway: signal received, draining\n");
+    gateway.Shutdown();
     return 0;
 }
 

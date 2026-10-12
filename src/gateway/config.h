@@ -60,6 +60,7 @@ struct ServerConfig
     std::uint16_t              web_port           = 5173; ///< static web server, 0 disables
     std::string                web_bind           = "127.0.0.1";
     std::uint32_t              max_viewers        = 16;     ///< per-stream viewer cap
+    std::uint32_t              broadcast_capacity = 32768;  ///< per-stream broadcaster ring depth in messages
     std::string                cert_mode          = "self"; ///< "self" | "mkcert"
     std::optional<std::string> cert_pem;                    ///< mkcert mode: required
     std::optional<std::string> key_pem;                     ///< mkcert mode: required

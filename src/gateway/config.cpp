@@ -143,6 +143,7 @@ ServerConfig ParseServer(Table& table)
                                                  "web_port",
                                                  "web_bind",
                                                  "max_viewers",
+                                                 "broadcast_capacity",
                                                  "cert_mode",
                                                  "cert_pem",
                                                  "key_pem",
@@ -163,7 +164,9 @@ ServerConfig ParseServer(Table& table)
     s.web_port    = static_cast<std::uint16_t>(OptInt(table, "web_port", "[server]", s.web_port, 0, 65535));
     s.web_bind    = OptString(table, "web_bind", "[server]").value_or(s.web_bind);
     s.max_viewers = static_cast<std::uint32_t>(OptInt(table, "max_viewers", "[server]", s.max_viewers, 1, 1'000'000));
-    s.cert_mode   = OptString(table, "cert_mode", "[server]").value_or(s.cert_mode);
+    s.broadcast_capacity = static_cast<std::uint32_t>(
+        OptInt(table, "broadcast_capacity", "[server]", s.broadcast_capacity, 1, 10'000'000));
+    s.cert_mode = OptString(table, "cert_mode", "[server]").value_or(s.cert_mode);
     if (s.cert_mode != "self" && s.cert_mode != "mkcert")
     {
         throw ConfigError(R"([server]: 'cert_mode' must be "self" or "mkcert", got ")" + s.cert_mode + "\"");

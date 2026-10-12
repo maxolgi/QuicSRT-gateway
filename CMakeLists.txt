@@ -104,6 +104,16 @@ target_link_libraries(srt_initiator_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME srt_initiator_test COMMAND srt_initiator_test)
 set_tests_properties(srt_initiator_test PROPERTIES TIMEOUT 60)
 
+# G5: the full gateway loop (admission, ring, first-wins occupancy, waiting
+# viewers) driven by libwebsrt's public Subscriber/Publisher, configured from
+# a real TOML allowlist (127.0.0.1:4434, ephemeral fallback inside the test).
+add_executable(gateway_e2e_test tests/gateway_e2e_test.cpp)
+target_compile_features(gateway_e2e_test PRIVATE cxx_std_20)
+set_target_properties(gateway_e2e_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(gateway_e2e_test PRIVATE gateway_warnings websrtgw_config)
+add_test(NAME gateway_e2e_test COMMAND gateway_e2e_test)
+set_tests_properties(gateway_e2e_test PROPERTIES TIMEOUT 180)
+
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
 add_test(NAME gateway_selftest COMMAND websrt-gateway --selftest)
