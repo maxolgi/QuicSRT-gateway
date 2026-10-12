@@ -36,8 +36,13 @@ public:
 /// [server] scalar knobs. Defaults mirror the Rust gateway CLI
 /// (crates/websrt-gateway/src/main.rs). Rust CLI knobs deliberately
 /// deferred (documented):
-///   - no_gui / no_web / web_root      binary-side flags; the C++ gateway is
-///                                      CLI-only and serves web/dist as-is
+///   - no_gui / no_web                 binary-side flags; the C++ gateway
+///                                     is CLI-only
+///   - web_root                        IS here ([server].web_root): the
+///                                     Rust binary embeds web/dist at
+///                                     compile time, the C++ gateway serves
+///                                     a built web/dist from disk
+///                                     (unset => no static serving)
 ///   - input / fixture*                Rust dev file-source; the C++ gateway
 ///                                      sources are SRT ingest + WT publish
 ///   - srt_mode / srt_call / srt_streamid  ingest here is always
@@ -59,6 +64,7 @@ struct ServerConfig
     std::string                health_bind        = "127.0.0.1";
     std::uint16_t              web_port           = 5173; ///< static web server, 0 disables
     std::string                web_bind           = "127.0.0.1";
+    std::optional<std::string> web_root;                    ///< served player root; unset => no static serving
     std::uint32_t              max_viewers        = 16;     ///< per-stream viewer cap
     std::uint32_t              broadcast_capacity = 32768;  ///< per-stream broadcaster ring depth in messages
     std::string                cert_mode          = "self"; ///< "self" | "mkcert"

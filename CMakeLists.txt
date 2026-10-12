@@ -126,6 +126,17 @@ target_link_libraries(srt_ingest_test PRIVATE gateway_warnings websrtgw_config)
 add_test(NAME srt_ingest_test COMMAND srt_ingest_test)
 set_tests_properties(srt_ingest_test PROPERTIES TIMEOUT 180)
 
+# G7: the web server end to end - static serving, /health, /stats and
+# cert-hash.js over real TLS, against a live gateway core with a
+# libwebsrt publisher/subscriber and a stock-libsrt ingest behind it.
+# Ephemeral ports only (the web/health servers ask for 0).
+add_executable(web_server_test tests/web_server_test.cpp)
+target_compile_features(web_server_test PRIVATE cxx_std_20)
+set_target_properties(web_server_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(web_server_test PRIVATE gateway_warnings websrtgw_config)
+add_test(NAME web_server_test COMMAND web_server_test)
+set_tests_properties(web_server_test PROPERTIES TIMEOUT 120)
+
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
 add_test(NAME gateway_selftest COMMAND websrt-gateway --selftest)
