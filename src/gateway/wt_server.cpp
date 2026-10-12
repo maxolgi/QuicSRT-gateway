@@ -611,6 +611,27 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     settings.es_datagrams                       = 1;                 // advertise MAX_DATAGRAM_FRAME_SIZE
     settings.es_webtransport_server             = 1;                 // SETTINGS_ENABLE_WEBTRANSPORT
     settings.es_max_webtransport_server_streams = 100;               // sane default; CLI config lands later
+    // No-op-CC approximation (P3 step 7; PLAN.md risk 1): the Rust gateway
+    // runs a no-op quinn congestion controller (nocc.rs: window() ==
+    // u64::MAX, never paces) so SRT owns all congestion control and
+    // reliability. lsquic has NO pluggable no-op controller - es_cc_algo
+    // offers only Cubic / BBRv1 / Adaptive (lsquic.h:750-758) - so this
+    // approximates: the pacer is switched OFF (es_pace_packets=0: packets
+    // leave as soon as cwnd allows, the "never paces" half of nocc) and the
+    // flow-control windows we advertise are made generous (16 MiB conn /
+    // 8 MiB stream) so QUIC FC never bottlenecks the session streams. The
+    // media path itself - WT datagrams - is exempt from flow control
+    // entirely (RFC 9221 s.4), leaving congestion control as the only
+    // limiter. Residual difference, documented in PLAN.md step 7: under
+    // real loss, cubic/BBR cwnd still bounds in-flight bytes (a true
+    // unlimited window does not exist); the e2e and concurrency tests
+    // measure sustained send throughput == app write rate on loopback,
+    // where cwnd never engages.
+    settings.es_pace_packets                     = 0;
+    settings.es_cfcw                             = 16 * 1024 * 1024;
+    settings.es_sfcw                             = 8 * 1024 * 1024;
+    settings.es_init_max_data                    = 16 * 1024 * 1024;
+    settings.es_init_max_stream_data_bidi_remote = 8 * 1024 * 1024;
     char err_buf[256];
     if (0 != lsquic_engine_check_settings(&settings, LSENG_HTTP_SERVER, err_buf, sizeof err_buf))
     {

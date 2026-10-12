@@ -169,6 +169,22 @@ paths.
      conf (`scripts/websrt-cpp.conf`).
   7. No-op-CC approximation: max pacing rate + large FC windows (documented
      behavioral difference vs Rust `nocc.rs`).
+     *Applied (G8):* the pacer is switched off (`es_pace_packets = 0` —
+     packets leave as soon as cwnd allows, the "never paces" half of
+     `nocc.rs`) and the advertised flow-control windows are generous
+     (conn 16 MiB, stream 8 MiB — `es_cfcw`/`es_sfcw` +
+     `es_init_max_data`/`es_init_max_stream_data_bidi_remote`) so QUIC FC
+     never bottlenecks the session streams. lsquic has **no no-op CC** —
+     `es_cc_algo` offers only Cubic/BBRv1/Adaptive (lsquic.h:750-758) and
+     no unlimited-window controller exists, and the fork's per-conn
+     `LSQCP_MAX_PACING_RATE` is a cap, not a floor (moot with the pacer
+     off). *Residual difference:* under real loss, cubic/BBR cwnd still
+     bounds in-flight bytes where the Rust gateway's QUIC never would;
+     WT datagrams (the media path) are exempt from flow control
+     (RFC 9221 s.4). Measured no-throttle evidence: sustained send
+     throughput equals app write rate on loopback (concurrency_test,
+     tests/concurrency_test.cpp — 50 viewers each receive the full
+     published byte count).
 
   *Gates:* unmodified browser pages play from the C++ gateway; Rust
   `wt_hs_probe` / `mock_obs` pass against it; 50-viewer concurrency
