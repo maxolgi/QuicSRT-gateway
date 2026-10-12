@@ -82,6 +82,15 @@ target_link_libraries(cert_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME cert_test COMMAND cert_test)
 set_tests_properties(cert_test PROPERTIES TIMEOUT 30)
 
+# End-to-end: libwebsrt's WTClient against the gateway's WtServer over
+# loopback (127.0.0.1:4434, ephemeral fallback inside the test).
+add_executable(wt_server_test tests/wt_server_test.cpp)
+target_compile_features(wt_server_test PRIVATE cxx_std_20)
+set_target_properties(wt_server_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(wt_server_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME wt_server_test COMMAND wt_server_test)
+set_tests_properties(wt_server_test PROPERTIES TIMEOUT 60)
+
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
 add_test(NAME gateway_selftest COMMAND websrt-gateway --selftest)
