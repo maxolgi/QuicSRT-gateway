@@ -1,16 +1,25 @@
 # websrt-gateway-cpp — Plan
 
-**Status: P3 implemented (unpushed); P4 pending.** Steps 1–6 of P3 are built
-(`./build.sh test`: 18/18 green) and the **browser gate passes end to end**:
-an unmodified WebSRT player page in Chrome 151 plays a live H.264+AAC stream
-from this gateway over WebTransport — SRT stats indistinguishable from the
-Rust gateway's (3.4k packets / 2.4 MB, 0 loss / 0 retransmit, 0.2 ms RTT),
-audio decoded, video rendered (237 frames, 0 dropped, 30 FPS) once the
-player's Codec tab is set to "Prefer Software" (this box has VAAPI whose
-output the decoder rejects with "Unsupported configuration" — identical on
-the Rust gateway, not a gateway defect). Still to do: the 50-viewer
-concurrency gate, the Rust-oracle bin runs (`wt_hs_probe`, `mock_obs`), and
-the parity matrix; then P4 (hot reload, stats page, webhooks, packaging, CI).
+**Status: P3 complete (unpushed); P4 pending.** All 7 steps of P3 are built
+(`./build.sh test`: 19/19 green) and **every P3 gate passes**:
+- *Browser gate*: an unmodified WebSRT player page in Chrome 151 plays a
+  live H.264+AAC stream end to end (video rendered once the player's Codec
+  tab is set to "Prefer Software" — this box's VAAPI output is rejected by
+  the decoder identically on the Rust gateway; not a gateway defect).
+- *Oracle bins*: `wt_hs_probe` PASS against the C++ gateway (skip-induction
+  handshake + 5852 TS continuity-counter advances, 0 gaps / 0.00% gap rate).
+  `mock_obs` is refused by BOTH ingests — it sends streamid=None and both
+  gateways require one — documented in docs/parity.md, not a C++ defect.
+- *50-viewer concurrency*: zero viewer lag — all 50 subscribers receive
+  exactly the published 5,132,400 bytes (hash-exact, clean EOF 50/50),
+  50 concurrent handshakes in ~0.6 s (no accept stall), ticker avg ~13 µs,
+  datagrams dropped 0; fd/RSS accounting clean (tests/concurrency_test.cpp).
+- *Parity matrix*: docs/parity.md — behavior parity measured row by row
+  against the running Rust gateway; two deliberate divergences (waiting
+  viewers, ingest chunking), two fixed oracle defects (accept stall,
+  404-reset race), one real gap (per-ingest-connection TS-continuity
+  counters not surfaced in our /health; the data exists in our /stats).
+Then P4 (hot reload, stats page, webhooks, packaging, CI).
 
 The plan below was recovered from libwebsrt's history (where the gateway was
 phases P3/P4) and was refined with the human before implementation started.
