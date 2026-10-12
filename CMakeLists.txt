@@ -36,6 +36,7 @@ add_library(websrtgw STATIC
     src/gateway/cert.cpp
     src/gateway/policy.cpp
     src/gateway/selftest.cpp
+    src/gateway/srt_initiator.cpp
     src/gateway/wt_server.cpp)
 target_compile_features(websrtgw PUBLIC cxx_std_20)
 set_target_properties(websrtgw PROPERTIES CXX_EXTENSIONS OFF)

@@ -815,6 +815,23 @@ WtServer::Session* WtServer::FindSessionByContext(const ConnCtx& cc, std::uint64
     return sit == sessions_.end() ? nullptr : sit->second;
 }
 
+std::chrono::microseconds WtServer::SmoothedRtt(WtSessionHandle handle) const
+{
+    // Loop thread only (see wt_server.h). lci_rtt is the connection's
+    // smoothed RTT in microseconds (lsquic_rtt_stats_get_srtt).
+    const auto it = sessions_.find(handle.Id());
+    if (it == sessions_.end() || it->second->conn == nullptr)
+    {
+        return std::chrono::microseconds{0};
+    }
+    struct lsquic_conn_info info;
+    if (0 != lsquic_conn_get_info(it->second->conn->conn, &info))
+    {
+        return std::chrono::microseconds{0};
+    }
+    return std::chrono::microseconds{info.lci_rtt};
+}
+
 // One :status response written on the session stream. With half_close this
 // is the 404/403/429 fix for the Rust gateway's 404-reset race: the header
 // block goes out with eos=0 plus an explicit flush, so it lands in

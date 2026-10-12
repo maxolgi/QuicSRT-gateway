@@ -173,6 +173,13 @@ public:
     [[nodiscard]] int DatagramsWritten() const { return datagrams_written_.load(); }
     [[nodiscard]] int DatagramsDropped() const { return datagrams_dropped_.load(); }
 
+    /// The session's QUIC smoothed RTT (lsquic_conn_get_info().lci_rtt,
+    /// microseconds) - the seed the per-session SRT initiator derives its
+    /// SRTO_INITIAL_RTT from (PLAN.md: RTT seeding via lci_rtt). 0 when
+    /// unmeasured or the handle is unknown. Loop thread only (called at
+    /// session accept).
+    [[nodiscard]] std::chrono::microseconds SmoothedRtt(WtSessionHandle handle) const;
+
 private:
     // ---- types known to the .cpp ----
     struct ConnCtx;
