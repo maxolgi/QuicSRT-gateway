@@ -28,6 +28,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <map>
 #include <memory>
@@ -131,16 +132,35 @@ public:
     static constexpr std::size_t kMaxDatagramSize    = 1184;
     static constexpr std::size_t kMaxQueuedDatagrams = 256;
 
+    /// ADMISSION CONTROL - consulted AFTER the SessionPolicy accepts and
+    /// BEFORE the 200 response is written, with the query already
+    /// decomposed into publish/subscribe names. Returning anything but
+    /// Accept answers the CONNECT with that decision's status (403 / 429 /
+    /// 404) INSTEAD of 200, so the client observes the refusal on the
+    /// response it is waiting for - the Rust oracle's pre-accept occupancy
+    /// check (gateway.rs:343-355, where the 403 precedes the WT handshake).
+    /// This is deliberately a separate seam from SessionPolicy: the policy
+    /// answers "may this caller address this name at all" (path, origin,
+    /// token, allowlist), admission answers "can this stream take it right
+    /// now" (first-wins occupancy, viewer cap) - a runtime property of the
+    /// gateway's live state, not a static rule. An empty callback admits
+    /// everything the policy accepted.
+    ///
+    /// Contract: loop thread (inline in the accept path), must not block.
+    using AdmissionCheck = std::function<Decision(const WtSessionStart&)>;
+
     /// `cert` supplies the TLS identity (SSL_CTX built once via
     /// ea_lookup_cert / ea_get_ssl_ctx - SNI is ignored, one identity).
     /// `policy` decides every incoming CONNECT (must not block). `listener`
-    /// must outlive the server. Supported teardown: Close() then destroy,
+    /// must outlive the server. `admission` (optional) is the pre-200
+    /// admission gate above. Supported teardown: Close() then destroy,
     /// or stop the loop and destroy in any order. Never destroy from inside
     /// a listener callback; never race the destructor with EventLoop::Stop.
     WtServer(websrt::EventLoop&                   loop,
              const CertProvider&                  cert,
              std::shared_ptr<const SessionPolicy> policy,
-             WtServerListener&                    listener);
+             WtServerListener&                    listener,
+             AdmissionCheck                       admission = {});
     ~WtServer() override;
 
     WtServer(const WtServer&)            = delete;
@@ -173,6 +193,17 @@ public:
     /// needs for SRT-side ends (health reaps, viewer EOF when the stream
     /// ends). No-op for an unknown/already-closed handle.
     void CloseSession(WtSessionHandle handle, const std::string& reason);
+
+    /// Thread-safe. Closes the whole QUIC connection carrying `handle`
+    /// (CONNECTION_CLOSE; every session on it terminates with
+    /// OnSessionClosed "connection closed"). This is what the Rust oracle
+    /// does when a stream ends - registry.rs:370-386 closes the viewer's
+    /// WT connection "which the browser surfaces as wtClosed so its
+    /// auto-reconnect can resubscribe" - and it is the close a WT client
+    /// observes as a session end: a session-stream FIN alone leaves the
+    /// connection (and a libwebsrt Subscriber's SRT session) running.
+    /// No-op for an unknown handle or an unknown/closing server.
+    void CloseConnection(WtSessionHandle handle, const std::string& reason);
 
     /// Evidence getters (thread-safe).
     [[nodiscard]] int SessionsAccepted() const { return sessions_accepted_.load(); }
@@ -207,6 +238,7 @@ private:
     void                   EnqueueDatagram(Session& session, std::vector<std::uint8_t> payload);
     void                   CloseOnLoop();
     void                   CloseSessionOnLoop(WtSessionHandle handle, const std::string& reason);
+    void                   CloseConnectionOnLoop(WtSessionHandle handle, const std::string& reason);
     void                   Teardown(); // idempotent; engine destroy outside callbacks
     [[nodiscard]] Session* FindSessionByContext(const ConnCtx& cc, std::uint64_t context_id) const;
     static void            Respond(lsquic_stream_t* stream, const char* status, bool half_close);
@@ -222,6 +254,7 @@ private:
     const CertProvider&                  cert_;
     std::shared_ptr<const SessionPolicy> policy_;
     WtServerListener&                    listener_;
+    AdmissionCheck                       admission_;
 
     // Bound state (loop thread or Bind's caller, before attach).
     bool           bound_         = false;

@@ -517,11 +517,13 @@ const struct lsquic_stream_if WtServerCallbacks::kStreamIf = {
 WtServer::WtServer(websrt::EventLoop&                   loop,
                    const CertProvider&                  cert,
                    std::shared_ptr<const SessionPolicy> policy,
-                   WtServerListener&                    listener)
+                   WtServerListener&                    listener,
+                   AdmissionCheck                       admission)
     : loop_(loop)
     , cert_(cert)
     , policy_(std::move(policy))
     , listener_(listener)
+    , admission_(std::move(admission))
 {
 }
 
@@ -777,6 +779,39 @@ void WtServer::CloseSession(WtSessionHandle handle, const std::string& reason)
     }
 }
 
+void WtServer::CloseConnection(WtSessionHandle handle, const std::string& reason)
+{
+    if (!bound_ || !handle.IsValid())
+    {
+        return;
+    }
+    if (loop_.OnLoopThread())
+    {
+        CloseConnectionOnLoop(handle, reason);
+    }
+    else
+    {
+        loop_.Post([this, handle, reason] { CloseConnectionOnLoop(handle, reason); });
+    }
+}
+
+void WtServer::CloseConnectionOnLoop(WtSessionHandle handle, const std::string& reason)
+{
+    if (closing_ || tearing_down_)
+    {
+        return;
+    }
+    const auto it = sessions_.find(handle.Id());
+    if (it == sessions_.end())
+    {
+        return;
+    }
+    Log("closing the connection of session %" PRIu64 ": %s", handle.Id(), reason.c_str());
+    // lsquic_conn_close only marks the connection closing; the sessions'
+    // terminal OnSessionClosed fires from OnConnClosed later.
+    lsquic_conn_close(it->second->conn->conn);
+}
+
 void WtServer::CloseSessionOnLoop(WtSessionHandle handle, const std::string& reason)
 {
     if (closing_ || tearing_down_)
@@ -993,17 +1028,10 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
         return;
     }
 
-    // Accepted: 200, flush, mark the WT session stream, expose the session.
-    Respond(session.stream, "200", false);
-    lsquic_stream_set_webtransport_session(session.stream);
-    session.established = true;
-    session.conn->session_handles.push_back(session.handle.Id());
-    session.conn->ctx_to_handle[session.stream_id >> 2] = session.handle.Id();
-    sessions_[session.handle.Id()]                      = &session;
-    sessions_accepted_.fetch_add(1);
     // Query decomposition exactly like the Rust oracle's accept loop
     // (gateway.rs:326-333): ?stream= then ?subscribe= names the stream to
-    // view; ?publish= names the stream to publish.
+    // view; ?publish= names the stream to publish. Done BEFORE the 200 so
+    // the admission gate below sees the same routing the session gets.
     std::optional<std::string> subscribe = ParseQueryParam(query, "stream");
     if (!subscribe.has_value())
     {
@@ -1015,6 +1043,36 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
         .publish_name   = ParseQueryParam(query, "publish"),
         .subscribe_name = std::move(subscribe),
     };
+
+    // Admission: the gateway's own runtime gate (first-wins occupancy,
+    // viewer cap), AFTER the policy and BEFORE the 200 - see
+    // WtServer::AdmissionCheck.
+    if (admission_)
+    {
+        const Decision admit = admission_(start);
+        if (admit != Decision::Accept)
+        {
+            sessions_rejected_.fetch_add(1);
+            Log("session rejected on admission on stream %" PRIu64 ": HTTP %s (path %.*s)",
+                session.stream_id,
+                StatusForDecision(admit),
+                static_cast<int>(path.size()),
+                path.data());
+            Respond(session.stream, StatusForDecision(admit), true);
+            sc.session = nullptr;
+            delete &session;
+            return;
+        }
+    }
+
+    // Accepted: 200, flush, mark the WT session stream, expose the session.
+    Respond(session.stream, "200", false);
+    lsquic_stream_set_webtransport_session(session.stream);
+    session.established = true;
+    session.conn->session_handles.push_back(session.handle.Id());
+    session.conn->ctx_to_handle[session.stream_id >> 2] = session.handle.Id();
+    sessions_[session.handle.Id()]                      = &session;
+    sessions_accepted_.fetch_add(1);
     Log("session %" PRIu64 " accepted on stream %" PRIu64 " (path %.*s)",
         session.handle.Id(),
         session.stream_id,

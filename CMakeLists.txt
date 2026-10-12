@@ -34,6 +34,7 @@ find_package(Threads REQUIRED)
 # CLI/config/ingest. Include dir exposes "gateway/..." headers.
 add_library(websrtgw STATIC
     src/gateway/cert.cpp
+    src/gateway/gateway.cpp
     src/gateway/policy.cpp
     src/gateway/selftest.cpp
     src/gateway/session_registry.cpp
