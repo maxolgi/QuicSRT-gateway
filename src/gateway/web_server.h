@@ -10,8 +10,11 @@
 // shapes are literally the same code in both:
 //   - the WEB server (cert set): HTTPS on web_port, serving web_root
 //     (/, /index.html, /stream.html, /cert-hash.js, /assets/*.wasm...).
-//     HTTPS is not optional here: WebTransport is only exposed to a
-//     secure context, so a plain-HTTP page could never connect.
+//     HTTPS is the default, but it is the CLI's choice ([server].web_tls):
+//     the closed-network deployment serves the page over plain HTTP, which
+//     is still a secure context for a browser on 127.0.0.1 or the LAN, and
+//     the WebTransport handshake stays TLS (pinned via cert-hash.js) either
+//     way.
 //   - the HEALTH server (no cert): plain HTTP on health_port, serving
 //     /health and /stats. This is the oracle's shape exactly - its
 //     health listener is axum::serve on a raw TcpListener (main.rs:490),
@@ -79,8 +82,9 @@ struct WebServerConfig
     std::string   bind = "127.0.0.1";
     std::uint16_t port = 0;
 
-    /// HTTPS with this identity (the web server role); nullptr = plain
-    /// HTTP (the health server role, the oracle's shape).
+    /// HTTPS with this identity (the web server role, [server].web_tls =
+    /// true); nullptr = plain HTTP (the health server role, the oracle's
+    /// shape, and the closed-network web server).
     const CertProvider* cert = nullptr;
 
     /// Directory the static files are read from. EMPTY = no static

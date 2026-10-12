@@ -64,6 +64,7 @@ int Run(const std::optional<std::string>& config_path)
     std::uint16_t                                   web_port    = 0;
     std::string                                     web_bind    = "127.0.0.1";
     std::optional<std::string>                      web_root;
+    bool                                            web_tls = true;
 
     if (config_path.has_value())
     {
@@ -96,6 +97,7 @@ int Run(const std::optional<std::string>& config_path)
         web_port                               = s.web_port;
         web_bind                               = s.web_bind;
         web_root                               = s.web_root;
+        web_tls                                = s.web_tls;
         std::printf("websrt-gateway: config: %zu stream(s), allowlist mode "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
                     "broadcast_capacity %u)\n",
@@ -259,7 +261,7 @@ int Run(const std::optional<std::string>& config_path)
     {
         web.emplace(websrt::gateway::WebServerConfig{.bind            = web_bind,
                                                      .port            = web_port,
-                                                     .cert            = &cert,
+                                                     .cert            = web_tls ? &cert : nullptr,
                                                      .web_root        = *web_root,
                                                      .gateway         = gateway_ptr,
                                                      .ingest          = ingest_ptr,
@@ -275,8 +277,24 @@ int Run(const std::optional<std::string>& config_path)
             gateway.Shutdown();
             return 1;
         }
-        std::printf(
-            "websrt-gateway: web server (HTTPS) on %s:%u, root %s\n", web_bind.c_str(), web->Port(), web_root->c_str());
+        if (web_tls)
+        {
+            std::printf("websrt-gateway: web server (HTTPS) on %s:%u, root %s\n",
+                        web_bind.c_str(),
+                        web->Port(),
+                        web_root->c_str());
+        }
+        else
+        {
+            // Closed-network mode: the page goes out over plain HTTP (a
+            // browser treats http://127.0.0.1 and LAN pages as secure
+            // contexts). Only the page port is affected - the WebTransport
+            // listener above is still TLS, pinned via cert-hash.js.
+            std::printf("websrt-gateway: web server (HTTP, closed-network) on %s:%u, root %s\n",
+                        web_bind.c_str(),
+                        web->Port(),
+                        web_root->c_str());
+        }
         std::fflush(stdout);
     }
 

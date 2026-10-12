@@ -64,7 +64,14 @@ struct ServerConfig
     std::string                health_bind        = "127.0.0.1";
     std::uint16_t              web_port           = 5173; ///< static web server, 0 disables
     std::string                web_bind           = "127.0.0.1";
-    std::optional<std::string> web_root;                    ///< served player root; unset => no static serving
+    std::optional<std::string> web_root; ///< served player root; unset => no static serving
+    /// TLS on the static web server. false serves the player page over
+    /// plain HTTP for the closed-network deployment, where a browser
+    /// treats http://127.0.0.1 and LAN pages as secure contexts anyway.
+    /// The WebTransport handshake is UNAFFECTED: it stays TLS and is
+    /// pinned through the cert-hash.js the boot writes into web_root
+    /// either way.
+    bool                       web_tls            = true;
     std::uint32_t              max_viewers        = 16;     ///< per-stream viewer cap
     std::uint32_t              broadcast_capacity = 32768;  ///< per-stream broadcaster ring depth in messages
     std::string                cert_mode          = "self"; ///< "self" | "mkcert"

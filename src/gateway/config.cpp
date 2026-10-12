@@ -143,6 +143,7 @@ ServerConfig ParseServer(Table& table)
                                                  "web_port",
                                                  "web_bind",
                                                  "web_root",
+                                                 "web_tls",
                                                  "max_viewers",
                                                  "broadcast_capacity",
                                                  "cert_mode",
@@ -177,6 +178,10 @@ ServerConfig ParseServer(Table& table)
         // log reports explicitly - it is not a startup error.
         s.web_port = 0;
     }
+    // Plain-HTTP page serving is the closed-network deployment mode: the
+    // WT listener keeps its TLS either way, so nothing about the handshake
+    // depends on this.
+    s.web_tls     = OptBool(table, "web_tls", "[server]", s.web_tls);
     s.max_viewers = static_cast<std::uint32_t>(OptInt(table, "max_viewers", "[server]", s.max_viewers, 1, 1'000'000));
     s.broadcast_capacity = static_cast<std::uint32_t>(
         OptInt(table, "broadcast_capacity", "[server]", s.broadcast_capacity, 1, 10'000'000));

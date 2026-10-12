@@ -16,7 +16,9 @@
 //      rows exist and the registry ticker is demonstrably advancing; the
 //      SRT/UDP ingest runs beside it, so its counters appear too.
 //   4. cert-hash.js as the boot writes it: the live hash in self mode and
-//      null in mkcert mode, served from the web root.
+//      null in mkcert mode, served from the web root - plus the
+//      closed-network mode ([server].web_tls = false), where the same tree
+//      goes out over plain HTTP and the page still pins the WT cert.
 //
 // Ports: ephemeral everywhere (the config asks for 0 and the test reads
 // Port() back), plus ChoosePort for the gateway and the ingest, so no
@@ -800,6 +802,37 @@ int main()
               "4: /health works over plain HTTP too");
         Check(plain.Exchange("/index.html", &response), "4: a static path on the health server");
         Check(response.status == 404, "4: the health server serves no static files");
+    }
+
+    // The closed-network web server ([server].web_tls = false): the same
+    // web_root without a cert - plain HTTP for the page, unchanged for the
+    // WT handshake.
+    {
+        WebServer   http_web(WebServerConfig{.bind            = "127.0.0.1",
+                                             .port            = 0,
+                                             .cert            = nullptr,
+                                             .web_root        = root.string(),
+                                             .gateway         = &gateway,
+                                             .ingest          = &ingest,
+                                             .max_connections = 16});
+        std::string http_error;
+        Check(http_web.Start(&http_error), "4: the plain-HTTP web server binds");
+        if (http_web.Running())
+        {
+            HttpClient   client;
+            HttpResponse response;
+            Check(client.Connect(http_web.Port(), false), "4: plain-HTTP connect to the web server");
+            Check(client.Exchange("/", &response), "4: GET / over plain HTTP answered");
+            Check(response.status == 200 && response.body == index_html,
+                  "4: the player page is served over plain HTTP");
+            Check(response.Header("x-content-type-options") == "nosniff", "4: nosniff over plain HTTP too");
+
+            Check(client.Exchange("/cert-hash.js", &response), "4: cert-hash.js over plain HTTP answered");
+            Check(response.status == 200 && response.body == "window.CERT_HASH = \"" + hash + "\";\nwindow.WT_PORT = " +
+                                                                 std::to_string(wt_port) + ";",
+                  "4: plain HTTP still publishes the live hash - the WT pinning path is unaffected");
+            http_web.Stop();
+        }
     }
 
     // ---- mkcert mode: the hash is null, the file says so ----
