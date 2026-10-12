@@ -23,6 +23,34 @@ own submodule).
    refinement: the in-process TS source API shape, how the CLI binary's
    ingest paths (SRT-UDP, WT publish) map onto it, and what stays binary-only
    (supervisord, web/dist serving policy).
+2. **Stream access control — SLS-inspired allowlist config** (agreed): the
+   gateway takes an optional `--config FILE` (TOML, parsed via vendored
+   toml++ single header) defining allowed streams; it must not "just accept
+   any caller". Decisions locked with the human:
+   - **No config → open** (accept-all, first-wins — Rust-oracle parity for
+     dev/tests) with a loud startup warning. **Config present → deny by
+     default** for everything the allowlist governs.
+   - Matching: exact names **and globs** (`"test-*"`).
+   - **Publishers gated**: WT `?publish=` and SRT-UDP ingest `streamid=`
+     must match a `[[stream]]` entry with `publish = true`, else 403 (WT) /
+     connection refused (ingest). **Viewers gated too**: `?stream=` must
+     match an entry with `subscribe = true`, else 404.
+   - **Waiting viewers**: a configured stream with no publisher yet accepts
+     subscriber sessions that wait (SRT initiator idles until data flows).
+     Deliberate divergence from the Rust oracle's 404 — documented; kills
+     clients' retry hacks. Waiting applies pre-first-publish; after
+     publisher end viewers close (parity) and may re-wait by reconnecting.
+   - Per-stream optional `token` (`?token=`, constant-time compare).
+     First-wins occupancy unchanged within the allowlist.
+   - Schema sketch: `[server]` (wt_port, srt_ingest_port, latency_ms…) and
+     `[[stream]]` (name, publish, subscribe, token). CLI flags override
+     file scalars.
+   - **Library/binary split** (composes with item 1): the core library gets
+     the `SessionPolicy` seam (ported from Rust `hooks.rs`) + built-in
+     `StreamAllowlistPolicy`; TOML parsing and `--config` live in the CLI
+     binary only — embedded consumers supply a policy in code.
+   - Deferred to P4: SIGHUP hot reload, HTTP stats page, on_connect/on_close
+     webhooks (SLS has these; not v1).
 
 ## Deliverable
 
@@ -75,6 +103,7 @@ paths.
 | Rust source | C++ equivalent |
 |---|---|
 | `gateway.rs` (accept loop, viewer cap, graceful drain) | `src/gateway/gateway.cpp` |
+| `hooks.rs` (SessionPolicy: path / origin / token, chainable — stream names NOT gated by default) | `src/gateway/policy.{h,cpp}` (core library): same seam + built-in `StreamAllowlistPolicy` (exact+glob, publish/subscribe roles, per-stream token); TOML `--config` parsing in the CLI binary — see refinement item 2 |
 | `session.rs` (recv_pump, LossInjector sim-loss, QUIC stats log) | `src/gateway/session.cpp` |
 | `registry.rs` (~2 ms ticker, tick concurrency 16, credit budget 256 msgs/tick, `drop_backlog` on first connect) | `src/gateway/registry.cpp` |
 | `stream_registry.rs` + `broadcaster.rs` (ring fanout, first-wins publish) | `src/gateway/stream_registry.cpp` + core ring |
@@ -111,22 +140,30 @@ paths.
   1. lsquic WT server accept + cert modes: self-signed ECDSA regenerated on
      every boot (never persisted), mkcert PEM mode, runtime `cert-hash.js`
      emission (hash for self-signed, null for mkcert).
-  2. Per-session SRT initiator (caller, skip-induction, cookie 0) + ~2 ms
+  2. Session policy seam: port `hooks.rs` (`SessionRequest` →
+     `Decision{Accept, 404, 403, 429}`, chainable) into the core library;
+     `StreamAllowlistPolicy` (exact+glob, roles, per-stream token); CLI
+     `--config` TOML (toml++ vendored), open-with-warning when absent —
+     refinement item 2.
+  3. Per-session SRT initiator (caller, skip-induction, cookie 0) + ~2 ms
      ticker: bounded tick concurrency (16), credit-based drain budget
      (256 msgs/tick), `drop_backlog` on first connected tick.
-  3. Broadcaster ring + stream registry: first-wins occupancy, challengers
-     rejected; TS bytes never modified.
-  4. SRT/UDP ingest via stock-mode libsrt: streamid required, first-wins,
-     latency-scaled buffers (8192–320000 pkts), FC window ≥ RCVBUF.
-  5. Web server: static `web/dist` serving + health endpoint; supervisord
+  4. Broadcaster ring + stream registry: first-wins occupancy, challengers
+     rejected; TS bytes never modified. Idle (waiting-viewer) broadcasters
+     for configured-but-unpublished streams.
+  5. SRT/UDP ingest via stock-mode libsrt: streamid required (allowlist
+     enforced), first-wins, latency-scaled buffers (8192–320000 pkts),
+     FC window ≥ RCVBUF.
+  6. Web server: static `web/dist` serving + health endpoint; supervisord
      conf (`scripts/websrt-cpp.conf`).
-  6. No-op-CC approximation: max pacing rate + large FC windows (documented
+  7. No-op-CC approximation: max pacing rate + large FC windows (documented
      behavioral difference vs Rust `nocc.rs`).
 
   *Gates:* unmodified browser pages play from the C++ gateway; Rust
   `wt_hs_probe` / `mock_obs` pass against it; 50-viewer concurrency
   (ticker avg < 5 ms, zero viewer lag); parity matrix vs the Rust gateway.
-- **P4 — Hardening.** Config-file support, packaging, docs, CI polish.
+- **P4 — Hardening.** SIGHUP config hot-reload, HTTP stats page,
+  on_connect/on_close webhooks, packaging, docs, CI polish.
 
 ## Rust-gateway defects the C++ gateway must not reproduce
 
