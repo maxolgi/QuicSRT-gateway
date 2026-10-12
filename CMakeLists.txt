@@ -27,7 +27,9 @@ find_package(Threads REQUIRED)
 # gateway owns - accept loop machinery, session policy seam, registry - so a
 # C++ app can link the gateway in-process. The CLI binary only wires
 # CLI/config/ingest. Include dir exposes "gateway/..." headers.
-add_library(websrtgw STATIC src/gateway/selftest.cpp)
+add_library(websrtgw STATIC
+    src/gateway/policy.cpp
+    src/gateway/selftest.cpp)
 target_compile_features(websrtgw PUBLIC cxx_std_20)
 set_target_properties(websrtgw PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(websrtgw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -38,6 +40,14 @@ add_executable(websrt-gateway src/main.cpp)
 target_link_libraries(websrt-gateway PRIVATE websrtgw)
 
 enable_testing()
+
+# Unit tests (plain-check style, libwebsrt tests/ pattern).
+add_executable(policy_test tests/policy_test.cpp)
+target_compile_features(policy_test PRIVATE cxx_std_20)
+set_target_properties(policy_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(policy_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME policy_test COMMAND policy_test)
+set_tests_properties(policy_test PROPERTIES TIMEOUT 30)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
