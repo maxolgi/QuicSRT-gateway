@@ -1,0 +1,495 @@
+#include "gateway/session_registry.h"
+
+#include <cinttypes>
+#include <cstdarg>
+#include <cstdio>
+#include <future>
+#include <utility>
+
+#include "core/event_loop.h"
+
+namespace websrt::gateway
+{
+
+namespace
+{
+
+// Stack buffer for the publisher pump: one released SRT message, bounded
+// by the negotiated payload ceiling (<= MSS - 44 <= 1456).
+constexpr int kRecvBufSize = 1500;
+
+// Largest single EnqueueForViewer payload accepted (int return of Send).
+constexpr std::size_t kMaxEnqueueSize = 1024ULL * 1024ULL;
+
+void Log(const char* fmt, ...)
+{
+    std::fputs("session-registry: ", stderr);
+    va_list ap;
+    va_start(ap, fmt);
+    std::vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    std::fputc('\n', stderr);
+}
+
+const char* StateName(SRT_SOCKSTATUS state)
+{
+    switch (state)
+    {
+    case SRTS_INIT:
+        return "init";
+    case SRTS_OPENED:
+        return "opened";
+    case SRTS_LISTENING:
+        return "listening";
+    case SRTS_CONNECTING:
+        return "connecting";
+    case SRTS_CONNECTED:
+        return "connected";
+    case SRTS_CLOSING:
+        return "closing";
+    case SRTS_CLOSED:
+        return "closed";
+    case SRTS_BROKEN:
+        return "broken";
+    case SRTS_NONEXIST:
+        return "nonexistent";
+    }
+    return "unknown";
+}
+
+} // namespace
+
+// All mutable per-session state. Loop-thread except where noted.
+struct RegistryEntry
+{
+    WtSessionHandle               handle;
+    std::string                   stream_name;
+    bool                          publisher_role = false;
+    std::unique_ptr<SrtInitiator> initiator;
+
+    // Viewer send backlog: EnqueueForViewer (any thread) vs the ticker's
+    // ServiceViewer (loop thread) - guarded, unlike everything else here.
+    std::mutex                            backlog_mutex;
+    std::deque<std::vector<std::uint8_t>> backlog;
+    std::uint64_t                         backlog_start_drops    = 0; // first-connect drop_backlog
+    std::uint64_t                         backlog_overflow_drops = 0; // drop-oldest at the bound
+
+    // Set on the first tick the initiator is observed connected; for a
+    // viewer it also clears the backlog (Rust viewer_primed/drop_backlog)
+    // and raises the consume-once marker G5 reads via PopBacklogDrop.
+    std::atomic<bool> connected_seen{false};
+    std::atomic<bool> backlog_drop_marked{false};
+
+    std::atomic<bool>          finished{false};
+    std::atomic<std::uint64_t> messages_sent{0};
+    std::atomic<std::uint64_t> messages_received{0};
+};
+
+SessionRegistry::SessionRegistry(websrt::EventLoop& loop, SessionRegistryListener& listener, RegistryConfig config)
+    : loop_(loop)
+    , listener_(listener)
+    , config_(config)
+{
+}
+
+SessionRegistry::~SessionRegistry()
+{
+    if (loop_.IsRunning() && !loop_.OnLoopThread())
+    {
+        // Mirror WtServer's destructor: drain on the loop thread, wait.
+        std::promise<void> done;
+        auto               future = done.get_future();
+        loop_.Post(
+            [this, &done]
+            {
+                CancelAndDrain();
+                done.set_value();
+            });
+        future.wait();
+    }
+    else
+    {
+        CancelAndDrain();
+    }
+}
+
+void SessionRegistry::AttachServer(WtServer& server)
+{
+    server_ = &server;
+}
+
+void SessionRegistry::Start()
+{
+    auto arm = [this] { timer_id_ = loop_.SetTimer(config_.tick_interval, true, [this] { Tick(); }); };
+    if (loop_.IsRunning() && !loop_.OnLoopThread())
+    {
+        loop_.Post(std::move(arm));
+    }
+    else
+    {
+        arm();
+    }
+}
+
+// ---- WtServerListener (loop thread) ----
+
+void SessionRegistry::OnWtSession(WtSessionHandle handle, const WtSessionStart& start)
+{
+    if (server_ == nullptr)
+    {
+        return;
+    }
+    const bool        publisher = start.publish_name.has_value();
+    const std::string name      = publisher ? *start.publish_name : start.subscribe_name.value_or(std::string{});
+    if (name.empty())
+    {
+        server_->CloseSession(handle, "session without a stream name");
+        return;
+    }
+
+    auto entry            = std::make_shared<RegistryEntry>();
+    entry->handle         = handle;
+    entry->stream_name    = name;
+    entry->publisher_role = publisher;
+    // RTT seeding: the WT session's QUIC smoothed RTT at accept, zero
+    // when unmeasured (the initiator then leaves srt's estimator alone).
+    entry->initiator =
+        std::make_unique<SrtInitiator>(*server_, handle, InitiatorConfig{}, server_->SmoothedRtt(handle));
+
+    std::string error;
+    if (!entry->initiator->Setup(&error))
+    {
+        Log("session %" PRIu64 " srt setup failed: %s", handle.Id(), error.c_str());
+        // The WT rejection path is TerminateSession via CloseSession -
+        // the same inline-safe pattern as the policy rejections.
+        server_->CloseSession(handle, "srt setup failed: " + error);
+        return;
+    }
+
+    {
+        const std::lock_guard<std::mutex> lock(entries_mutex_);
+        entries_[handle.Id()] = entry;
+    }
+    listener_.OnSessionStart(handle, start);
+}
+
+void SessionRegistry::OnSessionClosed(WtSessionHandle handle, const std::string& reason)
+{
+    const auto entry = Find(handle);
+    if (entry == nullptr)
+    {
+        return;
+    }
+    FinishEntry(entry, "wt session closed: " + reason);
+}
+
+void SessionRegistry::OnDatagram(WtSessionHandle handle, const std::uint8_t* data, std::size_t size)
+{
+    const auto entry = Find(handle);
+    if (entry == nullptr || entry->finished.load(std::memory_order_relaxed))
+    {
+        return;
+    }
+    entry->initiator->Inject(data, size);
+}
+
+// ---- ticker (loop thread) ----
+
+void SessionRegistry::Tick()
+{
+    const auto t0      = std::chrono::steady_clock::now();
+    const auto entries = Snapshot();
+    tick_count_.fetch_add(1, std::memory_order_relaxed);
+
+    // Rotating start: a viewer starved by the service cap this tick is
+    // first in line the next one.
+    const std::size_t n                = entries.size();
+    int               viewers_serviced = 0;
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const auto& entry = entries[(tick_cursor_ + i) % n];
+        if (entry->finished.load(std::memory_order_relaxed))
+        {
+            continue;
+        }
+
+        const SRT_SOCKSTATUS state = entry->initiator->ConnectionState();
+        if (state == SRTS_CONNECTED && !entry->connected_seen.exchange(true))
+        {
+            if (!entry->publisher_role)
+            {
+                // drop_backlog on the first connected tick: discard what
+                // accumulated during the handshake and mark the session
+                // for G5's ring-cursor positioning.
+                const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
+                entry->backlog_start_drops += entry->backlog.size();
+                entry->backlog.clear();
+                entry->backlog_drop_marked.store(true, std::memory_order_relaxed);
+            }
+        }
+
+        if (state == SRTS_CONNECTING)
+        {
+            continue; // SRTO_CONNTIMEO bounds the wait; health reaps failures
+        }
+        if (state != SRTS_CONNECTED)
+        {
+            FinishEntry(entry, std::string("srt connection ") + StateName(state));
+            continue;
+        }
+
+        if (entry->publisher_role)
+        {
+            PumpPublisher(entry);
+        }
+        else if (viewers_serviced < config_.sessions_serviced_per_tick && ServiceViewer(entry))
+        {
+            ++viewers_serviced;
+        }
+    }
+    tick_cursor_ = n > 0 ? (tick_cursor_ + 1) % n : 0;
+
+    const auto elapsed = std::chrono::steady_clock::now() - t0;
+    const auto us      = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+    if (static_cast<std::uint64_t>(us) > tick_max_us_.load(std::memory_order_relaxed))
+    {
+        tick_max_us_.store(static_cast<std::uint64_t>(us), std::memory_order_relaxed);
+    }
+    if (elapsed > std::chrono::milliseconds{2})
+    {
+        Log("tick exceeded the 2 ms budget: %lld us across %zu sessions", static_cast<long long>(us), n);
+    }
+}
+
+void SessionRegistry::PumpPublisher(const std::shared_ptr<RegistryEntry>& entry)
+{
+    char buf[kRecvBufSize];
+    for (int i = 0; i < config_.recv_budget_per_tick; ++i)
+    {
+        const int n = entry->initiator->ReceiveNext(buf, sizeof buf);
+        if (n > 0)
+        {
+            listener_.OnMedia(entry->stream_name, reinterpret_cast<std::uint8_t*>(buf), static_cast<std::size_t>(n));
+            entry->messages_received.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+        if (n == SrtInitiator::kRecvWouldBlock)
+        {
+            return;
+        }
+        if (n == SrtInitiator::kRecvClosed)
+        {
+            // The browser publisher ended the stream (SRT shutdown after
+            // its TSBPD window drained). Parity with the Rust oracle:
+            // the session ends; G5 releases the stream name from here.
+            FinishEntry(entry, "publisher closed the stream");
+            return;
+        }
+        FinishEntry(entry, "srt receive error");
+        return;
+    }
+}
+
+bool SessionRegistry::ServiceViewer(const std::shared_ptr<RegistryEntry>& entry)
+{
+    bool        sent_any = false;
+    bool        need_end = false;
+    std::string reason;
+    {
+        const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
+        auto                              budget = static_cast<std::size_t>(config_.send_credit_per_tick);
+        while (budget > 0 && !entry->backlog.empty())
+        {
+            const std::vector<std::uint8_t>& msg = entry->backlog.front();
+            const int                        r   = entry->initiator->Send(msg.data(), static_cast<int>(msg.size()));
+            if (r == static_cast<int>(msg.size()))
+            {
+                entry->backlog.pop_front();
+                --budget;
+                sent_any = true;
+                entry->messages_sent.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            if (r == SrtInitiator::kSendWouldBlock)
+            {
+                break; // socket not writable; retry next tick
+            }
+            if (r == SrtInitiator::kSendInvalidArg)
+            {
+                // Larger than the negotiated payload ceiling: drop it
+                // (G5's ring framing is expected to chunk to max_payload).
+                entry->backlog.pop_front();
+                entry->backlog_overflow_drops += 1;
+                continue;
+            }
+            reason   = r == SrtInitiator::kSendClosed ? "viewer srt connection closed" : "viewer srt send failed";
+            need_end = true;
+            break;
+        }
+    }
+    if (need_end)
+    {
+        FinishEntry(entry, reason);
+    }
+    return sent_any;
+}
+
+void SessionRegistry::FinishEntry(const std::shared_ptr<RegistryEntry>& entry, const std::string& reason)
+{
+    bool expected = false;
+    if (!entry->finished.compare_exchange_strong(expected, true))
+    {
+        return;
+    }
+
+    entry->initiator->Teardown();
+    {
+        const std::lock_guard<std::mutex> lock(entries_mutex_);
+        entries_.erase(entry->handle.Id());
+    }
+    Log("session %" PRIu64 " (%s) ended: %s", entry->handle.Id(), entry->stream_name.c_str(), reason.c_str());
+    listener_.OnSessionEnded(entry->handle, reason);
+    // When the WT session is still alive (an SRT-side end), close it so
+    // the browser observes the end; a no-op when it already closed (the
+    // OnSessionClosed path - WtSessionClosed fired first). Skipped during
+    // the registry's own shutdown: the WtServer may already be gone (the
+    // registry is constructed before the server that uses it as listener,
+    // so it destructs after).
+    if (server_ != nullptr && !shutting_down_)
+    {
+        server_->CloseSession(entry->handle, reason);
+    }
+}
+
+// ---- thread-safe entry points ----
+
+bool SessionRegistry::EnqueueForViewer(WtSessionHandle handle, const void* data, std::size_t len)
+{
+    if (data == nullptr || len == 0 || len > kMaxEnqueueSize)
+    {
+        return false;
+    }
+    const auto entry = Find(handle);
+    if (entry == nullptr || entry->publisher_role || entry->finished.load(std::memory_order_relaxed))
+    {
+        return false;
+    }
+    const auto*                       bytes = static_cast<const std::uint8_t*>(data);
+    const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
+    if (entry->backlog.size() >= config_.viewer_backlog_max)
+    {
+        entry->backlog.pop_front(); // live-stream semantics: drop the oldest
+        entry->backlog_overflow_drops += 1;
+    }
+    entry->backlog.emplace_back(bytes, bytes + len);
+    return true;
+}
+
+bool SessionRegistry::PopBacklogDrop(WtSessionHandle handle)
+{
+    const auto entry = Find(handle);
+    return entry != nullptr && entry->backlog_drop_marked.exchange(false, std::memory_order_relaxed);
+}
+
+void SessionRegistry::CloseSession(WtSessionHandle handle, const std::string& reason)
+{
+    if (loop_.OnLoopThread())
+    {
+        CloseSessionOnLoop(handle, reason);
+    }
+    else
+    {
+        loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
+    }
+}
+
+void SessionRegistry::CloseSessionOnLoop(WtSessionHandle handle, const std::string& reason)
+{
+    const auto entry = Find(handle);
+    if (entry == nullptr)
+    {
+        return;
+    }
+    FinishEntry(entry, reason);
+}
+
+bool SessionRegistry::SessionInfoFor(WtSessionHandle handle, SessionInfo* out) const
+{
+    if (out == nullptr)
+    {
+        return false;
+    }
+    const auto entry = Find(handle);
+    if (entry == nullptr)
+    {
+        return false;
+    }
+    out->stream_name            = entry->stream_name;
+    out->publisher_role         = entry->publisher_role;
+    out->connected              = entry->connected_seen.load(std::memory_order_relaxed);
+    out->max_payload            = entry->initiator->max_payload();
+    out->messages_sent          = entry->messages_sent.load(std::memory_order_relaxed);
+    out->messages_received      = entry->messages_received.load(std::memory_order_relaxed);
+    out->backlog_start_drops    = entry->backlog_start_drops;
+    out->backlog_overflow_drops = entry->backlog_overflow_drops;
+    {
+        const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
+        out->backlog_size = entry->backlog.size();
+    }
+    return true;
+}
+
+bool SessionRegistry::IsConnected(WtSessionHandle handle) const
+{
+    const auto entry = Find(handle);
+    return entry != nullptr && entry->connected_seen.load(std::memory_order_relaxed);
+}
+
+bool SessionRegistry::Stats(WtSessionHandle handle, SRT_TRACEBSTATS* out) const
+{
+    const auto entry = Find(handle);
+    return entry != nullptr && entry->initiator->StatsOut(out);
+}
+
+int SessionRegistry::ActiveSessionCount() const
+{
+    const std::lock_guard<std::mutex> lock(entries_mutex_);
+    return static_cast<int>(entries_.size());
+}
+
+void SessionRegistry::CancelAndDrain()
+{
+    shutting_down_ = true;
+    if (timer_id_ != websrt::EventLoop::kInvalidTimerId)
+    {
+        loop_.CancelTimer(timer_id_);
+        timer_id_ = websrt::EventLoop::kInvalidTimerId;
+    }
+    const auto entries = Snapshot();
+    for (const auto& entry : entries)
+    {
+        FinishEntry(entry, "registry shutdown");
+    }
+}
+
+std::shared_ptr<struct RegistryEntry> SessionRegistry::Find(WtSessionHandle handle) const
+{
+    const std::lock_guard<std::mutex> lock(entries_mutex_);
+    const auto                        it = entries_.find(handle.Id());
+    return it == entries_.end() ? nullptr : it->second;
+}
+
+std::vector<std::shared_ptr<struct RegistryEntry>> SessionRegistry::Snapshot() const
+{
+    const std::lock_guard<std::mutex>           lock(entries_mutex_);
+    std::vector<std::shared_ptr<RegistryEntry>> out;
+    out.reserve(entries_.size());
+    for (const auto& [_, entry] : entries_)
+    {
+        out.push_back(entry);
+    }
+    return out;
+}
+
+} // namespace websrt::gateway

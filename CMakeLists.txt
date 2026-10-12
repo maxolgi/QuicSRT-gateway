@@ -36,6 +36,7 @@ add_library(websrtgw STATIC
     src/gateway/cert.cpp
     src/gateway/policy.cpp
     src/gateway/selftest.cpp
+    src/gateway/session_registry.cpp
     src/gateway/srt_initiator.cpp
     src/gateway/wt_server.cpp)
 target_compile_features(websrtgw PUBLIC cxx_std_20)
@@ -91,6 +92,16 @@ set_target_properties(wt_server_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(wt_server_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME wt_server_test COMMAND wt_server_test)
 set_tests_properties(wt_server_test PROPERTIES TIMEOUT 60)
+
+# G4: per-session SRT initiator + registry ticker over WT loopback, driven
+# by libwebsrt's public Subscriber/Publisher (127.0.0.1:4435, ephemeral
+# fallback inside the test).
+add_executable(srt_initiator_test tests/srt_initiator_test.cpp)
+target_compile_features(srt_initiator_test PRIVATE cxx_std_20)
+set_target_properties(srt_initiator_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(srt_initiator_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME srt_initiator_test COMMAND srt_initiator_test)
+set_tests_properties(srt_initiator_test PROPERTIES TIMEOUT 60)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).

@@ -166,6 +166,14 @@ public:
     /// (posted, never inside an engine callback). No-op when not bound.
     void Close();
 
+    /// Thread-safe. Closes ONE session: write-side FIN on its session
+    /// stream (the RFC 9599 session termination the browser observes as
+    /// wtClosed; the connection stays up) and the terminal
+    /// OnSessionClosed fires. The per-session close the session registry
+    /// needs for SRT-side ends (health reaps, viewer EOF when the stream
+    /// ends). No-op for an unknown/already-closed handle.
+    void CloseSession(WtSessionHandle handle, const std::string& reason);
+
     /// Evidence getters (thread-safe).
     [[nodiscard]] int SessionsAccepted() const { return sessions_accepted_.load(); }
     [[nodiscard]] int SessionsRejected() const { return sessions_rejected_.load(); }
@@ -198,6 +206,7 @@ private:
     void                   HandleServerReadable();
     void                   EnqueueDatagram(Session& session, std::vector<std::uint8_t> payload);
     void                   CloseOnLoop();
+    void                   CloseSessionOnLoop(WtSessionHandle handle, const std::string& reason);
     void                   Teardown(); // idempotent; engine destroy outside callbacks
     [[nodiscard]] Session* FindSessionByContext(const ConnCtx& cc, std::uint64_t context_id) const;
     static void            Respond(lsquic_stream_t* stream, const char* status, bool half_close);

@@ -761,6 +761,40 @@ void WtServer::CloseOnLoop()
     }
 }
 
+void WtServer::CloseSession(WtSessionHandle handle, const std::string& reason)
+{
+    if (!bound_ || !handle.IsValid())
+    {
+        return;
+    }
+    if (loop_.OnLoopThread())
+    {
+        CloseSessionOnLoop(handle, reason);
+    }
+    else
+    {
+        loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
+    }
+}
+
+void WtServer::CloseSessionOnLoop(WtSessionHandle handle, const std::string& reason)
+{
+    if (closing_ || tearing_down_)
+    {
+        return;
+    }
+    const auto it = sessions_.find(handle.Id());
+    if (it == sessions_.end() || it->second->terminal)
+    {
+        return;
+    }
+    // TerminateSession nulls sc->session, fires OnSessionClosed and frees;
+    // callers past a listener callback must not touch the session after
+    // this (HandleSessionStreamRead's sc.session null check covers the
+    // accept-path rejection, the same pattern as the policy rejections).
+    TerminateSession(*it->second, reason);
+}
+
 void WtServer::Teardown()
 {
     if (tearing_down_)

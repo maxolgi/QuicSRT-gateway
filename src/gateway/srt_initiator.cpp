@@ -38,10 +38,14 @@ SrtInitiator::SrtInitiator(WtServer&                 server,
     , max_payload_(config.payload_size)
 {
     // SRTO_INITIAL_RTT bounds are 1..30000 ms; 0 = disabled (unmeasured
-    // RTT leaves srt's default estimator). Same clamp as libwebsrt's
+    // RTT leaves srt's default estimator). A measured-but-sub-millisecond
+    // RTT (loopback) clamps up to 1 ms - the same clamp as libwebsrt's
     // listener sessions.
-    const long long rtt_ms = initial_rtt.count() / 1000;
-    initial_rtt_ms_        = rtt_ms <= 0 ? 0 : static_cast<int>(std::clamp<long long>(rtt_ms, 1, 30000));
+    const long long rtt_us = initial_rtt.count();
+    if (rtt_us > 0)
+    {
+        initial_rtt_ms_ = static_cast<int>(std::clamp<long long>(rtt_us / 1000, 1, 30000));
+    }
 
     std::memset(&peer_label_, 0, sizeof peer_label_);
     peer_label_.sin_family      = AF_INET;
