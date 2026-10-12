@@ -28,6 +28,7 @@ find_package(Threads REQUIRED)
 # C++ app can link the gateway in-process. The CLI binary only wires
 # CLI/config/ingest. Include dir exposes "gateway/..." headers.
 add_library(websrtgw STATIC
+    src/gateway/cert.cpp
     src/gateway/policy.cpp
     src/gateway/selftest.cpp)
 target_compile_features(websrtgw PUBLIC cxx_std_20)
@@ -67,6 +68,13 @@ set_target_properties(config_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(config_test PRIVATE gateway_warnings websrtgw_config)
 add_test(NAME config_test COMMAND config_test)
 set_tests_properties(config_test PROPERTIES TIMEOUT 30)
+
+add_executable(cert_test tests/cert_test.cpp)
+target_compile_features(cert_test PRIVATE cxx_std_20)
+set_target_properties(cert_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(cert_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME cert_test COMMAND cert_test)
+set_tests_properties(cert_test PROPERTIES TIMEOUT 30)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
