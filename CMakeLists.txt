@@ -9,6 +9,11 @@ project(websrt-gateway
 # pulls in (srt fork, lsquic) build with their own settings.
 add_library(gateway_warnings INTERFACE)
 target_compile_options(gateway_warnings INTERFACE -Wall -Wextra -Wpedantic)
+# lsquic.h gates the server-side WebTransport API (lsquic_stream_set_
+# webtransport_session etc.) behind this define; libwebsrt compiles lsquic
+# with it but does not propagate it through websrt::wt-deps, so the gateway
+# - the one consumer hosting a server engine - defines it for its own TUs.
+target_compile_definitions(gateway_warnings INTERFACE LSQUIC_WEBTRANSPORT_SERVER_SUPPORT=1)
 
 # The gateway is a libwebsrt CONSUMER: it sees the library exclusively
 # through the exported interface targets (websrt::websrt, websrt::srt-deps,
@@ -30,7 +35,8 @@ find_package(Threads REQUIRED)
 add_library(websrtgw STATIC
     src/gateway/cert.cpp
     src/gateway/policy.cpp
-    src/gateway/selftest.cpp)
+    src/gateway/selftest.cpp
+    src/gateway/wt_server.cpp)
 target_compile_features(websrtgw PUBLIC cxx_std_20)
 set_target_properties(websrtgw PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(websrtgw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
