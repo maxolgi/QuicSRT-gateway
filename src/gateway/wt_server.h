@@ -70,9 +70,23 @@ public:
     constexpr bool operator==(const WtSessionHandle& other) const { return id_ == other.id_; }
     constexpr bool operator!=(const WtSessionHandle& other) const { return id_ != other.id_; }
 
+    /// A publisher identity that is NOT a WebTransport session: the SRT/UDP
+    /// ingest (P3 step 5) publishes without a WT session behind it, but the
+    /// registry holds publisher occupancy by handle so first-wins is shared
+    /// across both source kinds. `ordinal` distinguishes concurrent ingest
+    /// claims; the resulting ids live above every session id WtServer mints,
+    /// so the two spaces can never collide. No SessionRegistry entry backs
+    /// such a handle, so SessionInfoFor() reports "unknown" for it - which is
+    /// exactly right: an ingest source frames its own messages and is not
+    /// bound by a negotiated payload ceiling.
+    static WtSessionHandle ExternalSource(std::uint64_t ordinal) { return WtSessionHandle{kExternalIdBase + ordinal}; }
+
 private:
     friend class WtServer;
     friend struct WtServerCallbacks; // lsquic shims mint handles (wt_server.cpp)
+
+    static constexpr std::uint64_t kExternalIdBase = 1ULL << 62;
+
     explicit constexpr WtSessionHandle(std::uint64_t id)
         : id_(id)
     {

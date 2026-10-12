@@ -110,6 +110,23 @@ public:
     /// as a drop, never truncated).
     bool PublishMedia(const std::string& stream, const void* data, std::size_t len);
 
+    /// The ingest (SRT/UDP, P3 step 5) publisher claim: the SAME
+    /// StreamRegistry::PublishAttempt a WebTransport publisher session runs
+    /// (OnSessionStart), so first-wins occupancy is shared - an OBS publisher
+    /// and a WT publisher contend for one slot and neither can preempt the
+    /// other, and the waiting-viewer/EOF semantics are identical. The stream
+    /// is CREATED here when absent, which is the oracle's try_publish_ingester
+    /// (stream_registry.rs:89-106): a publisher never needs a viewer to
+    /// attach first. False when a live publisher holds the name - the caller
+    /// (SrtIngest) then refuses the connection.
+    /// Loop thread only (the ingest reaches it through an EventLoop Post).
+    bool ClaimIngestPublish(const std::string& stream);
+
+    /// The ingest publisher's connection ended: release the slot and close
+    /// the stream's viewers with a clean EOF - the publisher-end path
+    /// OnSessionEnded runs for a WT publisher. Loop thread only.
+    void ReleaseIngestPublish(const std::string& stream);
+
     // ---- evidence ----
 
     /// Every live stream's state, in name order (health/stats; G6/G7).
@@ -122,6 +139,10 @@ public:
     [[nodiscard]] int                      ActiveSessionCount() const { return registry_.ActiveSessionCount(); }
     [[nodiscard]] const SessionRegistry&   Sessions() const { return registry_; }
     [[nodiscard]] const WtServer&          Server() const { return server_; }
+    /// The gateway's event loop - the thread every loop-thread-only API
+    /// above belongs to. An off-loop source (the SRT/UDP ingest) Posts its
+    /// media here to reach PublishMedia.
+    websrt::EventLoop& Loop() { return loop_; }
     /// Longest registry tick so far, microseconds (the Rust tick monitor).
     [[nodiscard]] std::uint64_t TickMaxUs() const { return registry_.TickMaxUs(); }
     [[nodiscard]] std::uint64_t TickCount() const { return registry_.TickCount(); }
@@ -134,6 +155,11 @@ private:
 
     /// The pre-200 admission gate (WtServer::AdmissionCheck).
     [[nodiscard]] Decision Admit(const WtSessionStart& start) const;
+
+    /// Loop thread: the shared publisher-end path - release the stream's
+    /// publisher slot and close every attached viewer with a clean EOF
+    /// (on-session-end parity, see OnSessionEnded).
+    void EndPublish(const std::string& stream, const std::string& reason);
 
     /// Consume the drop_backlog markers of viewers whose handshake finished
     /// (positions their ring cursors at the live edge). Cheap: the pending
@@ -157,6 +183,7 @@ private:
     std::vector<WtSessionHandle>        pending_prime_; // awaiting drop_backlog
     websrt::EventLoop::TimerId          housekeeping_timer_ = websrt::EventLoop::kInvalidTimerId;
     std::size_t                         fanout_budget_      = 256;
+    std::uint64_t                       next_ingest_handle_ = 1;
     std::uint64_t                       media_unclaimed_    = 0;
     std::uint64_t                       media_oversize_     = 0;
     bool                                running_            = false;

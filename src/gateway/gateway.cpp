@@ -261,33 +261,38 @@ void Gateway::OnSessionEnded(WtSessionHandle handle, const std::string& reason)
 
     if (rec.publisher)
     {
-        // Parity: viewers see a clean EOF when the source ends. Two closes
-        // per viewer, in this order:
-        //   CloseConnection - the WT CONNECTION_CLOSE the Rust oracle sends
-        //     (registry.rs:370-386: "closes the WT connection, which the
-        //     browser surfaces as wtClosed so its auto-reconnect can
-        //     resubscribe"). It is also the only close a WT client sees as
-        //     a session end - a session-stream FIN leaves the connection
-        //     (and a libwebsrt Subscriber's SRT session) running.
-        //   CloseSession    - the registry teardown of that viewer's SRT
-        //     initiator, which also FINs the (now closing) session stream.
-        // The viewers' OnSessionEnded -> DetachViewer then drops the idle
-        // stream; a reconnecting viewer recreates it as waiting.
-        const std::vector<WtSessionHandle> closing = streams_.OnPublisherEnd(rec.stream);
-        for (const WtSessionHandle viewer : closing)
-        {
-            server_.CloseConnection(viewer, "stream ended");
-            registry_.CloseSession(viewer, "stream ended");
-        }
-        Log("stream '%s' publisher ended (%s); %zu viewer(s) closed",
-            rec.stream.c_str(),
-            reason.c_str(),
-            closing.size());
+        EndPublish(rec.stream, reason);
     }
     else
     {
         streams_.DetachViewer(rec.stream, handle);
     }
+}
+
+// ---- the shared publisher-end path (a WT publisher session AND the G6
+// ---- SRT/UDP ingest both land here) ----
+
+void Gateway::EndPublish(const std::string& stream, const std::string& reason)
+{
+    // Parity: viewers see a clean EOF when the source ends. Two closes per
+    // viewer, in this order:
+    //   CloseConnection - the WT CONNECTION_CLOSE the Rust oracle sends
+    //     (registry.rs:370-386: "closes the WT connection, which the browser
+    //     surfaces as wtClosed so its auto-reconnect can resubscribe"). It is
+    //     also the only close a WT client sees as a session end - a
+    //     session-stream FIN leaves the connection (and a libwebsrt
+    //     Subscriber's SRT session) running.
+    //   CloseSession    - the registry teardown of that viewer's SRT
+    //     initiator, which also FINs the (now closing) session stream.
+    // The viewers' OnSessionEnded -> DetachViewer then drops the idle
+    // stream; a reconnecting viewer recreates it as waiting.
+    const std::vector<WtSessionHandle> closing = streams_.OnPublisherEnd(stream);
+    for (const WtSessionHandle viewer : closing)
+    {
+        server_.CloseConnection(viewer, "stream ended");
+        registry_.CloseSession(viewer, "stream ended");
+    }
+    Log("stream '%s' publisher ended (%s); %zu viewer(s) closed", stream.c_str(), reason.c_str(), closing.size());
 }
 
 // ---- admission ----
@@ -341,6 +346,20 @@ bool Gateway::PublishMedia(const std::string& stream, const void* data, std::siz
     }
     OnMedia(stream, static_cast<const std::uint8_t*>(data), len);
     return true;
+}
+
+bool Gateway::ClaimIngestPublish(const std::string& stream)
+{
+    // The same claim a WT publisher session runs in OnSessionStart; the
+    // handle is synthetic because an ingest publisher has no WT session (see
+    // WtSessionHandle::ExternalSource). Occupancies are therefore shared:
+    // PublishAttempt refuses while either source kind holds the name.
+    return streams_.PublishAttempt(stream, WtSessionHandle::ExternalSource(next_ingest_handle_++)) == Decision::Accept;
+}
+
+void Gateway::ReleaseIngestPublish(const std::string& stream)
+{
+    EndPublish(stream, "ingest source ended");
 }
 
 std::vector<StreamStats> Gateway::SnapshotStreams() const
