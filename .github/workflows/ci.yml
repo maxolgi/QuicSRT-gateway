@@ -43,6 +43,19 @@ jobs:
           ./build.sh test 2>&1 | tee /tmp/ctest.log
           rc=${PIPESTATUS[0]}
           { echo "## ctest (exit $rc)"; echo '```'; tail -150 /tmp/ctest.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          # Annotations are the one channel readable without login:
+          # one ::error per failed test, carrying its output excerpt.
+          python3 /dev/stdin /tmp/ctest.log <<'PY' || true
+          import re, sys
+          log = open(sys.argv[1], errors='replace').read()
+          blocks = re.split(r'(?m)(?=^\s*\d+/\d+ Test #)', log)
+          for b in blocks:
+              m = re.match(r'\s*\d+/\d+ Test #\d+: (\S+)[ .]*\*\*\*(Failed|Timeout|Not Run)', b)
+              if not m:
+                  continue
+              excerpt = b.strip().replace('\r', '').replace('\n', ' | ')[-280:]
+              print(f'::error title={m.group(1)} ({m.group(2)})::{excerpt}')
+          PY
           exit $rc
 
   format:
