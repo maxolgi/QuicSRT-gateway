@@ -52,8 +52,6 @@ jobs:
           blocks = re.split(r'(?m)(?=^\s*\d+/\d+\s+Test\s+#\d+:)', log)
           hits = [b for b in blocks if pat.match(b)]
           nl = chr(10)
-          print(f'::error::ctest-debug: {len(log)} bytes, {log.count(nl)} lines, {len(blocks)} blocks, {len(hits)} failed')
-          print('::error::ctest-debug-tail: ' + log[-250:].replace(nl, ' | '))
           for b in hits:
               m = pat.match(b)
               excerpt = b.strip().replace(chr(13), '').replace(nl, ' | ')[-250:]

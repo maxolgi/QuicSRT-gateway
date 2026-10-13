@@ -224,7 +224,11 @@ std::vector<std::uint8_t> LoadPayload()
             return bytes;
         }
     }
-    constexpr std::size_t     kPatternBytes = std::size_t{64} * 1024;
+    // 58 x 1128: 188-aligned AND payload-sized. The TsChunker framing
+    // (ingest FRAMING note, libwebsrt publisher.h) carries a sub-188
+    // remainder until end-of-stream, so a fallback with a sub-188 tail
+    // (64 KiB leaves 112 bytes) can never arrive mid-stream.
+    constexpr std::size_t     kPatternBytes = std::size_t{58} * 1128;
     std::vector<std::uint8_t> bytes(kPatternBytes);
     std::uint32_t             state = 0x9E3779B9U;
     for (std::uint8_t& byte : bytes)
