@@ -19,7 +19,15 @@ target_compile_definitions(gateway_warnings INTERFACE LSQUIC_WEBTRANSPORT_SERVER
 # through the exported interface targets (websrt::websrt, websrt::srt-deps,
 # websrt::wt-deps) - never raw deps/ include paths. BoringSSL must already
 # be fetched + built inside the libwebsrt checkout (./build.sh setup).
+# The gateway is the only thing this project installs. The dependency
+# chain pulled in below (srt fork, lsquic) carries its own install()
+# rules; shadow the builtin with a no-op for the duration of its
+# add_subdirectory. Shadowing moves the builtin to _install, so this
+# project's own rules (further down) call it directly - cmake --install
+# then ships exactly the binary + the two conf files (P4.4).
 set(WEBSRT_ENABLE_WT ON CACHE BOOL "WebTransport support (the gateway requires it)")
+function(install)
+endfunction()
 add_subdirectory(deps/libwebsrt)
 
 if(NOT WEBSRT_ENABLE_WT)
@@ -65,6 +73,17 @@ target_link_libraries(websrtgw_config PUBLIC gateway_warnings websrtgw tomlplusp
 
 add_executable(websrt-gateway src/main.cpp)
 target_link_libraries(websrt-gateway PRIVATE websrtgw_config)
+
+# P4.4: cmake --install ships the binary, the example config and the
+# supervisord conf (GNUInstallDirs destinations; no CPack, no components).
+# With the default prefix (/usr/local) the binary lands exactly where
+# scripts/websrt-cpp.conf's command= expects it; the conf files land under
+# <prefix>/etc and are copied to their runtime homes at deployment (README,
+# "Deployment"). _install IS the install builtin - see the shadow above.
+include(GNUInstallDirs)
+_install(TARGETS websrt-gateway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+_install(FILES scripts/gateway.example.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/websrt-cpp)
+_install(FILES scripts/websrt-cpp.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/supervisor/conf.d)
 
 enable_testing()
 
