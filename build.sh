@@ -10,9 +10,6 @@ Commands:
     lib        Build the tree (libwebsrt + srt fork + lsquic)
     gateway    Build the websrt-gateway binary
     test       Run tests via ctest (release)
-
-Note: fresh clones fail at deps/libwebsrt until the GitHub repo exists -
-see AGENTS.md "Soft pin" for the sibling-clone workaround.
 EOF
 }
 

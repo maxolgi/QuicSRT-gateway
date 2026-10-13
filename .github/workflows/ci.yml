@@ -1,1 +1,53 @@
-../../scripts/ci.yml
+# CI for websrt-gateway-cpp. Real file, not a symlink: GitHub Actions
+# does not follow symlinks under .github/workflows (a symlinked workflow
+# yields a 0-job failed run).
+#
+# clang-tidy job deliberately omitted: reliable tidy needs
+# compile_commands.json for our targets, which requires the full
+# configure (submodules + BoringSSL fetch + build) - not cheap, and
+# header resolution without it is false-positive-prone - not reliable.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisites
+        # Derived from build.sh + CMakePresets.json: ninja (preset
+        # generator), go + nasm (BoringSSL fetch/build), zlib1g-dev
+        # (libwebsrt's find_package(ZLIB)). gcc 13 and cmake >= 3.24
+        # ship with ubuntu-24.04.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build golang-go nasm zlib1g-dev
+      - name: Setup (submodules, BoringSSL, CMake configure)
+        run: ./build.sh setup
+      - name: Build
+        run: |
+          ./build.sh lib
+          ./build.sh gateway
+      - name: Test
+        # Live-oracle tests (wt_echo, subscriber_test, publisher_test,
+        # c_api_test from deps/libwebsrt) self-skip via SKIP_RETURN_CODE
+        # 77 on runners without the Rust gateway.
+        run: ./build.sh test
+
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+      - name: clang-format check
+        # Our sources only - never deps/ (.clang-format at repo root).
+        run: find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror

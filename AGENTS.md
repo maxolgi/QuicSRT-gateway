@@ -72,7 +72,7 @@ oracle, **never modified from this repo**), `libwebsrt` (the client library
 `maxolgi/srt` (fork of Haivision/srt, consumed transitively via libwebsrt's
 `deps/srt` submodule).
 
-**Status: implemented — P3 and P4 complete (unpushed).** A working
+**Status: implemented — P3 and P4 complete, pushed to GitHub.** A working
 CLI-parity replacement of the Rust gateway: WT server with per-session SRT
 initiators, broadcaster fanout (first-wins occupancy), stock-mode SRT/UDP
 ingest, cert modes, `--config` TOML allowlist (exact+glob names,
@@ -81,8 +81,8 @@ but unpublished streams), SIGHUP hot-reload of the allowlist / viewer cap /
 log level / webhook settings, Accept-negotiated HTML `/stats` (JSON stays
 the default), on_connect/on_close webhooks (dedicated worker thread,
 bounded drop-counting queue), `cmake --install` packaging, and a CI
-workflow (first GitHub run pending repo pushes). Gate log: PLAN.md status
-header; parity vs the Rust oracle: docs/parity.md; open items: TODO.md.
+workflow. Gate log: PLAN.md status header; parity vs the Rust oracle:
+docs/parity.md; open items: TODO.md.
 
 ## Build commands
 
@@ -119,20 +119,10 @@ their own settings), BoringSSL fetched into `deps/libwebsrt/deps/boringssl`
 human pushes the submodule's repo — bump + commit anyway; resolution
 follows the push.
 
-### Soft pin: deps/libwebsrt
-
-`.gitmodules` points at `https://github.com/maxolgi/libwebsrt.git`, which
-does not exist yet (aspirational until the human creates and pushes it —
-the same soft-pin situation the srt fork had). Fresh clones therefore fail
-at `git submodule update --init --recursive` until then. Workaround: fetch
-from the sibling clone —
-
-    git -C deps/libwebsrt fetch /home/flibb/maxolgi/libwebsrt && \
-    git -C deps/libwebsrt checkout <commit>
-
-This checkout's `.git/config` carries the local URL, so `./build.sh setup`
-works here regardless. (libwebsrt's own `deps/srt` pin IS pushed — nested
-fetches work from fresh clones of libwebsrt once libwebsrt itself resolves.)
+`deps/libwebsrt` resolves from `https://github.com/maxolgi/libwebsrt.git`
+(pushed; its own `deps/srt` pin resolves from `maxolgi/srt`), so fresh
+clones and CI runners work with plain `git submodule update --init
+--recursive`.
 
 ## Consumer discipline
 
@@ -156,8 +146,9 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
   `session_registry.cpp` `stream_registry.h` `broadcaster.h` `policy.cpp`
   `config.cpp` `reload.cpp` `webhooks.cpp` `cert.cpp` `web_server.cpp`
   `ingest/srt_ingest.cpp` (+ `selftest.cpp`, the consumer gate)
-- `scripts/` — `gateway.example.conf`, `websrt-cpp.conf` (supervisord),
-  `ci.yml` (symlinked at `.github/workflows/ci.yml`)
+- `scripts/` — `gateway.example.conf`, `websrt-cpp.conf` (supervisord)
+- `.github/workflows/ci.yml` — CI (build+test, clang-format); real file —
+  GitHub Actions does not follow symlinks here
 - `docs/` — `parity.md` (row-by-row parity vs the Rust gateway)
 - `deps/libwebsrt/` — the submodule (carries the srt fork, lsquic, and the
   BoringSSL fetch)
