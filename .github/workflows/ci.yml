@@ -58,6 +58,9 @@ jobs:
               m = pat.match(b)
               excerpt = b.strip().replace(chr(13), '').replace(nl, ' | ')[-250:]
               print(f'::error::ctest {m.group(2).upper()}: {m.group(1)} -- {excerpt}')
+          fails = [ln.strip() for ln in log.split(nl) if 'FAIL:' in ln][:8]
+          for ln in fails:
+              print('::error::' + ln[:250])
           PY
           exit $rc
 
