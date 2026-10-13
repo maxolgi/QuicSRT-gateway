@@ -1,25 +1,32 @@
 # websrt-gateway-cpp — Plan
 
-**Status: P3 complete (unpushed); P4 pending.** All 7 steps of P3 are built
-(`./build.sh test`: 19/19 green) and **every P3 gate passes**:
-- *Browser gate*: an unmodified WebSRT player page in Chrome 151 plays a
-  live H.264+AAC stream end to end (video rendered once the player's Codec
-  tab is set to "Prefer Software" — this box's VAAPI output is rejected by
-  the decoder identically on the Rust gateway; not a gateway defect).
-- *Oracle bins*: `wt_hs_probe` PASS against the C++ gateway (skip-induction
-  handshake + 5852 TS continuity-counter advances, 0 gaps / 0.00% gap rate).
-  `mock_obs` is refused by BOTH ingests — it sends streamid=None and both
-  gateways require one — documented in docs/parity.md, not a C++ defect.
-- *50-viewer concurrency*: zero viewer lag — all 50 subscribers receive
-  exactly the published 5,132,400 bytes (hash-exact, clean EOF 50/50),
-  50 concurrent handshakes in ~0.6 s (no accept stall), ticker avg ~13 µs,
-  datagrams dropped 0; fd/RSS accounting clean (tests/concurrency_test.cpp).
-- *Parity matrix*: docs/parity.md — behavior parity measured row by row
-  against the running Rust gateway; two deliberate divergences (waiting
-  viewers, ingest chunking), two fixed oracle defects (accept stall,
-  404-reset race), one real gap (per-ingest-connection TS-continuity
-  counters not surfaced in our /health; the data exists in our /stats).
-Then P4 (hot reload, stats page, webhooks, packaging, CI).
+**Status: P4 complete (unpushed).** P3 delivered the gateway core (browser,
+oracle, 50-viewer concurrency, parity gates — measured results in the P3
+gate commits and docs/parity.md). P4 hardening landed, one commit per step:
+- *P4.1 SIGHUP hot-reload* (29660af): runtime swap of the stream allowlist,
+  viewer cap, log level (webhooks too once P4.3 landed); restart-required
+  settings keep running and are logged. reload_test green: stream removed →
+  new CONNECTs get 404 while the live viewer keeps streaming; invalid
+  config → old config stays, gateway healthy.
+- *P4.2 HTML /stats* (97f0939): Accept-negotiated `text/html` rendering of
+  the same live state; JSON stays the default, shape unchanged.
+- *P4.3 Webhooks* (9493168): on_connect/on_close POSTs from a dedicated
+  worker thread (never the event loop), bounded drop-counting queue,
+  retry-once, hot-swappable via SIGHUP. webhook_test green: delivery,
+  payload shape, ticker unchanged.
+- *P4.4 Packaging & docs* (283c378): `cmake --install` (binary, example
+  conf, supervisord conf), README quickstart/deployment, config comment
+  pass; fresh-clone simulation green incl. a run from the install prefix.
+- *P4.5 CI* (a30fa0e): one workflow — `scripts/ci.yml`, symlinked at
+  `.github/workflows/ci.yml` — with build+test and clang-format jobs;
+  live-oracle tests self-skip (SKIP_RETURN_CODE 77). Authored and locally
+  validated; first GitHub run deferred until the human pushes the repos
+  and the libwebsrt GitHub URL exists.
+- *P4 gates:* `./build.sh test` — 21 ctests: 17 pass + 4 pre-existing
+  live-oracle self-skips; hot-reload test green; webhook delivery test
+  green; fresh-clone build green (CI's green GitHub run deferred, above).
+
+Open items live in TODO.md.
 
 The plan below was recovered from libwebsrt's history (where the gateway was
 phases P3/P4) and was refined with the human before implementation started.
@@ -261,16 +268,9 @@ paths.
   *P4 gates:* all existing tests green (19 + new); hot-reload test green;
   webhook delivery test green; fresh-clone build green; CI green on GitHub.
 
-  **Carry-overs (not P4 blockers, record in the todo):** libwebsrt
-  `Publisher::End()` consumes its full 30 s ACK-drain budget under 50-viewer
-  fanout (client-side; EOF is clean everywhere — consider tuning the drain
-  budget in libwebsrt); per-ingest-connection TS-continuity counters
-  (Rust `cc_gaps`/`cc_checks`) not surfaced in our `/health` (data exists
-  in `/stats` — parity gap documented in docs/parity.md);
-  `send_failures` counter semantics differ from the oracle (documented);
-  the sim-loss P1 residual in libwebsrt's todo (needs a `--sim-loss` Rust
-  gateway rebuild); VAAPI machines need the player's "Prefer Software"
-  decode (documented in libwebsrt's todo).
+  **Carry-overs:** moved to TODO.md at P4 close-out — that file is the
+  single source of truth for open items (kept out of the submodule's own
+  `deps/libwebsrt/websrt-todo.md`).
 
 ## Rust-gateway defects the C++ gateway must not reproduce
 

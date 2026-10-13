@@ -72,17 +72,24 @@ oracle, **never modified from this repo**), `libwebsrt` (the client library
 `maxolgi/srt` (fork of Haivision/srt, consumed transitively via libwebsrt's
 `deps/srt` submodule).
 
-**Status: planned skeleton.** Nothing is implemented yet — `src/main.cpp`
-is the consumer gate over libwebsrt's exported targets. The phases and
-gates live in `PLAN.md` (refinement with the human pending before P3
-starts).
+**Status: implemented — P3 and P4 complete (unpushed).** A working
+CLI-parity replacement of the Rust gateway: WT server with per-session SRT
+initiators, broadcaster fanout (first-wins occupancy), stock-mode SRT/UDP
+ingest, cert modes, `--config` TOML allowlist (exact+glob names,
+publish/subscribe roles, per-stream tokens, waiting viewers for configured
+but unpublished streams), SIGHUP hot-reload of the allowlist / viewer cap /
+log level / webhook settings, Accept-negotiated HTML `/stats` (JSON stays
+the default), on_connect/on_close webhooks (dedicated worker thread,
+bounded drop-counting queue), `cmake --install` packaging, and a CI
+workflow (first GitHub run pending repo pushes). Gate log: PLAN.md status
+header; parity vs the Rust oracle: docs/parity.md; open items: TODO.md.
 
 ## Build commands
 
     ./build.sh setup     # one-time: submodule init (recursive), BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build the websrt-gateway binary
-    ./build.sh test      # ctest (gateway selftest for now)
+    ./build.sh test      # ctest (17 pass + 4 live-oracle self-skips without the Rust gateway)
 
 Raw form (what the script wraps — useful when debugging the script itself):
 
@@ -142,14 +149,19 @@ Never add raw `deps/libwebsrt/deps/...` include paths or link anything the
 interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 `src/main.cpp` here is the same contract at full scale.
 
-## Workspace structure (planned; PLAN.md is authoritative)
+## Workspace structure
 
-- `src/main.cpp` — consumer gate (now) → gateway entry point (P3)
-- `src/gateway/` — P3 layout: `gateway.cpp` `session.cpp` `registry.cpp`
-  `stream_registry.cpp` `cert.cpp` `web_server.cpp` `ingest/srt_ingest.cpp`
-- `scripts/` — `websrt-cpp.conf` (supervisord) at P3 step 5
+- `src/main.cpp` — gateway entry point (CLI/config wiring, SIGHUP install)
+- `src/gateway/` — `gateway.cpp` `wt_server.cpp` `srt_initiator.cpp`
+  `session_registry.cpp` `stream_registry.h` `broadcaster.h` `policy.cpp`
+  `config.cpp` `reload.cpp` `webhooks.cpp` `cert.cpp` `web_server.cpp`
+  `ingest/srt_ingest.cpp` (+ `selftest.cpp`, the consumer gate)
+- `scripts/` — `gateway.example.conf`, `websrt-cpp.conf` (supervisord),
+  `ci.yml` (symlinked at `.github/workflows/ci.yml`)
+- `docs/` — `parity.md` (row-by-row parity vs the Rust gateway)
 - `deps/libwebsrt/` — the submodule (carries the srt fork, lsquic, and the
   BoringSSL fetch)
+- `TODO.md` — open carry-overs (single source of truth)
 
 ## Runtime (production, recovered conventions)
 
@@ -182,10 +194,12 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 
 ## Testing
 
-- `./build.sh test` — the gateway selftest (consumer gate) for now.
-- P3 gates (PLAN.md): unmodified browser pages play from the C++ gateway;
-  Rust `wt_hs_probe` / `mock_obs` pass against it; 50-viewer concurrency
-  (ticker avg < 5 ms, zero viewer lag); parity matrix vs the Rust gateway.
+- `./build.sh test` — 21 ctests: 17 pass (unit + e2e); the 4 live-oracle
+  tests from deps/libwebsrt self-skip (SKIP_RETURN_CODE 77) without the
+  Rust gateway.
+- P3/P4 gates passed (browser, oracle bins, 50-viewer concurrency, parity,
+  hot-reload, webhooks, fresh-clone build) — log in PLAN.md's status
+  header; parity matrix in docs/parity.md.
 - Golden acceptance commands (must always work against the running gateway,
   via the libwebsrt-patched ffmpeg):
   `ffmpeg -f lavfi -i testsrc2 … -f mpegts websrt://gw:443?stream=test` and
