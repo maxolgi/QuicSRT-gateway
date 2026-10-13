@@ -63,6 +63,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Annotation probe
+        run: |
+          echo "::error::probe-echo-channel"
+          python3 - <<'PY' || true
+          print('::error::probe-python-heredoc-channel')
+          PY
       - name: Install clang-format
         # Pin to the version the tree is formatted with. ubuntu-24.04's
         # apt clang-format is 18, which formats `struct stat st{};`
