@@ -5,12 +5,6 @@ close-out so the plan stays the phase/gate record and this file is the
 single source of truth for open items. (The submodule tracks its own items
 in `deps/libwebsrt/websrt-todo.md` — never edit it from this repo.)
 
-- **First-green GitHub CI** — deferred until the human pushes the repos and
-  the libwebsrt GitHub URL exists (AGENTS.md "Soft pin"); then confirm one
-  green run of `ci.yml`. Fallback: if GitHub ever balks at the
-  `.github/workflows/ci.yml -> ../../scripts/ci.yml` symlink, replace the
-  symlink with a copy of `scripts/ci.yml` (keep the two in sync after
-  that).
 - **libwebsrt `Publisher::End()` drain budget** — consumes its full 30 s
   ACK-drain budget under 50-viewer fanout (client-side; EOF is clean
   everywhere — consider tuning the drain budget in libwebsrt).
