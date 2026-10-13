@@ -11,14 +11,22 @@ name: ci
 
 on:
   push:
+    branches: [master]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (same as WebSRT's build.yml).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install prerequisites
         # Derived from build.sh + CMakePresets.json: ninja (preset
         # generator), go + nasm (BoringSSL fetch/build), zlib1g-dev
@@ -61,12 +69,69 @@ jobs:
               print('::error::' + ln[:250])
           PY
           exit $rc
+      - name: Strip binary
+        run: strip build/release/websrt-gateway
+      - name: Upload gateway binary
+        # The binary is self-contained: BoringSSL, lsquic and the srt
+        # fork are linked statically - only system libs remain (ldd).
+        uses: actions/upload-artifact@v7
+        with:
+          name: websrt-gateway-cpp-linux-x64
+          path: build/release/websrt-gateway
+          if-no-files-found: error
+
+  # Publish a GitHub Release for every successful master build, like
+  # WebSRT's build.yml: master push -> dev-<short_sha> marked latest
+  # (must NOT be a prerelease - GitHub ignores make_latest on
+  # pre-releases, losing the Latest badge and /releases/latest);
+  # v* tag push -> stable release tagged <version>.
+  release:
+    needs: build-test
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: websrt-gateway-cpp-linux-x64
+          path: artifacts/websrt-gateway-cpp-linux-x64
+      - name: Stage release assets
+        run: |
+          mkdir -p release
+          cp artifacts/websrt-gateway-cpp-linux-x64/websrt-gateway release/websrt-gateway-cpp-linux
+          chmod +x release/websrt-gateway-cpp-linux
+      - name: Set release metadata
+        id: meta
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          short="${SHA:0:7}"
+          if [[ "$REF" == refs/tags/v* ]]; then
+            echo "tag=${REF#refs/tags/}"    >> "$GITHUB_OUTPUT"
+            echo "name=${REF#refs/tags/}"   >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev-${short}"         >> "$GITHUB_OUTPUT"
+            echo "name=Dev ${short}"        >> "$GITHUB_OUTPUT"
+          fi
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          prerelease: false
+          make_latest: true
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
 
   format:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install clang-format
         # Pin to the version the tree is formatted with. ubuntu-24.04's
         # apt clang-format is 18, which formats `struct stat st{};`

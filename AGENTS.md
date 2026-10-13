@@ -147,8 +147,9 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
   `config.cpp` `reload.cpp` `webhooks.cpp` `cert.cpp` `web_server.cpp`
   `ingest/srt_ingest.cpp` (+ `selftest.cpp`, the consumer gate)
 - `scripts/` — `gateway.example.conf`, `websrt-cpp.conf` (supervisord)
-- `.github/workflows/ci.yml` — CI (build+test, clang-format); real file —
-  GitHub Actions does not follow symlinks here
+- `.github/workflows/ci.yml` — CI (build+test, clang-format, binary
+  artifact + GitHub Release: `dev-<sha>` on master, `v*` tags stable);
+  real file — GitHub Actions does not follow symlinks here
 - `docs/` — `parity.md` (row-by-row parity vs the Rust gateway)
 - `deps/libwebsrt/` — the submodule (carries the srt fork, lsquic, and the
   BoringSSL fetch)
