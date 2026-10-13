@@ -48,13 +48,14 @@ jobs:
           python3 - <<'PY' || true
           import re
           log = open('/tmp/ctest.log', errors='replace').read()
-          blocks = re.split(r'(?m)(?=^\s*\d+/\d+ Test #)', log)
-          hits = [b for b in blocks if re.match(r'\s*\d+/\d+ Test #\d+: (\S+)[ .]*\*\*\*(Failed|Timeout|Not Run)', b)]
+          pat = re.compile(r'\s*\d+/\d+\s+Test\s+#\d+: (\S+)[ .]*\*\*\*(Failed|Timeout|Not Run)')
+          blocks = re.split(r'(?m)(?=^\s*\d+/\d+\s+Test\s+#\d+:)', log)
+          hits = [b for b in blocks if pat.match(b)]
           nl = chr(10)
           print(f'::error::ctest-debug: {len(log)} bytes, {log.count(nl)} lines, {len(blocks)} blocks, {len(hits)} failed')
-          print('::error::ctest-debug-head: ' + log[:250].replace(nl, ' | '))
+          print('::error::ctest-debug-tail: ' + log[-250:].replace(nl, ' | '))
           for b in hits:
-              m = re.match(r'\s*\d+/\d+ Test #\d+: (\S+)[ .]*\*\*\*(Failed|Timeout|Not Run)', b)
+              m = pat.match(b)
               excerpt = b.strip().replace(chr(13), '').replace(nl, ' | ')[-250:]
               print(f'::error::ctest {m.group(2).upper()}: {m.group(1)} -- {excerpt}')
           PY
