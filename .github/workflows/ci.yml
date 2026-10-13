@@ -45,9 +45,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install clang-format
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
+        # Pin to the version the tree is formatted with. ubuntu-24.04's
+        # apt clang-format is 18, which formats `struct stat st{};`
+        # differently from 19.
+        run: pip install clang-format==19.1.7
       - name: clang-format check
         # Our sources only - never deps/ (.clang-format at repo root).
         run: find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
