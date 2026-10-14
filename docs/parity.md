@@ -32,6 +32,7 @@ Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 | Ingest streamid required | connection refused without streamid (srt_listener.rs:92-95) | same (rejected_no_streamid counter + refusal) | **Parity** (mock_obs probe, below) |
 | TLS / SNI | wtransport serves one identity; accepts IP-literal (no-SNI) clients | one SSL_CTX via `ea_get_ssl_ctx` only — SNI ignored, no-SNI clients (IP literals) complete; mkcert/PEM mode + cert-hash.js contract identical | **Parity** (browser gate passed on both; wt_hs_probe on 127.0.0.1) |
 | cert-hash.js contract | `CERT_HASH` (self) / `null` (mkcert) + `WT_PORT` | same runtime emission (cert.h) | **Parity** |
+| Player serving | web/dist embedded at compile time (rust-embed), cert-hash.js served dynamically | web/dist embedded at compile time (CMake-generated table from the WebSRT release dist), cert-hash.js served dynamically; optional `web_root` disk override (the oracle's own `--web-root`) | **Parity** |
 
 ## /health shape diff (key-by-key, equivalent live `browsertest` stream + one WT viewer on each)
 

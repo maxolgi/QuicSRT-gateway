@@ -10,6 +10,9 @@ deps/boringssl/
 # Runtime-generated
 cert-hash.js
 
+# Fetched player dist (build.sh setup/web-dist) - embedded at compile time
+web/dist/
+
 # Tooling artifacts
 compile_commands.json
 .cache/

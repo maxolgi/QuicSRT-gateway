@@ -47,6 +47,7 @@
 
 #include <openssl/ssl.h>
 
+#include "gateway/embedded_player.h"
 #include "gateway/gateway.h"
 #include "gateway/ingest/srt_ingest.h"
 
@@ -794,9 +795,18 @@ bool WebServer::Handle(Wire&              wire,
         return true;
     }
 
-    if (root_.empty())
+    if (!config_.cert_hash_js.empty() && path == "/cert-hash.js")
     {
-        SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
+        // Dynamic on purpose (the oracle serves it the same way): in self
+        // mode the pinned hash changes every boot, so the file must never
+        // be cached across restarts.
+        SendSimple(wire,
+                   200,
+                   ReasonPhrase(200),
+                   "text/javascript; charset=utf-8",
+                   config_.cert_hash_js,
+                   head,
+                   {{"Cache-Control", "no-store"}});
         return true;
     }
 
@@ -808,72 +818,107 @@ bool WebServer::Handle(Wire&              wire,
         relative += "index.html";
     }
 
-    char resolved[PATH_MAX];
-    if (realpath((root_ + relative).c_str(), resolved) == nullptr)
+    if (config_.serve_player && !root_.empty())
     {
-        SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
-        return true;
-    }
-    std::string full = resolved;
-    struct stat st{};
-    if (::stat(full.c_str(), &st) != 0)
-    {
-        SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
-        return true;
-    }
-    if (S_ISDIR(st.st_mode))
-    {
-        const std::string index = full + "/index.html";
-        if (realpath(index.c_str(), resolved) == nullptr)
+        // Disk override (web_root): canonicalized, contained, mtime+size
+        // ETag'd file serving.
+        char resolved[PATH_MAX];
+        if (realpath((root_ + relative).c_str(), resolved) == nullptr)
         {
             SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
             return true;
         }
-        full = resolved;
+        std::string full = resolved;
+        struct stat st{};
         if (::stat(full.c_str(), &st) != 0)
         {
             SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
             return true;
         }
-    }
+        if (S_ISDIR(st.st_mode))
+        {
+            const std::string index = full + "/index.html";
+            if (realpath(index.c_str(), resolved) == nullptr)
+            {
+                SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
+                return true;
+            }
+            full = resolved;
+            if (::stat(full.c_str(), &st) != 0)
+            {
+                SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
+                return true;
+            }
+        }
 
-    // The containment check, AFTER canonicalization: this is what rejects
-    // "../..", an encoded traversal and any symlink pointing outside the
-    // root, because realpath has already resolved all three.
-    if (full != root_ && full.compare(0, root_.size() + 1, root_ + "/") != 0)
-    {
-        SendSimple(wire, 403, ReasonPhrase(403), "text/plain; charset=utf-8", "forbidden\n", head);
+        // The containment check, AFTER canonicalization: this is what rejects
+        // "../..", an encoded traversal and any symlink pointing outside the
+        // root, because realpath has already resolved all three.
+        if (full != root_ && full.compare(0, root_.size() + 1, root_ + "/") != 0)
+        {
+            SendSimple(wire, 403, ReasonPhrase(403), "text/plain; charset=utf-8", "forbidden\n", head);
+            return true;
+        }
+
+        std::ifstream in(full, std::ios::in | std::ios::binary);
+        if (!in.is_open())
+        {
+            SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
+            return true;
+        }
+        const std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (body.size() > static_cast<std::size_t>(kMaxFileBytes))
+        {
+            SendSimple(wire, 413, ReasonPhrase(413), "text/plain; charset=utf-8", "asset too large\n", head);
+            return true;
+        }
+
+        // ETag over size and mtime seconds: changes whenever the file is
+        // rewritten or replaced, and unlike Last-Modified it cannot be
+        // fooled by a sub-second edit (or by a clock skew on a deployment
+        // that only rewrote the mtime).
+        char etag[64];
+        std::snprintf(etag,
+                      sizeof etag,
+                      "\"%lld-%lld\"",
+                      static_cast<long long>(st.st_mtime),
+                      static_cast<long long>(st.st_size));
+
+        if (!if_none_match.empty() && if_none_match.find(etag) != std::string::npos)
+        {
+            SendSimple(wire, 304, ReasonPhrase(304), ContentType(full), {}, head, {{"ETag", etag}});
+            return true;
+        }
+
+        SendSimple(wire, 200, ReasonPhrase(200), ContentType(full), body, head, {{"ETag", etag}});
         return true;
     }
 
-    std::ifstream in(full, std::ios::in | std::ios::binary);
-    if (!in.is_open())
+    // Embedded player (the default when serve_player is set and no
+    // web_root override is, rust-embed parity): the table is immutable
+    // for the life of the binary, so the ETag is just the size - it
+    // changes exactly when the binary does.
+    if (config_.serve_player)
     {
-        SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
-        return true;
-    }
-    const std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (body.size() > static_cast<std::size_t>(kMaxFileBytes))
-    {
-        SendSimple(wire, 413, ReasonPhrase(413), "text/plain; charset=utf-8", "asset too large\n", head);
-        return true;
-    }
-
-    // ETag over size and mtime seconds: changes whenever the file is
-    // rewritten or replaced, and unlike Last-Modified it cannot be
-    // fooled by a sub-second edit (or by a clock skew on a deployment
-    // that only rewrote the mtime).
-    char etag[64];
-    std::snprintf(
-        etag, sizeof etag, "\"%lld-%lld\"", static_cast<long long>(st.st_mtime), static_cast<long long>(st.st_size));
-
-    if (!if_none_match.empty() && if_none_match.find(etag) != std::string::npos)
-    {
-        SendSimple(wire, 304, ReasonPhrase(304), ContentType(full), {}, head, {{"ETag", etag}});
-        return true;
+        for (const EmbeddedAsset& asset : EmbeddedPlayerFiles())
+        {
+            if (asset.path != relative)
+            {
+                continue;
+            }
+            const std::string body(asset.bytes);
+            const std::string etag = "\"bin-" + std::to_string(body.size()) + "\"";
+            if (!if_none_match.empty() && if_none_match.find(etag) != std::string::npos)
+            {
+                SendSimple(wire, 304, ReasonPhrase(304), ContentType(relative), {}, head, {{"ETag", etag}});
+                return true;
+            }
+            SendSimple(wire, 200, ReasonPhrase(200), ContentType(relative), body, head, {{"ETag", etag}});
+            return true;
+        }
     }
 
-    SendSimple(wire, 200, ReasonPhrase(200), ContentType(full), body, head, {{"ETag", etag}});
+    SendSimple(wire, 404, ReasonPhrase(404), "text/plain; charset=utf-8", "not found\n", head);
     return true;
 }
 

@@ -161,10 +161,10 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
                                         std::make_shared<websrt::gateway::AcceptAll>());
         std::printf("websrt-gateway: config: 0 stream(s), open mode\n");
-        // web_port/health_port stay 0 without a config file: there is no
-        // web_root to serve and no reason to expose metrics. Both are
-        // [server] keys (defaults 5173 / 0, and web_port is forced to 0
-        // whenever web_root is absent - the root is what turns it on).
+        // web_port/health_port stay 0 without a config file: no reason to
+        // serve the player or expose metrics in open mode. Both are
+        // [server] keys (defaults 5173 / 0; with a config, web_port alone
+        // turns the web server on - the player is embedded in the binary).
     }
     std::fflush(stdout);
 
@@ -255,30 +255,11 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         std::fflush(stdout);
     }
 
-    // cert-hash.js, written into the served root BEFORE the web server
-    // starts, exactly as the Rust gateway does (main.rs:361-400): the page
-    // reads window.CERT_HASH + window.WT_PORT from it, and in self mode the
-    // hash changes every boot, so viewers must reload the page after a
-    // restart. Regenerated unconditionally - the file is runtime state,
-    // never committed, and the certificates themselves are never written.
-    if (web_port != 0 && web_root.has_value())
-    {
-        const std::string hash_path = *web_root + "/cert-hash.js";
-        try
-        {
-            cert.WriteCertHashJs(hash_path, wt_bind_port);
-        }
-        catch (const websrt::gateway::CertError& e)
-        {
-            std::fprintf(stderr, "websrt-gateway: %s\n", e.what());
-            gateway.Shutdown();
-            return 1;
-        }
-        std::printf("websrt-gateway: cert-hash.js -> %s (%s)\n",
-                    hash_path.c_str(),
-                    cert.PinnedHash() ? "pinned hash" : "null (PKI)");
-        std::fflush(stdout);
-    }
+    // cert-hash.js, served DYNAMICALLY by the web server (never written
+    // to disk, the oracle's shape): the page reads window.CERT_HASH +
+    // window.WT_PORT from it, and in self mode the hash changes every
+    // boot, so viewers must reload the page after a restart.
+    const std::string cert_hash_js = cert.BuildCertHashJs(wt_bind_port);
 
     // The web server (the player) and the health endpoint. Both borrow the
     // gateway and the ingest, so they are torn down BEFORE gateway.Shutdown():
@@ -288,12 +269,16 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     const websrt::gateway::Gateway*           gateway_ptr = &gateway;
     const websrt::gateway::SrtIngest*         ingest_ptr  = ingest.has_value() ? &*ingest : nullptr;
 
-    if (web_port != 0 && web_root.has_value())
+    if (web_port != 0)
     {
+        // web_root is an override; unset serves the embedded player.
+        const std::string served_root = web_root.value_or(std::string("<embedded player>"));
         web.emplace(websrt::gateway::WebServerConfig{.bind            = web_bind,
                                                      .port            = web_port,
                                                      .cert            = web_tls ? &cert : nullptr,
-                                                     .web_root        = *web_root,
+                                                     .web_root        = web_root.value_or(std::string()),
+                                                     .cert_hash_js    = cert_hash_js,
+                                                     .serve_player    = true,
                                                      .gateway         = gateway_ptr,
                                                      .ingest          = ingest_ptr,
                                                      .max_connections = 16});
@@ -308,12 +293,14 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             gateway.Shutdown();
             return 1;
         }
+        std::printf("websrt-gateway: cert-hash.js served at /cert-hash.js (%s)\n",
+                    cert.PinnedHash() ? "pinned hash" : "null (PKI)");
         if (web_tls)
         {
             std::printf("websrt-gateway: web server (HTTPS) on %s:%u, root %s\n",
                         web_bind.c_str(),
                         web->Port(),
-                        web_root->c_str());
+                        served_root.c_str());
         }
         else
         {
@@ -324,7 +311,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             std::printf("websrt-gateway: web server (HTTP, closed-network) on %s:%u, root %s\n",
                         web_bind.c_str(),
                         web->Port(),
-                        web_root->c_str());
+                        served_root.c_str());
         }
         std::fflush(stdout);
     }

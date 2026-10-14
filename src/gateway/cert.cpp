@@ -339,26 +339,14 @@ std::string CertProvider::Sha256Hex() const
     return HexLower(digest, sizeof(digest));
 }
 
-void CertProvider::WriteCertHashJs(const std::string& path, std::uint16_t wt_port) const
+std::string CertProvider::BuildCertHashJs(std::uint16_t wt_port) const
 {
     // Byte-for-byte the Rust gateway's format (main.rs:385-395): hash form
     // for self mode, null form for mkcert, single \n between the two
     // statements, NO trailing newline.
     const std::string js =
         PinnedHash() ? "window.CERT_HASH = \"" + Sha256Hex() + "\";\n" : std::string("window.CERT_HASH = null;\n");
-    const std::string content = js + "window.WT_PORT = " + std::to_string(wt_port) + ";";
-
-    std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!out.is_open())
-    {
-        throw CertError("failed to write cert-hash.js to '" + path + "'");
-    }
-    out.write(content.data(), static_cast<std::streamsize>(content.size()));
-    out.close();
-    if (!out)
-    {
-        throw CertError("failed to write cert-hash.js to '" + path + "'");
-    }
+    return js + "window.WT_PORT = " + std::to_string(wt_port) + ";";
 }
 
 SSL_CTX* NewServerSslCtx(const CertProvider& cert)

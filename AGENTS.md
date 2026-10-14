@@ -86,10 +86,11 @@ docs/parity.md; open items: TODO.md.
 
 ## Build commands
 
-    ./build.sh setup     # one-time: submodule init (recursive), BoringSSL fetch+build, cmake configure
+    ./build.sh setup     # one-time: submodule init (recursive), player dist fetch, BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build the websrt-gateway binary
     ./build.sh test      # ctest (17 pass + 4 live-oracle self-skips without the Rust gateway)
+    ./build.sh web-dist  # refresh the embedded player (latest WebSRT release) + re-configure
 
 Raw form (what the script wraps — useful when debugging the script itself):
 
@@ -162,9 +163,10 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 - Logs: `/var/log/websrt-cpp/`.
 - Restart after rebuild: `sudo supervisorctl restart websrt-cpp`
   (production only).
-- On boot the gateway writes `cert-hash.js` next to the served web assets
-  (hash for self-signed, null for mkcert). Runtime-generated — gitignored,
-  never committed.
+- The player is EMBEDDED in the binary (web/dist, fetched from the WebSRT
+  release by `./build.sh setup`, baked in by CMake — rust-embed parity).
+  `cert-hash.js` is served dynamically at `/cert-hash.js` — never written
+  to disk, regenerated every boot.
 
 ## Cert modes
 
@@ -180,8 +182,9 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 - The srt fork still spawns its internal threads in virtual mode — srt API
   calls are thread-safe, but socket setup/teardown belongs to the session
   code.
-- `web/dist` (the player) is served as-is from the WebSRT checkout; it is
-  Rust WASM + TS and is NEVER modified or rebuilt from this repo.
+- `web/dist` (the player) is fetched from the latest WebSRT release by
+  `./build.sh setup`/`web-dist` and EMBEDDED at compile time; it is Rust
+  WASM + TS and is NEVER modified or rebuilt from this repo.
 - MPL-2.0 (this repo and the srt fork patches).
 
 ## Testing

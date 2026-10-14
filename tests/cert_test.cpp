@@ -221,18 +221,13 @@ void TestMkcertRoundTrip()
 
 void TestCertHashJs()
 {
-    const std::string js_path = TempPath(".cert-hash.js");
-    const std::string bad_dir = "/tmp/websrtgw_cert_test_no_such_dir/cert-hash.js";
-
     // Self mode: hash form, exact Rust byte format (no trailing newline).
     {
         const websrt::gateway::CertProvider p;
-        p.WriteCertHashJs(js_path, 4433);
-        const std::string js = ReadFileOrEmpty(js_path);
+        const std::string                   js = p.BuildCertHashJs(4433);
         Check(js == "window.CERT_HASH = \"" + p.Sha256Hex() + "\";\nwindow.WT_PORT = 4433;",
               "cert-hash.js: self form matches Rust format byte-for-byte");
         Check(js.starts_with("window.CERT_HASH = "), "cert-hash.js: starts with window.CERT_HASH assignment");
-        std::remove(js_path.c_str());
     }
 
     // Mkcert mode: null form.
@@ -244,25 +239,9 @@ void TestCertHashJs()
         WriteFileOrThrow(key_path, self_provider.KeyPem());
 
         const websrt::gateway::CertProvider mk(cert_path, key_path);
-        mk.WriteCertHashJs(js_path, 8443);
-        const std::string js = ReadFileOrEmpty(js_path);
+        const std::string                   js = mk.BuildCertHashJs(8443);
         Check(js == "window.CERT_HASH = null;\nwindow.WT_PORT = 8443;", "cert-hash.js: mkcert form is the null form");
 
-        // Unwritable path: clear error.
-        bool threw = false;
-        try
-        {
-            self_provider.WriteCertHashJs(bad_dir, 4433);
-        }
-        catch (const websrt::gateway::CertError& e)
-        {
-            threw = true;
-            Check(std::string(e.what()).find("failed to write cert-hash.js") != std::string::npos,
-                  "cert-hash.js: write error is clear");
-        }
-        Check(threw, "cert-hash.js: unwritable path rejected");
-
-        std::remove(js_path.c_str());
         std::remove(cert_path.c_str());
         std::remove(key_path.c_str());
     }

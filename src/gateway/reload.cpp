@@ -51,7 +51,7 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     changed("cert_mode", old_s.cert_mode, new_s.cert_mode);
     changed("cert_pem", optstr(old_s.cert_pem), optstr(new_s.cert_pem));
     changed("key_pem", optstr(old_s.key_pem), optstr(new_s.key_pem));
-    // HTTP servers: bound (and cert-hash.js written into web_root) at
+    // HTTP servers: bound (and cert-hash.js's dynamic route installed) at
     // Start; the WT listener's TLS pinning depends on that pairing.
     changed("health_port", std::to_string(old_s.health_port), std::to_string(new_s.health_port));
     changed("health_bind", old_s.health_bind, new_s.health_bind);

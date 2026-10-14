@@ -2,14 +2,19 @@
 // health/stats endpoint, and the runtime cert-hash.js - the C++ port of
 // the Rust oracle's crates/websrt-gateway/src/web_server.rs (axum +
 // axum-server + rust-embed) and of the /health router wired in its
-// main.rs. The oracle embeds web/dist at compile time; the C++ gateway
-// NEVER builds the player, so the assets are read from a configured
-// web_root instead (the Rust gateway's own --web-root escape hatch).
+// main.rs. The oracle embeds web/dist at compile time; so does this one
+// (the table generated from web/dist by CMake - see embedded_player.h),
+// with a [server].web_root override for serving some other tree from
+// disk (the Rust gateway's own --web-root escape hatch). cert-hash.js is
+// served DYNAMICALLY in both modes - never written to disk - exactly as
+// the oracle serves it (web_server.rs: "served dynamically, changes every
+// boot").
 //
 // WHAT IT SERVES. Two roles, one class, so the endpoint paths and JSON
 // shapes are literally the same code in both:
-//   - the WEB server (cert set): HTTPS on web_port, serving web_root
-//     (/, /index.html, /stream.html, /cert-hash.js, /assets/*.wasm...).
+//   - the WEB server (cert set): HTTPS on web_port, serving the embedded
+//     player (/, /index.html, /stream.html, /cert-hash.js,
+//     /assets/*.wasm...) or the web_root override.
 //     HTTPS is the default, but it is the CLI's choice ([server].web_tls):
 //     the closed-network deployment serves the page over plain HTTP, which
 //     is still a secure context for a browser on 127.0.0.1 or the LAN, and
@@ -93,10 +98,22 @@ struct WebServerConfig
     /// shape, and the closed-network web server).
     const CertProvider* cert = nullptr;
 
-    /// Directory the static files are read from. EMPTY = no static
-    /// serving at all (/health and /stats only), which is the default:
-    /// the gateway ships no web app of its own.
+    /// Directory the static files are read from, overriding the embedded
+    /// player (a dev/ops escape hatch; unset = serve the embedded
+    /// web/dist). Must exist when set - Start() fails otherwise.
     std::string web_root;
+
+    /// The body of the dynamic /cert-hash.js route (built by CertProvider
+    /// at boot: pinned hash + WT_PORT; the hash changes every boot in
+    /// self mode, so the route is Cache-Control: no-store). Empty = no
+    /// route (404).
+    std::string cert_hash_js;
+
+    /// Serve the player (the embedded web/dist, or the web_root override)
+    /// on this server - the WEB role. False = /health and /stats only
+    /// (the health server's shape, like the oracle's separate health
+    /// router).
+    bool serve_player = false;
 
     /// Live stats sources, both optional (nullptr reports zeros). The
     /// gateway is only read through its thread-safe snapshot API, so any

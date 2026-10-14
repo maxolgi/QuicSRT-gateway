@@ -467,16 +467,8 @@ int main()
     const CertProvider  cert;
     const std::string   hash = cert.Sha256Hex();
 
-    // main.cpp's boot step, in the test: the hash the browser pins.
-    try
-    {
-        cert.WriteCertHashJs((root / "cert-hash.js").string(), wt_port);
-    }
-    catch (const websrt::gateway::CertError& e)
-    {
-        std::fprintf(stderr, "web_server_test: cert-hash.js: %s\n", e.what());
-        return 1;
-    }
+    // main.cpp's boot step, in the test: the dynamic /cert-hash.js body.
+    const std::string cert_hash_js = cert.BuildCertHashJs(wt_port);
 
     Gateway gateway(cert, std::make_shared<websrt::gateway::AcceptAll>(), GatewayConfig{.max_viewers = 8});
     if (!Check(gateway.Start("127.0.0.1", wt_port), "the gateway binds its WebTransport port"))
@@ -506,6 +498,8 @@ int main()
                                     .port            = 0,
                                     .cert            = &cert,
                                     .web_root        = root.string(),
+                                    .cert_hash_js    = cert_hash_js,
+                                    .serve_player    = true,
                                     .gateway         = &gateway,
                                     .ingest          = &ingest,
                                     .max_connections = 16});
@@ -916,6 +910,8 @@ int main()
                                              .port            = 0,
                                              .cert            = nullptr,
                                              .web_root        = root.string(),
+                                             .cert_hash_js    = cert_hash_js,
+                                             .serve_player    = true,
                                              .gateway         = &gateway,
                                              .ingest          = &ingest,
                                              .max_connections = 16});
@@ -950,14 +946,15 @@ int main()
             key_pem << cert.KeyPem();
         }
         const CertProvider mkcert((pem_dir / "cert.pem").string(), (pem_dir / "key.pem").string());
-        mkcert.WriteCertHashJs((pem_dir / "cert-hash.js").string(), wt_port);
 
-        WebServer   mkcert_web(WebServerConfig{.bind     = "127.0.0.1",
-                                               .port     = 0,
-                                               .cert     = &mkcert,
-                                               .web_root = pem_dir.string(),
-                                               .gateway  = nullptr,
-                                               .ingest   = nullptr});
+        WebServer   mkcert_web(WebServerConfig{.bind         = "127.0.0.1",
+                                               .port         = 0,
+                                               .cert         = &mkcert,
+                                               .web_root     = pem_dir.string(),
+                                               .cert_hash_js = mkcert.BuildCertHashJs(wt_port),
+                                               .serve_player = true,
+                                               .gateway      = nullptr,
+                                               .ingest       = nullptr});
         std::string mkcert_error;
         Check(mkcert_web.Start(&mkcert_error), "4: the mkcert-mode web server binds");
         if (mkcert_web.Running())
@@ -971,6 +968,40 @@ int main()
             mkcert_web.Stop();
         }
         fs::remove_all(pem_dir);
+    }
+
+    // ---- the embedded player: no web_root, serve straight from the
+    // binary (the default deployment, rust-embed parity) ----
+    {
+        WebServer embedded(
+            WebServerConfig{.bind = "127.0.0.1", .port = 0, .cert_hash_js = cert_hash_js, .serve_player = true});
+        std::string embedded_error;
+        Check(embedded.Start(&embedded_error), "4: the embedded-player web server binds");
+        if (embedded.Running())
+        {
+            HttpClient   client;
+            HttpResponse response;
+            Check(client.Connect(embedded.Port(), false), "4: connect to the embedded-player server");
+            Check(client.Exchange("/", &response), "4: GET / answered from the embedded table");
+            Check(response.status == 200 && response.Header("content-type") == "text/html; charset=utf-8" &&
+                      response.body.rfind("<!doctype html>", 0) == 0,
+                  "4: / serves the embedded player's index.html");
+            const std::string etag = response.Header("etag");
+            Check(!etag.empty(), "4: embedded assets carry an ETag");
+            // A 304 carries no body, so the reader must not expect one.
+            Check(
+                client.ExchangeRaw("GET /index.html HTTP/1.1\r\nHost: 127.0.0.1\r\nIf-None-Match: " + etag + "\r\n\r\n",
+                                   &response,
+                                   false),
+                "4: conditional re-GET answered");
+            Check(response.status == 304, "4: the ETag yields a 304 (immutable per binary)");
+            Check(client.Exchange("/no-such-asset.js", &response), "4: unknown asset answered");
+            Check(response.status == 404, "4: unknown asset is a 404");
+            Check(client.Exchange("/cert-hash.js", &response), "4: dynamic cert-hash.js on the embedded server");
+            Check(response.status == 200 && response.body == cert_hash_js,
+                  "4: the dynamic route serves the boot-built body");
+            embedded.Stop();
+        }
     }
 
     // ---- shutdown with a live keep-alive connection ----

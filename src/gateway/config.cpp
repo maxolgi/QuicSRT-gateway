@@ -166,19 +166,11 @@ ServerConfig ParseServer(Table& table)
     s.health_bind = OptString(table, "health_bind", "[server]").value_or(s.health_bind);
     s.web_port    = static_cast<std::uint16_t>(OptInt(table, "web_port", "[server]", s.web_port, 0, 65535));
     s.web_bind    = OptString(table, "web_bind", "[server]").value_or(s.web_bind);
-    // The static root the web server serves. Absent = no static serving
-    // at all: the gateway builds no web app, so there is nothing to serve
-    // until an operator points it at a built web/dist.
+    // The static root OVERRIDE. Absent = serve the embedded player (the
+    // dist baked into the binary at compile time, rust-embed parity); set
+    // = serve that directory from disk instead (the dev/ops escape hatch,
+    // the Rust gateway's own --web-root).
     s.web_root = OptString(table, "web_root", "[server]");
-    if (!s.web_root.has_value())
-    {
-        // The root is what turns the knob on: with no web_root there is
-        // nothing to serve, so web_port goes off (the Rust binary embeds
-        // web/dist at compile time and never faces the question). Setting
-        // web_port alone therefore just means "off", which the CLI's boot
-        // log reports explicitly - it is not a startup error.
-        s.web_port = 0;
-    }
     // Plain-HTTP page serving is the closed-network deployment mode: the
     // WT listener keeps its TLS either way, so nothing about the handshake
     // depends on this.

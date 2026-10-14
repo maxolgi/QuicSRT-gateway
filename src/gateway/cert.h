@@ -102,13 +102,13 @@ public:
     /// Which mode this provider was built in.
     [[nodiscard]] CertMode Mode() const { return mode_; }
 
-    /// Write cert-hash.js in the EXACT format the Rust gateway produces
-    /// (websrt-gateway main.rs:381-397; no trailing newline):
+    /// Build the cert-hash.js BODY in the EXACT format the Rust gateway
+    /// produces (websrt-gateway main.rs:381-397; no trailing newline):
     ///   Self:    window.CERT_HASH = "<sha256-hex>";\nwindow.WT_PORT = <port>;
     ///   Mkcert:  window.CERT_HASH = null;\nwindow.WT_PORT = <port>;
-    /// The parent directory must already exist (web-root wiring owns mkdir).
-    /// Throws CertError when the file cannot be written.
-    void WriteCertHashJs(const std::string& path, std::uint16_t wt_port) const;
+    /// The gateway serves this at /cert-hash.js dynamically (the hash
+    /// changes every boot in self mode); it is never written to disk.
+    [[nodiscard]] std::string BuildCertHashJs(std::uint16_t wt_port) const;
 
 private:
     CertMode  mode_ = CertMode::Self;

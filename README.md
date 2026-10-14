@@ -15,25 +15,28 @@ parity vs the Rust gateway is measured row-by-row in
 
 ## Build
 
-    ./build.sh setup     # one-time: submodule init (recursive), BoringSSL fetch+build, cmake configure
+    ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (WebSRT release), BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build the websrt-gateway binary
     ./build.sh test      # run tests (live-oracle tests self-skip without the Rust gateway)
+    ./build.sh web-dist  # refresh the embedded player (latest WebSRT release), then re-configure
 
-Requires gcc 13+, CMake 3.24+, ninja, nasm.
+Requires gcc 13+, CMake 3.24+, ninja, nasm, curl + unzip.
 
-Fresh clones fail at `deps/libwebsrt` until the GitHub repo exists — see
-AGENTS.md ("Soft pin") for the sibling-clone workaround.
+The player (the browser web app) is **embedded in the binary** at compile
+time, exactly like the Rust gateway's rust-embed: `./build.sh setup`
+fetches the latest `websrt-web-dist.zip` from
+[WebSRT releases](https://github.com/maxolgi/WebSRT/releases) into
+`web/dist` (gitignored), and CMake bakes it into the gateway. The resolved
+release tag is logged at configure time.
 
 ## Quickstart
 
-1. **Config.** Copy the example, point `web_root` at a built player
-   (`web/dist` from the WebSRT checkout — this repo never builds it) and
-   turn on the health endpoint:
+1. **Config.** Copy the example and turn on the endpoints (the player is
+   already inside the binary — no `web_root` needed):
 
-       cp scripts/gateway.example.conf gw.conf
-       # edit gw.conf: set web_root = "<path>/WebSRT/web/dist",
-       #               set health_port = 9091
+        cp scripts/gateway.example.conf gw.conf
+        # edit gw.conf: set health_port = 9091, web_port = 5173
 
 2. **Run.**
 
@@ -76,12 +79,13 @@ AGENTS.md ("Soft pin") for the sibling-clone workaround.
 - `/usr/local/etc/websrt-cpp/gateway.example.conf` — the example config
 - `/usr/local/etc/supervisor/conf.d/websrt-cpp.conf` — the supervisord conf
 
-Production setup mirrors the Rust gateway's pattern:
+Production setup mirrors the Rust gateway's pattern (no player directory
+to deploy — it is embedded in the binary):
 
     sudo cp /usr/local/etc/supervisor/conf.d/websrt-cpp.conf /etc/supervisor/conf.d/
     sudo mkdir -p /etc/websrt-cpp /var/log/websrt-cpp && sudo chown www-data:www-data /var/log/websrt-cpp
     sudo cp /usr/local/etc/websrt-cpp/gateway.example.conf /etc/websrt-cpp/gateway.conf
-    # edit /etc/websrt-cpp/gateway.conf (web_root, binds, cert mode; see the
+    # edit /etc/websrt-cpp/gateway.conf (binds, ports, cert mode; see the
     # example's production block)
     sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl restart websrt-cpp
 
