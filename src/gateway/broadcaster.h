@@ -28,10 +28,10 @@
 // yet) stream are attached and primed but receive nothing until a publisher
 // appends - the "waiting viewer" semantics locked for refinement item 2.
 //
-// FRAMING. max_payload_ is the viewer's own negotiated SRT payload ceiling
-// (refreshed at PrimeViewer, once the handshake has settled). A ring message
-// larger than this viewer's ceiling is SKIPPED and counted (oversize_drops) -
-// never truncated and never retried.
+// FRAMING. SRT messages are whole frames: the negotiated payload size caps
+// the WIRE PACKET, not the message - srt_sendmsg2 re-fragments per viewer
+// (the wasm muxers frame ~9-37 KB frames as single messages). The registry's
+// EnqueueForViewer bound is the size enforcement point.
 //
 // THREADING: loop-thread only (the gateway owns the ring and appends from
 // SessionRegistryListener::OnMedia). Snapshots/counters are plain reads.
@@ -210,12 +210,6 @@ public:
             {
                 const Message& msg = ring_[static_cast<std::size_t>(viewer.next_seq - head)];
                 ++viewer.next_seq;
-                if (msg.bytes.size() > viewer.max_payload)
-                {
-                    ++viewer.oversize_drops;
-                    ++oversize_drops_;
-                    continue; // never truncated, never retried
-                }
                 ++sent;
                 if (enqueue(viewer.handle, msg.bytes.data(), msg.bytes.size()))
                 {

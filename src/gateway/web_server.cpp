@@ -1251,6 +1251,18 @@ std::string WebServer::StatsJson() const
         AppendNum(out, "tx_buffered", static_cast<std::uint64_t>(session.srt.pktSndBuf));
         out += ",";
         AppendNum(out, "rtt_ms", static_cast<std::uint64_t>(session.srt.msRTT));
+        out += ",";
+        AppendNum(out, "rx_mbps_x1000", static_cast<std::uint64_t>(session.srt.mbpsRecvRate * 1000.0));
+        out += ",";
+        AppendNum(out, "rx_pkts", static_cast<std::uint64_t>(session.srt.pktRecvTotal > 0 ? session.srt.pktRecvTotal : 0));
+        out += ",";
+        AppendNum(out, "rx_drop", static_cast<std::uint64_t>(session.srt.pktRcvDropTotal > 0 ? session.srt.pktRcvDropTotal : 0));
+        out += ",";
+        AppendNum(out, "rx_loss", static_cast<std::uint64_t>(session.srt.pktRcvLossTotal > 0 ? session.srt.pktRcvLossTotal : 0));
+        out += ",";
+        AppendNum(out,
+                  "rx_belated",
+                  static_cast<std::uint64_t>(session.srt.pktRcvBelated > 0 ? session.srt.pktRcvBelated : 0));
         out += "}";
     }
 

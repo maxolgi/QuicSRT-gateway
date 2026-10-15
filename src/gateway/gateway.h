@@ -230,7 +230,6 @@ private:
     std::size_t                         fanout_budget_      = 256;
     std::uint64_t                       next_ingest_handle_ = 1;
     std::uint64_t                       media_unclaimed_    = 0;
-    std::uint64_t                       media_oversize_     = 0;
     bool                                running_            = false;
     bool                                shut_down_          = false;
 };

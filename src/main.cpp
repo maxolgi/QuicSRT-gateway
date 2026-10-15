@@ -243,6 +243,9 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     }
     std::fflush(stdout);
 
+    // The per-session initiators share the server's TSBPD latency (the
+    // ingest knob): a tiny window makes live senders too-late-drop video.
+    gateway_config.registry.latency_ms = static_cast<int>(ingest_latency_ms);
     websrt::gateway::Gateway gateway(cert, policy, gateway_config);
     if (!gateway.Start(wt_bind, wt_bind_port))
     {

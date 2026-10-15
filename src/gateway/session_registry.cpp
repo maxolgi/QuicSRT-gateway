@@ -14,15 +14,16 @@ namespace websrt::gateway
 namespace
 {
 
-// Stack buffer for the publisher pump: one released SRT message. Senders
-// are NOT bounded by the negotiated payload size - a message spans many
-// payload packets and reassembles whole (the SlopShady wasm muxer frames
-// ~9 KB frames as single messages; srt_recvmsg silently truncates to this
-// buffer, so it must exceed any sender's message size).
-constexpr int kRecvBufSize = 64 * 1024;
+// Publisher pump receive buffer: one released SRT message. Senders are
+// NOT bounded by the negotiated payload size - a message spans many payload
+// packets and reassembles whole (the SlopShady wasm muxer frames whole
+// ~0.3 MB GOPs as single messages; srt_recvmsg silently truncates to the
+// buffer, so it grows on a full read, Rust-oracle style unbounded-in-kind).
+constexpr std::size_t kRecvBufInitial = 256 * 1024;
+constexpr std::size_t kRecvBufMax     = 4 * 1024 * 1024;
 
 // Largest single EnqueueForViewer payload accepted (int return of Send).
-constexpr std::size_t kMaxEnqueueSize = 1024ULL * 1024ULL;
+constexpr std::size_t kMaxEnqueueSize = 4ULL * 1024ULL * 1024ULL;
 
 void Log(const char* fmt, ...)
 {
@@ -86,6 +87,9 @@ struct RegistryEntry
     std::atomic<bool>          finished{false};
     std::atomic<std::uint64_t> messages_sent{0};
     std::atomic<std::uint64_t> messages_received{0};
+
+    // Publisher pump buffer (grows on full reads; see kRecvBufInitial).
+    std::vector<std::uint8_t> recv_buf = std::vector<std::uint8_t>(kRecvBufInitial);
 };
 
 namespace
@@ -181,8 +185,8 @@ void SessionRegistry::OnWtSession(WtSessionHandle handle, const WtSessionStart& 
     entry->publisher_role = publisher;
     // RTT seeding: the WT session's QUIC smoothed RTT at accept, zero
     // when unmeasured (the initiator then leaves srt's estimator alone).
-    entry->initiator =
-        std::make_unique<SrtInitiator>(*server_, handle, InitiatorConfig{}, server_->SmoothedRtt(handle));
+    entry->initiator = std::make_unique<SrtInitiator>(*server_, handle, InitiatorConfig{.latency_ms = config_.latency_ms},
+                                                      server_->SmoothedRtt(handle));
 
     std::string error;
     if (!entry->initiator->Setup(&error))
@@ -293,13 +297,20 @@ void SessionRegistry::Tick()
 
 void SessionRegistry::PumpPublisher(const std::shared_ptr<RegistryEntry>& entry)
 {
-    char buf[kRecvBufSize];
     for (int i = 0; i < config_.recv_budget_per_tick; ++i)
     {
-        const int n = entry->initiator->ReceiveNext(buf, sizeof buf);
+        const int n = entry->initiator->ReceiveNext(reinterpret_cast<char*>(entry->recv_buf.data()),
+                                                    static_cast<int>(entry->recv_buf.size()));
         if (n > 0)
         {
-            listener_.OnMedia(entry->stream_name, reinterpret_cast<std::uint8_t*>(buf), static_cast<std::size_t>(n));
+            if (static_cast<std::size_t>(n) == entry->recv_buf.size() && entry->recv_buf.size() < kRecvBufMax)
+            {
+                // A full read may have truncated the message - grow for the
+                // next one (the fork logs the true size when it truncates).
+                entry->recv_buf.resize(std::min(entry->recv_buf.size() * 2, kRecvBufMax));
+                Log("session %" PRIu64 " recv buffer grows to %zu bytes", entry->handle.Id(), entry->recv_buf.size());
+            }
+            listener_.OnMedia(entry->stream_name, entry->recv_buf.data(), static_cast<std::size_t>(n));
             entry->messages_received.fetch_add(1, std::memory_order_relaxed);
             continue;
         }
@@ -352,9 +363,10 @@ bool SessionRegistry::ServiceViewer(const std::shared_ptr<RegistryEntry>& entry)
                 entry->backlog_overflow_drops += 1;
                 continue;
             }
-            reason   = r == SrtInitiator::kSendClosed ? "viewer srt connection closed" : "viewer srt send failed";
-            need_end = true;
-            break;
+        reason   = r == SrtInitiator::kSendClosed ? "viewer srt connection closed"
+                                                  : std::string("viewer srt send failed: ") + srt_getlasterror_str();
+        need_end = true;
+        break;
         }
     }
     if (need_end)
@@ -404,15 +416,28 @@ bool SessionRegistry::EnqueueForViewer(WtSessionHandle handle, const void* data,
     {
         return false;
     }
-    const auto*                       bytes = static_cast<const std::uint8_t*>(data);
+    const auto* bytes = static_cast<const std::uint8_t*>(data);
     const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
-    if (entry->backlog.size() >= config_.viewer_backlog_max)
+    // The fork's live send API caps one message at the negotiated payload
+    // (LiveCC checkTransArgs; stock srt would fragment) - re-chunk ring
+    // messages there. Payload is 188-aligned, so a TS byte stream is
+    // split transparently for the receiver's demuxer.
+    const int payload = entry->initiator->max_payload();
+    const std::size_t chunk =
+        payload >= 188 ? static_cast<std::size_t>(payload) : len;
+    bool enqueued = false;
+    for (std::size_t off = 0; off < len; off += chunk)
     {
-        entry->backlog.pop_front(); // live-stream semantics: drop the oldest
-        entry->backlog_overflow_drops += 1;
+        if (entry->backlog.size() >= config_.viewer_backlog_max)
+        {
+            entry->backlog.pop_front(); // live-stream semantics: drop the oldest
+            entry->backlog_overflow_drops += 1;
+        }
+        const std::size_t end = std::min(off + chunk, len);
+        entry->backlog.emplace_back(bytes + off, bytes + end);
+        enqueued = true;
     }
-    entry->backlog.emplace_back(bytes, bytes + len);
-    return true;
+    return enqueued;
 }
 
 bool SessionRegistry::PopBacklogDrop(WtSessionHandle handle)

@@ -191,11 +191,8 @@ int SrtInitiator::Send(const void* data, int len)
     {
         return kSendNotConnected;
     }
-    if (len > max_payload_)
-    {
-        return kSendInvalidArg;
-    }
-
+    // No max_payload ceiling here: SRT messages span many payload packets
+    // (srt_sendmsg2 re-fragments; the send buffer bounds the message).
     // Writability first: the socket is registered with SRT_EPOLL_OUT in
     // Setup (level-triggered, so it reports on every poll while the send
     // buffer has room). A zero-timeout uwait never blocks the caller.

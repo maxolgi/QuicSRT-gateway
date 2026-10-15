@@ -165,9 +165,7 @@ void Gateway::Shutdown()
         Log("drain timed out with %d session(s) left; stopping the loop anyway", left);
     }
     loop_.Stop(); // joins the engine thread
-    Log("shutdown complete (%llu unclaimed message(s), %llu oversize drop(s))",
-        static_cast<unsigned long long>(media_unclaimed_),
-        static_cast<unsigned long long>(media_oversize_));
+    Log("shutdown complete (%llu unclaimed message(s))", static_cast<unsigned long long>(media_unclaimed_));
 }
 
 void Gateway::CancelHousekeeping()
@@ -225,19 +223,10 @@ void Gateway::OnMedia(const std::string& stream_name, const std::uint8_t* data, 
         ++media_unclaimed_;
         return;
     }
-    // Framing: the publisher's SRT layer already caps messages at the
-    // negotiated payload size, but a source feeding this sink directly (the
-    // G6 ingest) can overshoot - counted and dropped, never truncated.
-    // (For such a source there is no publisher session to read a ceiling
-    // from; every viewer then drops what exceeds ITS negotiated ceiling,
-    // counted by the ring.)
-    SessionInfo info;
-    if (registry_.SessionInfoFor(bc->Publisher(), &info) && len > static_cast<std::size_t>(info.max_payload))
-    {
-        ++media_oversize_;
-        bc->CountOversizeDrop();
-        return;
-    }
+    // Framing: SRT messages are whole frames - the negotiated payload size
+    // caps the PACKET, not the message (the wasm muxers frame ~9-37 KB
+    // frames as single messages; srt_sendmsg2 re-fragments per viewer).
+    // Viewer-side Send/buffer bounds are the enforcement point.
     bc->Append(data, len);
     bc->Pump([this](WtSessionHandle viewer, const void* bytes, std::size_t n)
              { return registry_.EnqueueForViewer(viewer, bytes, n); },
