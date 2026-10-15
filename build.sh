@@ -81,7 +81,10 @@ case "${1:-}" in
         cmake --build --preset release --target websrt-gateway
         ;;
     test)
-        ctest --preset release
+        # --parallel with no count = one job per core. Tests that share a
+        # preferred port (4434/9100...) probe-bind and fall back to
+        # ephemeral, so concurrent runs are safe by design.
+        ctest --preset release --parallel
         ;;
     web-dist)
         # Refresh the embedded player: fetch + re-configure (the asset

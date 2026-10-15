@@ -96,7 +96,7 @@ Raw form (what the script wraps — useful when debugging the script itself):
 
     git submodule update --init --recursive
     cmake --preset release && cmake --build --preset release
-    ctest --preset release
+    ctest --preset release --parallel
 
 Toolchain: gcc 13, CMake ≥ 3.24, C++20 for our code (submodules build with
 their own settings), BoringSSL fetched into `deps/libwebsrt/deps/boringssl`
