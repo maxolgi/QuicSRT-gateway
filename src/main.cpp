@@ -166,10 +166,18 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             websrt::SetLsquicLogLevel(s.log_level->c_str());
             std::printf("websrt-gateway: lsquic log level: %s (config)\n", s.log_level->c_str());
         }
-        std::printf("websrt-gateway: config: %zu stream(s), allowlist mode "
+        if (config.streams.empty())
+        {
+            // Same exposure as a bare run's open mode - say so loudly.
+            std::fprintf(stderr,
+                         "websrt-gateway: WARNING: no [[stream]] entries in %s - any stream name accepted\n",
+                         config_path->c_str());
+        }
+        std::printf("websrt-gateway: config: %zu stream(s), %s "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
                     "broadcast_capacity %u)\n",
                     config.streams.size(),
+                    config.streams.empty() ? "open mode (no [[stream]] entries)" : "allowlist mode",
                     s.wt_bind.c_str(),
                     s.wt_port,
                     s.srt_ingest_bind.c_str(),

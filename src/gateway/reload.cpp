@@ -120,8 +120,9 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
     }
     LogRestartRequired(current.server, next.server);
     std::fprintf(stderr,
-                 "websrt-gateway: config reloaded: %zu stream(s), max_viewers %u\n",
+                 "websrt-gateway: config reloaded: %zu stream(s) (%s), max_viewers %u\n",
                  next.streams.size(),
+                 next.streams.empty() ? "open mode, any name accepted" : "allowlist mode",
                  next.server.max_viewers);
     return next;
 }

@@ -317,10 +317,16 @@ bool TestStreamAllowlistShapes()
           "allowlist first match wins (deny)");
     Check(firstWins->Decide(Req("/wt", "stream=x", std::nullopt)) == Decision::Accept,
           "allowlist first match wins (allow)");
-    // Empty allowlist denies everything.
+    // Empty allowlist allows every name (config-present open mode); only
+    // the request shape (a name must be present) is still enforced.
     const auto empty = std::make_shared<StreamAllowlistPolicy>(std::vector<StreamAclEntry>{});
-    Check(empty->Decide(Req("/wt", "publish=x", std::nullopt)) == Decision::Forbidden, "empty allowlist publish");
-    Check(empty->Decide(Req("/wt", "stream=x", std::nullopt)) == Decision::Reject, "empty allowlist subscribe");
+    Check(empty->Decide(Req("/wt", "publish=x", std::nullopt)) == Decision::Accept, "empty allowlist publish");
+    Check(empty->Decide(Req("/wt", "stream=x", std::nullopt)) == Decision::Accept, "empty allowlist subscribe");
+    Check(empty->Decide(Req("/wt", "subscribe=y", std::nullopt)) == Decision::Accept,
+          "empty allowlist subscribe param");
+    Check(empty->Decide(Req("/wt", "publish=a&stream=b", std::nullopt)) == Decision::Accept,
+          "empty allowlist combined");
+    Check(empty->Decide(Req("/wt", "", std::nullopt)) == Decision::Reject, "empty allowlist nameless -> Reject");
     return true;
 }
 

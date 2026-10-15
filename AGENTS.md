@@ -76,7 +76,8 @@ oracle, **never modified from this repo**), `libwebsrt` (the client library
 CLI-parity replacement of the Rust gateway: WT server with per-session SRT
 initiators, broadcaster fanout (first-wins occupancy), stock-mode SRT/UDP
 ingest, cert modes, `--config` TOML allowlist (exact+glob names,
-publish/subscribe roles, per-stream tokens, waiting viewers for configured
+publish/subscribe roles, per-stream tokens, empty [[stream]] list = all
+names allowed, waiting viewers for configured
 but unpublished streams), SIGHUP hot-reload of the allowlist / viewer cap /
 log level / webhook settings, Accept-negotiated HTML `/stats` (JSON stays
 the default), on_connect/on_close webhooks (dedicated worker thread,

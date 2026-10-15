@@ -118,7 +118,8 @@ struct Config
 [[nodiscard]] Config LoadConfig(const std::string& path);
 
 /// Build the StreamAllowlistPolicy from the config's [[stream]] entries,
-/// in file order (first matching entry wins at decide time).
+/// in file order (first matching entry wins at decide time). A config with
+/// no [[stream]] entries yields the empty policy, which allows every name.
 [[nodiscard]] std::shared_ptr<StreamAllowlistPolicy> BuildAllowlistPolicy(const Config& config);
 
 } // namespace websrt::gateway

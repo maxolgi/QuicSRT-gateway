@@ -412,6 +412,15 @@ Decision StreamAllowlistPolicy::Decide(const SessionRequest& req) const
     const std::optional<std::string> stream_name    = ParseQueryParam(req.query, "stream");
     const std::optional<std::string> subscribe_name = ParseQueryParam(req.query, "subscribe");
 
+    // No entries configured = no stream-name restrictions: every NAMED
+    // publish/subscribe request is allowed (a nameless CONNECT falls
+    // through to the Reject below). The usual Chain's PathPolicy and the
+    // gateway's admission checks still apply either way.
+    if (m_entries.empty() && (publish_name.has_value() || stream_name.has_value() || subscribe_name.has_value()))
+    {
+        return Decision::Accept;
+    }
+
     if (publish_name.has_value())
     {
         const Decision d = DecidePublish(*publish_name, req);

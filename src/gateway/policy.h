@@ -176,7 +176,10 @@ struct StreamAclEntry
     std::optional<std::string> token; ///< optional per-stream ?token= (constant-time compare)
 };
 
-/// Deny-by-default stream access control. Routing mirrors the Rust
+/// Stream access control: deny-by-default while entries are configured;
+/// with NO entries every stream name is allowed, publish and subscribe
+/// alike (a config file with no [[stream]] sections behaves like open
+/// mode, but with the file's [server] settings). Routing mirrors the Rust
 /// gateway's query shapes (`/wt?publish=NAME`, `/wt?stream=NAME` or
 /// `/wt?subscribe=NAME`, optional `&token=`):
 ///   - publish request (`?publish=NAME`): no matching entry, an entry with

@@ -166,6 +166,16 @@ publish = false
     Check(p->Decide(Req("stream=nope")) == Decision::Reject, "config policy subscribe no match");
     Check(p->Decide(Req("stream=priv-9&token=tok")) == Decision::Accept, "config policy subscribe token ok");
     Check(p->Decide(Req("stream=priv-9")) == Decision::Forbidden, "config policy subscribe token missing");
+    // A config with no [[stream]] entries builds the empty allowlist,
+    // which allows every name (open mode with the file's [server]
+    // settings) - only the request shape (a name) is still enforced.
+    {
+        const Config bare = ParseConfig("[server]\nwt_port = 4433\n", "bare.conf");
+        const auto   open = BuildAllowlistPolicy(bare);
+        Check(open->Decide(Req("publish=anything")) == Decision::Accept, "empty config publish allowed");
+        Check(open->Decide(Req("stream=whatever")) == Decision::Accept, "empty config subscribe allowed");
+        Check(open->Decide(Req("")) == Decision::Reject, "empty config nameless -> Reject");
+    }
     return true;
 }
 
