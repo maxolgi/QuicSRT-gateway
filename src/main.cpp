@@ -13,10 +13,13 @@
 // endpoint are wired here too.
 
 #include <atomic>
+#include <sys/stat.h>
+
 #include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,6 +27,7 @@
 
 #include "gateway/cert.h"
 #include "gateway/config.h"
+#include "gateway/embedded_example_conf.h"
 #include "gateway/gateway.h"
 #include "gateway/ingest/srt_ingest.h"
 #include "gateway/policy.h"
@@ -50,6 +54,39 @@ extern "C" void OnSignal(int /*signo*/)
 extern "C" void OnReloadSignal(int /*signo*/)
 {
     g_reload = 1;
+}
+
+/// A bare run (no --config) drops the fully commented example config as
+/// ./gateway.conf when it does not exist yet - the release artifact is a
+/// lone binary, so the first run leaves the operator something to edit.
+/// Never called when --config is given: an explicit path is the
+/// operator's decision, and a missing file there is a hard error.
+void WriteExampleConfigIfAbsent()
+{
+    constexpr const char* kDefaultPath = "gateway.conf";
+    struct stat           st{};
+    if (::stat(kDefaultPath, &st) == 0)
+    {
+        return; // already here - never overwrite
+    }
+    const std::string_view body = websrt::gateway::EmbeddedExampleConf();
+    std::ofstream          out(kDefaultPath, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!out.is_open() || !(out.write(body.data(), static_cast<std::streamsize>(body.size()))))
+    {
+        std::fprintf(stderr, "websrt-gateway: note: cannot write the example config to %s\n", kDefaultPath);
+        return;
+    }
+    out.close();
+    if (!out)
+    {
+        std::remove(kDefaultPath);
+        std::fprintf(stderr, "websrt-gateway: note: cannot write the example config to %s\n", kDefaultPath);
+        return;
+    }
+    std::printf("websrt-gateway: wrote %s (a fully commented example configuration; edit and run with --config %s)\n",
+                kDefaultPath,
+                kDefaultPath);
+    std::fflush(stdout);
 }
 
 int Run(const std::optional<std::string>& config_path, const std::optional<std::string>& log_level)
@@ -155,7 +192,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     {
         // No config: open mode (Rust-oracle parity for dev/tests) with a
         // loud warning. Any stream name is accepted; only the fixed /wt
-        // path is enforced.
+        // path is enforced. First run also drops ./gateway.conf.
+        WriteExampleConfigIfAbsent();
         std::fprintf(stderr,
                      "websrt-gateway: WARNING: open mode: no allowlist configured - any stream name accepted\n");
         policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),

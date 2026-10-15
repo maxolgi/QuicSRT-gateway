@@ -32,11 +32,14 @@ release tag is logged at configure time.
 
 ## Quickstart
 
-1. **Config.** Copy the example and turn on the endpoints (the player is
+1. **Config.** Just run the binary once bare — the first run writes a
+   fully commented example configuration as `./gateway.conf` (never when
+   `--config` is given). Edit it and enable the endpoints (the player is
    already inside the binary — no `web_root` needed):
 
-        cp scripts/gateway.example.conf gw.conf
-        # edit gw.conf: set health_port = 9091, web_port = 5173
+        ./websrt-gateway                 # writes ./gateway.conf, runs in open mode
+        # edit gateway.conf: set health_port = 9091, web_port = 5173
+        ./websrt-gateway --config gateway.conf
 
 2. **Run.**
 
