@@ -73,7 +73,11 @@ struct StreamStats
     std::size_t   viewers        = 0;
     std::size_t   ring_size      = 0;
     std::uint64_t messages_sent  = 0; ///< appended to the ring by a publisher
-    std::uint64_t send_failures  = 0; ///< appended while no viewer was attached
+    ///< Kept at 0, exactly like the oracle: appends never fail here, and the
+    ///< oracle's own increment path (tokio send err with a receiver-race) is
+    ///< effectively unreachable - it does NOT count no-viewer appends. The
+    ///< field stays for /health key parity.
+    std::uint64_t send_failures  = 0;
     std::uint64_t ring_drops     = 0; ///< drop-oldest on ring overflow
     std::uint64_t oversize_drops = 0; ///< over a viewer's negotiated payload ceiling
 };
@@ -128,10 +132,6 @@ public:
         ring_.push_back(Message{.bytes = std::vector<std::uint8_t>(bytes, bytes + len)});
         ++next_seq_;
         ++messages_sent_;
-        if (viewers_.empty())
-        {
-            ++send_failures_;
-        }
         while (ring_.size() > config_.capacity)
         {
             ring_.pop_front();

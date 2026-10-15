@@ -12,8 +12,6 @@ in `deps/libwebsrt/websrt-todo.md` — never edit it from this repo.)
   continuity counters (Rust `cc_gaps`/`cc_checks`) are not surfaced in our
   `/health`; the data exists in `/stats`. Parity gap documented in
   docs/parity.md.
-- **`send_failures` counter semantics** — differ from the Rust oracle
-  (documented in docs/parity.md).
 - **Sim-loss P1 residual** — lives in libwebsrt's todo (needs a
   `--sim-loss` Rust gateway rebuild to verify).
 - **VAAPI decode workaround** — VAAPI machines need the player's "Prefer

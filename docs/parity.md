@@ -45,9 +45,7 @@ Nested objects:
   `tx_data`, `tx_buffered`, `tx_retransmit`, `tx_loss`, `rtt_ms`,
   `messages_pushed`, `viewer_lag`, `buffer_lag`.
 - `per_stream[]`: **identical field sets** — `name`, `alive`, `viewers`,
-  `messages_sent`, `send_failures`. (Semantics note: ours counts
-  `send_failures` on every append with no viewer attached; the Rust
-  oracle's tokio-broadcast accounting shows 0 in the same scenario.)
+  `messages_sent`, `send_failures`.
 - `ticker`: **identical field sets** — `count`, `avg_us`, `max_us`.
 - `ingester`: **structured differently**. Rust: a map keyed by stream
   name with per-connection TS-continuity counters (`cc_checks`,
