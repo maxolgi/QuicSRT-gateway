@@ -14,9 +14,12 @@ namespace websrt::gateway
 namespace
 {
 
-// Stack buffer for the publisher pump: one released SRT message, bounded
-// by the negotiated payload ceiling (<= MSS - 44 <= 1456).
-constexpr int kRecvBufSize = 1500;
+// Stack buffer for the publisher pump: one released SRT message. Senders
+// are NOT bounded by the negotiated payload size - a message spans many
+// payload packets and reassembles whole (the SlopShady wasm muxer frames
+// ~9 KB frames as single messages; srt_recvmsg silently truncates to this
+// buffer, so it must exceed any sender's message size).
+constexpr int kRecvBufSize = 64 * 1024;
 
 // Largest single EnqueueForViewer payload accepted (int return of Send).
 constexpr std::size_t kMaxEnqueueSize = 1024ULL * 1024ULL;
