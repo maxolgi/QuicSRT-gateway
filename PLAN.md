@@ -26,7 +26,10 @@ gate commits and docs/parity.md). P4 hardening landed, one commit per step:
   live-oracle self-skips; hot-reload test green; webhook delivery test
   green; fresh-clone build green (CI's green GitHub run deferred, above).
 
-Open items live in TODO.md.
+Open items: none — TODO.md carried them after P4 close-out and was
+retired (2026-10-15) once its last items (both libwebsrt-side: the
+Publisher::End drain-budget tuning and the sim-loss rebuild check)
+closed. New carry-overs get a fresh TODO.md.
 
 The plan below was recovered from libwebsrt's history (where the gateway was
 phases P3/P4) and was refined with the human before implementation started.
@@ -268,9 +271,9 @@ paths.
   *P4 gates:* all existing tests green (19 + new); hot-reload test green;
   webhook delivery test green; fresh-clone build green; CI green on GitHub.
 
-  **Carry-overs:** moved to TODO.md at P4 close-out — that file is the
-  single source of truth for open items (kept out of the submodule's own
-  `deps/libwebsrt/websrt-todo.md`).
+  **Carry-overs:** lived in TODO.md from P4 close-out until the file was
+  retired (2026-10-15, last items closed — all of them libwebsrt-side;
+  kept out of the submodule's own `deps/libwebsrt/websrt-todo.md`).
 
 ## Rust-gateway defects the C++ gateway must not reproduce
 

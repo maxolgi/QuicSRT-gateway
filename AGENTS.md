@@ -83,7 +83,8 @@ log level / webhook settings, Accept-negotiated HTML `/stats` (JSON stays
 the default), on_connect/on_close webhooks (dedicated worker thread,
 bounded drop-counting queue), `cmake --install` packaging, and a CI
 workflow. Gate log: PLAN.md status header; parity vs the Rust oracle:
-docs/parity.md; open items: TODO.md.
+docs/parity.md; no open items (TODO.md retired once its last
+carry-overs closed).
 
 ## Build commands
 
@@ -108,11 +109,9 @@ their own settings), BoringSSL fetched into `deps/libwebsrt/deps/boringssl`
 1. Gateway changes only (`src/`) → `./build.sh gateway`, no submodule work.
 2. libwebsrt changes → work in `~/maxolgi/libwebsrt` (**never edit
    `deps/libwebsrt` in place** — it is a submodule checkout and git will
-   clobber it). Commit there, human pushes, then bump this repo's pin:
-   `git -C deps/libwebsrt fetch && git -C deps/libwebsrt checkout <commit>`
-   followed by `./build.sh setup && ./build.sh gateway`, then commit the
-   gitlink bump here. Submodule pins are the equivalent of Cargo.lock —
-   new libwebsrt commits are NOT picked up automatically.
+   clobber it). Commit there, human pushes, then bump this repo's pin and
+   rebuild. **Pins track master**: agents keep `deps/libwebsrt` at
+   origin/master head — bump before building, commit the gitlink routinely.
 3. srt fork changes → two hops: work in `~/maxolgi/srt` per libwebsrt's
    fork discipline (commit, human pushes, libwebsrt bumps its `deps/srt`
    pin), THEN bump this repo's `deps/libwebsrt` pin as above.
@@ -155,7 +154,6 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 - `docs/` — `parity.md` (row-by-row parity vs the Rust gateway)
 - `deps/libwebsrt/` — the submodule (carries the srt fork, lsquic, and the
   BoringSSL fetch)
-- `TODO.md` — open carry-overs (single source of truth)
 
 ## Runtime (production, recovered conventions)
 
