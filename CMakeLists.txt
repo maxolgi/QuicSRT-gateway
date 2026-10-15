@@ -152,6 +152,15 @@ target_link_libraries(policy_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME policy_test COMMAND policy_test)
 set_tests_properties(policy_test PROPERTIES TIMEOUT 30)
 
+# Unit: the ingest's TS continuity probe (the oracle's ingest/continuity.rs
+# test set, ported).
+add_executable(ts_continuity_test tests/ts_continuity_test.cpp)
+target_compile_features(ts_continuity_test PRIVATE cxx_std_20)
+set_target_properties(ts_continuity_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(ts_continuity_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME ts_continuity_test COMMAND ts_continuity_test)
+set_tests_properties(ts_continuity_test PROPERTIES TIMEOUT 30)
+
 add_executable(config_test tests/config_test.cpp)
 target_compile_features(config_test PRIVATE cxx_std_20)
 set_target_properties(config_test PROPERTIES CXX_EXTENSIONS OFF)

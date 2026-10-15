@@ -80,6 +80,7 @@
 #include <netinet/in.h>
 
 #include "core/event_loop.h"
+#include "gateway/ingest/ts_continuity.h"
 #include "gateway/webhooks.h"
 #include "srt.h"
 
@@ -111,12 +112,13 @@ struct SrtIngestConfig
 struct SrtConnectionStats
 {
     std::string     stream;
-    std::string     remote;              ///< "ip:port" of the publisher
-    std::uint64_t   bytes_in    = 0;     ///< SRT payload bytes received
-    std::uint64_t   messages_in = 0;     ///< SRT messages received
-    std::uint64_t   chunks_out  = 0;     ///< TS-framed messages handed to the gateway
-    std::uint64_t   tail_bytes  = 0;     ///< sub-188 bytes still buffered
-    bool            srt_stats   = false; ///< `srt` is populated
+    std::string     remote;            ///< "ip:port" of the publisher
+    std::uint64_t   bytes_in    = 0;   ///< SRT payload bytes received
+    std::uint64_t   messages_in = 0;   ///< SRT messages received
+    std::uint64_t   chunks_out  = 0;   ///< TS-framed messages handed to the gateway
+    std::uint64_t   tail_bytes  = 0;   ///< sub-188 bytes still buffered
+    TsCcStats       cc;                ///< the connection's TS-continuity probe
+    bool            srt_stats = false; ///< `srt` is populated
     SRT_TRACEBSTATS srt{};
 };
 
@@ -135,6 +137,12 @@ struct SrtIngestStats
     std::uint64_t                   bytes_out            = 0;
     std::uint64_t                   tail_flushes         = 0; ///< connections that ended with a buffered sub-188 tail
     std::vector<SrtConnectionStats> connections;
+    /// Per-stream-name TS-continuity probe - /health's ingester slot, the
+    /// oracle's exact shape (a map keyed by stream name). An entry appears
+    /// when a publisher claims the name, survives the connection's end
+    /// (frozen at its final counters), and starts fresh when the name is
+    /// claimed again.
+    std::map<std::string, TsCcStats> streams;
 };
 
 /// SRT/UDP ingest: a stock libsrt multi-publisher listener that feeds the
@@ -208,6 +216,7 @@ private:
         std::uint64_t             bytes_in    = 0;
         std::uint64_t             messages_in = 0;
         std::uint64_t             chunks_out  = 0;
+        TsContinuityChecker       cc; ///< the connection's TS-continuity probe
     };
 
     // ---- ingest thread ----
@@ -238,8 +247,13 @@ private:
     sockaddr_in               local_{};
     std::thread               thread_;
     std::map<SRTSOCKET, Conn> conns_;
-    std::uint64_t             next_webhook_session_id_ = 1;     ///< mints Conn::session_id
-    bool                      srt_runtime_             = false; ///< holds an srt_startup() reference
+    /// Per-name continuity counters (ingest thread; mirrored into
+    /// stream_cc_snapshot_ by RefreshSnapshot). Written from the live
+    /// connection's probe, never erased on connection end - the /health
+    /// parity behavior (the oracle's TsStatsHandle map in main.rs).
+    std::map<std::string, TsCcStats> stream_cc_;
+    std::uint64_t                    next_webhook_session_id_ = 1;     ///< mints Conn::session_id
+    bool                             srt_runtime_             = false; ///< holds an srt_startup() reference
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> running_{false};
@@ -258,8 +272,9 @@ private:
     std::atomic<std::uint64_t> bytes_out_{0};
     std::atomic<std::uint64_t> tail_flushes_{0};
 
-    mutable std::mutex              stats_mutex_;
-    std::vector<SrtConnectionStats> snapshot_;
+    mutable std::mutex               stats_mutex_;
+    std::vector<SrtConnectionStats>  snapshot_;
+    std::map<std::string, TsCcStats> stream_cc_snapshot_; ///< mirror of stream_cc_ (Stats())
 };
 
 } // namespace websrt::gateway

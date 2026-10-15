@@ -434,6 +434,23 @@ std::uint64_t HtmlNumberAfter(const std::string& body, const std::string& key)
     return std::strtoull(body.c_str() + at + marker.size(), nullptr, 10);
 }
 
+/// A 1128-byte chunk of 6 well-formed TS packets (one PID, afc=0b01,
+/// sequential continuity counters starting at start_cc, mod 16) - real
+/// continuity, so the ingest's TS probe counts checks without gaps.
+std::vector<std::uint8_t> MakeTsChunk(std::uint8_t start_cc)
+{
+    std::vector<std::uint8_t> chunk(1128);
+    for (std::size_t pkt = 0; pkt < 6; ++pkt)
+    {
+        const std::size_t off = pkt * 188;
+        chunk[off + 0]        = 0x47;
+        chunk[off + 1]        = 0x01; // PID 0x0100
+        chunk[off + 2]        = 0x00;
+        chunk[off + 3]        = static_cast<std::uint8_t>((0b01 << 4) | ((start_cc + pkt) & 0x0F));
+    }
+    return chunk;
+}
+
 } // namespace
 
 int main()
@@ -693,8 +710,8 @@ int main()
 
         websrt::Publisher pub;
         Check(pub.Start(PubCfg(wt_port, hash, "g7-live")) == websrt::kPublishOk, "3: the publisher attached");
-        const std::vector<std::uint8_t> chunk(1128, 0x47);
-        bool                            sent = false;
+        const std::vector<std::uint8_t> chunk = MakeTsChunk(0);
+        bool                            sent  = false;
         for (int i = 0; i < 200 && !sent; ++i)
         {
             sent = pub.Write(chunk.data(), static_cast<int>(chunk.size()), 200) == static_cast<int>(chunk.size());
@@ -778,17 +795,21 @@ int main()
         Check(srt_pub.Connect(ingest_port, "g7-ingest", &ingest_err), "3: the ingest publisher connected");
         for (int i = 0; i < 8; ++i)
         {
-            srt_pub.Send(reinterpret_cast<const char*>(chunk.data()), static_cast<int>(chunk.size()));
+            // Sequential CC across sends (6 packets each, mod 16): the
+            // probe must count checks and find zero gaps.
+            const std::vector<std::uint8_t> media = MakeTsChunk(static_cast<std::uint8_t>((i * 6) & 0x0F));
+            srt_pub.Send(reinterpret_cast<const char*>(media.data()), static_cast<int>(media.size()));
         }
         Check(WaitUntil(
                   [&client, &response]
                   {
                       return client.Exchange("/health", &response) &&
-                             response.body.find(Q("ingester") + ":{") != std::string::npos &&
-                             NumberAfter(response.body, "publishers_accepted") == 1;
+                             response.body.find(Q("ingester") + ":{\"g7-ingest\":") != std::string::npos &&
+                             NumberAfter(response.body, "cc_checks") > 0;
                   },
                   10000),
-              "3: /health reports the ingest's live counters");
+              "3: /health reports the ingest's continuity probe");
+        Check(NumberAfter(response.body, "cc_gaps") == 0, "3: the clean ingest stream has no CC gaps");
         Check(response.body.find(Q("name") + ":\"g7-ingest\"") != std::string::npos,
               "3: the ingest's stream is live in the registry");
 
@@ -800,6 +821,9 @@ int main()
                    "messages_in",
                    "bytes_in",
                    "chunks_out",
+                   "cc_checks",
+                   "cc_gaps",
+                   "messages_seen",
                    "connections"},
                   "3: /stats ingest");
         Check(response.body.find(Q("stream") + ":\"g7-ingest\"") != std::string::npos,

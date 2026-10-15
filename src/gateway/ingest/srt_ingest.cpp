@@ -419,7 +419,11 @@ void SrtIngest::AcceptOne()
 
     const std::string   remote     = PeerText(peer);
     const std::uint64_t session_id = next_webhook_session_id_++;
-    Conn                conn;
+    // Fresh per-name continuity counters: the oracle inserts a new
+    // TsStatsHandle at connection setup (main.rs:562-568), replacing any
+    // frozen entry a previous publisher on this name left behind.
+    stream_cc_[stream] = TsCcStats{};
+    Conn conn;
     conn.sock       = ns;
     conn.stream     = stream;
     conn.remote     = remote;
@@ -520,9 +524,17 @@ void SrtIngest::PublishChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
     {
         return;
     }
-    ++it->second.chunks_out;
+    Conn& conn = it->second;
+    ++conn.chunks_out;
     Bump(chunks_out_);
     Bump(bytes_out_, len);
+
+    // The read-only TS-continuity probe (the oracle's TsContinuityChecker
+    // wrapping its ingester): every published chunk is a whole number of
+    // 188-byte packets, so this scans every complete TS packet exactly
+    // once. Never modifies the bytes.
+    conn.cc.Scan(data, len);
+    stream_cc_[conn.stream] = conn.cc.Stats();
 
     // Hand the bytes to the gateway loop. The sink is COPIED into the
     // functor on purpose: a posted media chunk outlives this call and may
@@ -598,11 +610,13 @@ void SrtIngest::RefreshSnapshot()
         s.messages_in = conn.messages_in;
         s.chunks_out  = conn.chunks_out;
         s.tail_bytes  = conn.pending.size();
+        s.cc          = conn.cc.Stats();
         s.srt_stats   = srt_bstats(conn.sock, &s.srt, 0) == 0;
         live.push_back(std::move(s));
     }
     const std::lock_guard<std::mutex> lock(stats_mutex_);
-    snapshot_ = std::move(live);
+    snapshot_           = std::move(live);
+    stream_cc_snapshot_ = stream_cc_;
 }
 
 // ---------------------------------------------------------------------------
@@ -625,6 +639,7 @@ SrtIngestStats SrtIngest::Stats() const
     out.bytes_out            = bytes_out_.load(std::memory_order_relaxed);
     out.tail_flushes         = tail_flushes_.load(std::memory_order_relaxed);
     out.connections          = snapshot_;
+    out.streams              = stream_cc_snapshot_;
     return out;
 }
 

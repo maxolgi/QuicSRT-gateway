@@ -9,6 +9,10 @@ documentation only; no gateway behavior was changed for parity):
 - **Rust**: supervisord `websrt` service — WT 0.0.0.0:4433, SRT ingest
   9000, health 9091 (HTTP), self-signed cert (runtime cert-hash.js).
 
+2026-10-15: two documented divergences closed in code —
+`send_failures` semantics and the `/health` `ingester` map (below);
+the ingester shape was re-checked against the live oracle.
+
 Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 `websrt-dump`, plus the WebSRT oracle bins (`wt_hs_probe`, `mock_obs`).
 
@@ -47,22 +51,28 @@ Nested objects:
 - `per_stream[]`: **identical field sets** — `name`, `alive`, `viewers`,
   `messages_sent`, `send_failures`.
 - `ticker`: **identical field sets** — `count`, `avg_us`, `max_us`.
-- `ingester`: **structured differently**. Rust: a map keyed by stream
-  name with per-connection TS-continuity counters (`cc_checks`,
-  `cc_gaps`, `messages_seen`) plus the built-in `rustref` self-monitor.
-  Ours: aggregate counters (`publishers_accepted`, `publishers_rejected`,
-  `publishers_ended`, `messages_in`, `chunks_out`). Real gap: we do not
-  surface per-ingest-connection TS continuity counters in /health
-  (functionality the Rust oracle uses for its own NAK/retransmit
-  monitoring). The richer per-connection data exists in our `/stats`
-  (`ingest.connections[]`), which the Rust gateway does not have at all
+- `ingester`: **parity (ported 2026-10-15)** — a map keyed by stream
+  name carrying that publisher connection's TS-continuity probe
+  (`cc_checks`, `cc_gaps`, `messages_seen`), `null` while no publisher
+  has ever connected (shape confirmed against the live oracle:
+  `{"ingester":null,...}`). Entries appear when a publisher claims the
+  name, persist after the connection ends (frozen counters) and start
+  fresh when the name is claimed again — the oracle's TsStatsHandle-map
+  behavior (main.rs:669-689). Our probe (`ts_continuity.h`, the oracle
+  `CcChecker` semantics: payload-only, duplicates tolerated, wrap ok,
+  signalled resets not counted) scans the chunker's 188-aligned output
+  rather than raw SRT messages, so it cannot misparse on message-boundary
+  misalignment the way the oracle's per-message `chunks_exact` can. The
+  aggregate ingest counters this slot used to carry live only in our
+  `/stats` (`ingest`), which the Rust gateway does not have at all
   (`/stats` → 404 on the Rust gateway; ours is additive).
 
 `/stats` (ours only): `uptime_ms`, `stream_count`, `alive_streams`,
 `viewers`, `max_viewers`, `active_sessions`, `ticker`,
 `server.{sessions_accepted,sessions_rejected,datagrams_received,
 datagrams_written,datagrams_dropped}`, `streams[]` (ring accounting),
-`sessions[]`, `ingest` (full counters + live `connections[]`).
+`sessions[]`, `ingest` (full counters + live `connections[]`, each
+carrying its continuity probe).
 
 ## Oracle bin runs against the C++ gateway (P3 gates)
 

@@ -1068,28 +1068,39 @@ std::string WebServer::HealthJson() const
     AppendNum(out, "max_us", max);
     out += "}";
 
-    // The oracle reports its TS-continuity checker here (null when no
-    // ingester). The C++ ingest has no continuity checker, so the slot
-    // carries its own live counters instead - same key, same meaning
-    // ("the ingest side of this gateway").
+    // The oracle's ingester slot (websrt-gateway main.rs:669-689): a map
+    // keyed by stream name, each entry that publisher connection's
+    // TS-continuity probe (cc_checks / cc_gaps / messages_seen), null
+    // while no publisher has ever connected. An entry appears when a
+    // publisher claims the name, persists after the connection ends
+    // (frozen at its final counters) and starts fresh when the name is
+    // claimed again. The aggregate counters live in /stats only.
+    const SrtIngestStats ingest_stats = config_.ingest != nullptr ? config_.ingest->Stats() : SrtIngestStats{};
     out += ",\"ingester\":";
-    if (config_.ingest == nullptr)
+    if (ingest_stats.streams.empty())
     {
         out += "null";
     }
     else
     {
-        const SrtIngestStats stats = config_.ingest->Stats();
         out += "{";
-        AppendNum(out, "publishers_accepted", stats.publishers_accepted);
-        out += ",";
-        AppendNum(out, "publishers_rejected", stats.publishers_rejected);
-        out += ",";
-        AppendNum(out, "publishers_ended", stats.publishers_ended);
-        out += ",";
-        AppendNum(out, "messages_in", stats.messages_in);
-        out += ",";
-        AppendNum(out, "chunks_out", stats.chunks_out);
+        bool first = true;
+        for (const auto& [name, cc] : ingest_stats.streams)
+        {
+            if (!first)
+            {
+                out += ",";
+            }
+            first = false;
+            AppendJsonString(out, name);
+            out += ":{";
+            AppendNum(out, "cc_checks", cc.cc_checks);
+            out += ",";
+            AppendNum(out, "cc_gaps", cc.cc_gaps);
+            out += ",";
+            AppendNum(out, "messages_seen", cc.messages_seen);
+            out += "}";
+        }
         out += "}";
     }
 
@@ -1254,11 +1265,16 @@ std::string WebServer::StatsJson() const
         out += ",";
         AppendNum(out, "rx_mbps_x1000", static_cast<std::uint64_t>(session.srt.mbpsRecvRate * 1000.0));
         out += ",";
-        AppendNum(out, "rx_pkts", static_cast<std::uint64_t>(session.srt.pktRecvTotal > 0 ? session.srt.pktRecvTotal : 0));
+        AppendNum(
+            out, "rx_pkts", static_cast<std::uint64_t>(session.srt.pktRecvTotal > 0 ? session.srt.pktRecvTotal : 0));
         out += ",";
-        AppendNum(out, "rx_drop", static_cast<std::uint64_t>(session.srt.pktRcvDropTotal > 0 ? session.srt.pktRcvDropTotal : 0));
+        AppendNum(out,
+                  "rx_drop",
+                  static_cast<std::uint64_t>(session.srt.pktRcvDropTotal > 0 ? session.srt.pktRcvDropTotal : 0));
         out += ",";
-        AppendNum(out, "rx_loss", static_cast<std::uint64_t>(session.srt.pktRcvLossTotal > 0 ? session.srt.pktRcvLossTotal : 0));
+        AppendNum(out,
+                  "rx_loss",
+                  static_cast<std::uint64_t>(session.srt.pktRcvLossTotal > 0 ? session.srt.pktRcvLossTotal : 0));
         out += ",";
         AppendNum(out,
                   "rx_belated",
@@ -1316,6 +1332,12 @@ std::string WebServer::StatsJson() const
             AppendNum(out, "chunks_out", conn.chunks_out);
             out += ",";
             AppendNum(out, "tail_bytes", conn.tail_bytes);
+            out += ",";
+            AppendNum(out, "cc_checks", conn.cc.cc_checks);
+            out += ",";
+            AppendNum(out, "cc_gaps", conn.cc.cc_gaps);
+            out += ",";
+            AppendNum(out, "messages_seen", conn.cc.messages_seen);
             out += "}";
         }
         out += "]}";
@@ -1498,7 +1520,7 @@ std::string WebServer::StatsHtml() const
 
         out += "<table>\n<caption>ingest connections</caption>\n"
                "<tr><th>stream</th><th>remote</th><th>bytes_in</th><th>messages_in</th><th>chunks_out</th>"
-               "<th>tail_bytes</th></tr>\n";
+               "<th>tail_bytes</th><th>cc_checks</th><th>cc_gaps</th><th>messages_seen</th></tr>\n";
         for (const SrtConnectionStats& conn : stats.connections)
         {
             out += "<tr>";
@@ -1512,11 +1534,14 @@ std::string WebServer::StatsHtml() const
             td(std::to_string(conn.messages_in));
             td(std::to_string(conn.chunks_out));
             td(std::to_string(conn.tail_bytes));
+            td(std::to_string(conn.cc.cc_checks));
+            td(std::to_string(conn.cc.cc_gaps));
+            td(std::to_string(conn.cc.messages_seen));
             out += "</tr>\n";
         }
         if (stats.connections.empty())
         {
-            out += "<tr><td colspan=\"6\">none</td></tr>\n";
+            out += "<tr><td colspan=\"9\">none</td></tr>\n";
         }
         out += "</table>\n";
     }
