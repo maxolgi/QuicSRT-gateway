@@ -310,6 +310,22 @@ struct WtServerCallbacks
             return;
         }
         auto* cc = reinterpret_cast<WtServer::ConnCtx*>(lsquic_conn_get_ctx(conn));
+        // The evidence line for conn-death diagnosis: CID matches the
+        // engine's own [QUIC:CID] log lines (reason lives there).
+        char cid[17 * 2 + 1] = {0};
+        {
+            const lsquic_cid_t* c = lsquic_conn_id(conn);
+            static const char* const hex = "0123456789ABCDEF";
+            for (std::size_t i = 0; i < c->len && i * 2 + 1 < sizeof cid - 1; ++i)
+            {
+                cid[i * 2]     = hex[c->idbuf[i] >> 4];
+                cid[i * 2 + 1] = hex[c->idbuf[i] & 0xF];
+            }
+        }
+        Log("connection %s closed (%zu session(s) affected, local close: %s)",
+            cid,
+            cc->session_handles.size(),
+            server->tearing_down_ || server->closing_ ? "yes" : "no");
         // The connection object is gone once this callback returns.
         server->conns_.erase(reinterpret_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(conn)));
         for (const std::uint64_t handle_id : cc->session_handles)
@@ -388,6 +404,9 @@ struct WtServerCallbacks
         WtServer::StreamCtx* sc = SC(h);
         if (sc->session != nullptr)
         {
+            // Not our own close: TerminateSession nulls sc->session first,
+            // so a session present here means the PEER closed the stream.
+            Log("session %" PRIu64 ": peer closed the session stream", sc->session->handle.Id());
             sc->server->TerminateSession(*sc->session, "session stream closed");
         }
         delete sc;
@@ -607,6 +626,14 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
 
     struct lsquic_engine_settings settings;
     lsquic_engine_init_settings(&settings, LSENG_HTTP_SERVER);
+    // lsquic's no-progress watchdog aborts a conn after
+    // LSQUIC_DF_NOPROGRESS_TIMEOUT_SERVER (60 s) without USER STREAM
+    // activity - and WT sessions carry all media on DATAGRAMS, so their
+    // session stream is silent after the handshake. Healthy 33 Mbps
+    // datagram sessions died at exactly 60 s ("connection timed out due
+    // to lack of progress"). Disabled: SRT owns liveness (quinn parity -
+    // the Rust gateway has no such watchdog).
+    settings.es_noprogress_timeout              = 0;
     settings.es_versions                        = 1U << LSQVER_I001; // QUIC v1 + h3, as the clients speak
     settings.es_datagrams                       = 1;                 // advertise MAX_DATAGRAM_FRAME_SIZE
     settings.es_webtransport_server             = 1;                 // SETTINGS_ENABLE_WEBTRANSPORT
