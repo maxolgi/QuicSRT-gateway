@@ -9,9 +9,10 @@ cert modes, and runtime `cert-hash.js` emission. Built on
 `deps/libwebsrt` submodule strictly through its exported interface targets.
 
 **Status:** feature-complete through P4 (hot reload, HTML stats, webhooks,
-packaging). The phase/gate log lives in [PLAN.md](PLAN.md); behavioral
-parity vs the Rust gateway is measured row-by-row in
-[docs/parity.md](docs/parity.md).
+packaging). Behavioral parity vs the Rust gateway is measured row-by-row
+in [docs/parity.md](docs/parity.md); the phase/gate record is the git
+history (the P3/P4 gate commits) — PLAN.md was retired once every phase
+and gate had closed.
 
 ## Build
 
@@ -47,7 +48,7 @@ release tag is logged at configure time.
 
 3. **Publish.** Via WebTransport (`websrt://`, needs the libwebsrt-patched
    ffmpeg — `deps/ffmpeg/ffmpeg` in a libwebsrt checkout; the golden
-   commands from PLAN.md's Testing section, host adapted):
+   acceptance commands, host adapted):
 
        ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440 \
               -c:v libx264 -preset veryfast -c:a aac -f mpegts websrt://127.0.0.1:4433?stream=test
@@ -94,5 +95,6 @@ to deploy — it is embedded in the binary):
 
 After a rebuild or a config edit: `sudo supervisorctl restart websrt-cpp`;
 a config edit alone can also be applied live with
-`sudo kill -HUP $(pidof websrt-gateway)` (hot-reloadable settings only —
-see PLAN.md P4.1).
+`sudo kill -HUP $(pidof websrt-gateway)` (hot-reloadable settings only:
+the stream allowlist, viewer cap, log level, webhook settings — the rest
+is restart-required and logged as such).

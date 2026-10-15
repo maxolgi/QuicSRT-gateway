@@ -82,16 +82,17 @@ but unpublished streams), SIGHUP hot-reload of the allowlist / viewer cap /
 log level / webhook settings, Accept-negotiated HTML `/stats` (JSON stays
 the default), on_connect/on_close webhooks (dedicated worker thread,
 bounded drop-counting queue), `cmake --install` packaging, and a CI
-workflow. Gate log: PLAN.md status header; parity vs the Rust oracle:
-docs/parity.md; no open items (TODO.md retired once its last
-carry-overs closed).
+workflow. Parity vs the Rust oracle: docs/parity.md; phase/gate record:
+the P3/P4 gate commits in git history (PLAN.md was purged 2026-10-15
+once every phase and gate had closed); no open items (TODO.md retired
+once its last carry-overs closed).
 
 ## Build commands
 
     ./build.sh setup     # one-time: submodule init (recursive), player dist fetch, BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build the websrt-gateway binary
-    ./build.sh test      # ctest (17 pass + 4 live-oracle self-skips without the Rust gateway)
+    ./build.sh test      # ctest (19 pass + 4 live-oracle self-skips without the Rust gateway)
     ./build.sh web-dist  # refresh the embedded player (latest WebSRT release) + re-configure
 
 Raw form (what the script wraps — useful when debugging the script itself):
@@ -188,12 +189,12 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 
 ## Testing
 
-- `./build.sh test` — 21 ctests: 17 pass (unit + e2e); the 4 live-oracle
+- `./build.sh test` — 23 ctests: 19 pass (unit + e2e); the 4 live-oracle
   tests from deps/libwebsrt self-skip (SKIP_RETURN_CODE 77) without the
   Rust gateway.
 - P3/P4 gates passed (browser, oracle bins, 50-viewer concurrency, parity,
-  hot-reload, webhooks, fresh-clone build) — log in PLAN.md's status
-  header; parity matrix in docs/parity.md.
+  hot-reload, webhooks, fresh-clone build, CI green on GitHub incl. binary
+  releases) — recorded in the gate commits and docs/parity.md.
 - Golden acceptance commands (must always work against the running gateway,
   via the libwebsrt-patched ffmpeg):
   `ffmpeg -f lavfi -i testsrc2 … -f mpegts websrt://gw:443?stream=test` and
@@ -239,8 +240,6 @@ should trace to the request.
 ### 4. Goal-Driven Execution
 
 Transform tasks into verifiable goals and loop until verified. For
-multi-step tasks, state a plan with per-step verification. Phases and gates
-in `PLAN.md` are the success criteria — do not declare a phase done without
-its gate green.
+multi-step tasks, state a plan with per-step verification.
 
 If you are not sure about something dont overthink and use internet search
