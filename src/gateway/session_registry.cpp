@@ -185,8 +185,8 @@ void SessionRegistry::OnWtSession(WtSessionHandle handle, const WtSessionStart& 
     entry->publisher_role = publisher;
     // RTT seeding: the WT session's QUIC smoothed RTT at accept, zero
     // when unmeasured (the initiator then leaves srt's estimator alone).
-    entry->initiator = std::make_unique<SrtInitiator>(*server_, handle, InitiatorConfig{.latency_ms = config_.latency_ms},
-                                                      server_->SmoothedRtt(handle));
+    entry->initiator = std::make_unique<SrtInitiator>(
+        *server_, handle, InitiatorConfig{.latency_ms = config_.latency_ms}, server_->SmoothedRtt(handle));
 
     std::string error;
     if (!entry->initiator->Setup(&error))
@@ -363,10 +363,10 @@ bool SessionRegistry::ServiceViewer(const std::shared_ptr<RegistryEntry>& entry)
                 entry->backlog_overflow_drops += 1;
                 continue;
             }
-        reason   = r == SrtInitiator::kSendClosed ? "viewer srt connection closed"
-                                                  : std::string("viewer srt send failed: ") + srt_getlasterror_str();
-        need_end = true;
-        break;
+            reason   = r == SrtInitiator::kSendClosed ? "viewer srt connection closed"
+                                                      : std::string("viewer srt send failed: ") + srt_getlasterror_str();
+            need_end = true;
+            break;
         }
     }
     if (need_end)
@@ -416,16 +416,15 @@ bool SessionRegistry::EnqueueForViewer(WtSessionHandle handle, const void* data,
     {
         return false;
     }
-    const auto* bytes = static_cast<const std::uint8_t*>(data);
+    const auto*                       bytes = static_cast<const std::uint8_t*>(data);
     const std::lock_guard<std::mutex> lock(entry->backlog_mutex);
     // The fork's live send API caps one message at the negotiated payload
     // (LiveCC checkTransArgs; stock srt would fragment) - re-chunk ring
     // messages there. Payload is 188-aligned, so a TS byte stream is
     // split transparently for the receiver's demuxer.
-    const int payload = entry->initiator->max_payload();
-    const std::size_t chunk =
-        payload >= 188 ? static_cast<std::size_t>(payload) : len;
-    bool enqueued = false;
+    const int         payload  = entry->initiator->max_payload();
+    const std::size_t chunk    = payload >= 188 ? static_cast<std::size_t>(payload) : len;
+    bool              enqueued = false;
     for (std::size_t off = 0; off < len; off += chunk)
     {
         if (entry->backlog.size() >= config_.viewer_backlog_max)

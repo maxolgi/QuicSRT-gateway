@@ -80,8 +80,8 @@ struct RegistryConfig
     int                       recv_budget_per_tick       = 256;  ///< publisher pump bound per session per tick
     std::size_t               viewer_backlog_max         = 4096; ///< drop-oldest bound until G5's ring takes over
     int                       latency_ms                 = 10;   ///< per-session SRTO_RCVLATENCY/PEERLATENCY
-                                                                        ///< (the server latency_ms; senders
-                                                                        ///  too-late-drop against a tiny window)
+                                                                 ///< (the server latency_ms; senders
+                                                                 ///  too-late-drop against a tiny window)
 };
 
 /// Per-session evidence snapshot (SessionInfoFor).

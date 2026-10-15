@@ -314,7 +314,7 @@ struct WtServerCallbacks
         // engine's own [QUIC:CID] log lines (reason lives there).
         char cid[17 * 2 + 1] = {0};
         {
-            const lsquic_cid_t* c = lsquic_conn_id(conn);
+            const lsquic_cid_t*      c   = lsquic_conn_id(conn);
             static const char* const hex = "0123456789ABCDEF";
             for (std::size_t i = 0; i < c->len && i * 2 + 1 < sizeof cid - 1; ++i)
             {
