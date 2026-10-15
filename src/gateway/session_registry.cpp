@@ -19,7 +19,7 @@ namespace
 // packets and reassembles whole (the SlopShady wasm muxer frames whole
 // ~0.3 MB GOPs as single messages; srt_recvmsg silently truncates to the
 // buffer, so it grows on a full read, Rust-oracle style unbounded-in-kind).
-constexpr std::size_t kRecvBufInitial = 256 * 1024;
+constexpr std::size_t kRecvBufInitial = 1024 * 1024;
 constexpr std::size_t kRecvBufMax     = 4 * 1024 * 1024;
 
 // Largest single EnqueueForViewer payload accepted (int return of Send).
