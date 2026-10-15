@@ -224,7 +224,11 @@ target_compile_features(concurrency_test PRIVATE cxx_std_20)
 set_target_properties(concurrency_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(concurrency_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME concurrency_test COMMAND concurrency_test)
-set_tests_properties(concurrency_test PROPERTIES TIMEOUT 180)
+# RUN_SERIAL: this gate's budgets (50 viewers, zero-lag spread) are
+# CPU-tight and fail when other tests contend for the cores - seen on a
+# 4-vCPU CI runner under `ctest --parallel` (run 38658343544). ctest runs
+# it alone even in parallel mode; everything else stays parallel.
+set_tests_properties(concurrency_test PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE)
 
 # P4.1: SIGHUP config hot-reload - ReloadConfig (the reload entry point
 # behind the signal flag) against a live gateway core over WT loopback
