@@ -146,6 +146,7 @@ ServerConfig ParseServer(Table& table)
                                                  "web_tls",
                                                  "max_viewers",
                                                  "broadcast_capacity",
+                                                 "broadcast_byte_budget",
                                                  "max_sessions_per_ip",
                                                  "max_sessions",
                                                  "wt_idle_timeout_s",
@@ -182,6 +183,10 @@ ServerConfig ParseServer(Table& table)
     s.max_viewers = static_cast<std::uint32_t>(OptInt(table, "max_viewers", "[server]", s.max_viewers, 1, 1'000'000));
     s.broadcast_capacity = static_cast<std::uint32_t>(
         OptInt(table, "broadcast_capacity", "[server]", s.broadcast_capacity, 1, 10'000'000));
+    // The byte budget's floor is kRecvBufMax (session_registry.cpp): one
+    // whole maximum-size message always stays buffered at the minimum.
+    s.broadcast_byte_budget =
+        OptInt(table, "broadcast_byte_budget", "[server]", s.broadcast_byte_budget, 4 * 1024 * 1024, 1ULL << 40);
     // Rust GatewayLimits parity (limits.rs): caps 0 = unlimited (Option::None);
     // timeout bounds are the oracle's validate() ranges.
     s.max_sessions_per_ip =

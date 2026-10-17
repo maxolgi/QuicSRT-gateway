@@ -84,7 +84,9 @@ WebhookEvent LifecycleEvent(
 
 Gateway::Gateway(const CertProvider& cert, std::shared_ptr<const SessionPolicy> policy, GatewayConfig config)
     : webhooks_{config.webhooks}
-    , streams_{StreamRegistryConfig{.max_viewers = config.max_viewers, .broadcast_capacity = config.broadcast_capacity}}
+    , streams_{StreamRegistryConfig{.max_viewers           = config.max_viewers,
+                                    .broadcast_capacity    = config.broadcast_capacity,
+                                    .broadcast_byte_budget = config.broadcast_byte_budget}}
     , policy_{std::move(policy)}
     , registry_{loop_, *this, config.registry}
     , server_{loop_, cert, policy_, registry_, [this](const WtSessionStart& start) { return Admit(start); }, config.wt}

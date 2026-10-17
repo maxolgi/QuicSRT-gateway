@@ -92,7 +92,7 @@ once its last carry-overs closed).
     ./build.sh setup     # one-time: submodule init (recursive), player dist fetch, BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build the websrt-gateway binary
-    ./build.sh test      # ctest (20 pass + 4 live-oracle self-skips without the Rust gateway)
+    ./build.sh test      # ctest (21 pass + 4 live-oracle self-skips without the Rust gateway)
     ./build.sh web-dist  # refresh the embedded player (latest WebSRT release) + re-configure
 
 Raw form (what the script wraps — useful when debugging the script itself):
@@ -189,7 +189,7 @@ interface targets don't export. libwebsrt's `tests/consumer/` is the canary;
 
 ## Testing
 
-- `./build.sh test` — 24 ctests: 20 pass (unit + e2e); the 4 live-oracle
+- `./build.sh test` — 25 ctests: 21 pass (unit + e2e); the 4 live-oracle
   tests from deps/libwebsrt self-skip (SKIP_RETURN_CODE 77) without the
   Rust gateway.
 - P3/P4 gates passed (browser, oracle bins, 50-viewer concurrency, parity,

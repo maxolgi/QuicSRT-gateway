@@ -13,6 +13,9 @@
 //   - On overflow the OLDEST message is dropped (tokio overwrites the oldest
 //     slot and reports Lagged to the slow receivers) - live-stream
 //     semantics: a slow viewer misses messages, it never blocks the source.
+//     Overflow is reached through EITHER bound: the message-count cap or
+//     the retained-bytes budget (the memory bound - messages range from
+//     1128-byte payloads to whole multi-packet frames).
 //   - A viewer lagging further behind than the ring depth skips the
 //     messages it can no longer see and counts them in lagged_drops (the
 //     per-viewer drop accounting the Rust oracle surfaces as Lagged(n)).
@@ -57,8 +60,18 @@ struct BroadcasterConfig
     /// Ring depth in messages. The Rust oracle's default
     /// (gateway.rs:27 DEFAULT_BROADCAST_CAPACITY) - at the 1128-byte WebSRT
     /// payload this is ~37 MiB of buffering per live stream, which absorbs
-    /// long viewer-side stalls (drop-oldest, never backpressure).
+    /// long viewer-side stalls (drop-oldest, never backpressure). At LARGE
+    /// messages (whole multi-packet SRT frames, ~0.3 MB GOP keyframes; the
+    /// registry's receive buffer grows to 4 MB for those) the count alone
+    /// bounds no byte volume - byte_budget is the memory bound.
     std::size_t capacity = 32768;
+    /// Retained-payload-bytes ceiling per ring: after an append, oldest
+    /// messages are dropped until the ring holds at most this many bytes.
+    /// Byte-overflow drops are counted in ring_drops exactly like
+    /// count-cap drops; a budget smaller than one message leaves the ring
+    /// empty (the config layer's 4 MiB floor - the largest message the
+    /// publish path reassembles - keeps that off operator configs).
+    std::size_t byte_budget = 64 * 1024 * 1024;
     /// Per-stream concurrent viewer cap (the oracle's max_viewers; enforced
     /// by the registry's AttachViewer, carried here for the snapshot).
     std::size_t max_viewers = 16;
@@ -78,7 +91,7 @@ struct StreamStats
     ///< effectively unreachable - it does NOT count no-viewer appends. The
     ///< field stays for /health key parity.
     std::uint64_t send_failures  = 0;
-    std::uint64_t ring_drops     = 0; ///< drop-oldest on ring overflow
+    std::uint64_t ring_drops     = 0; ///< drop-oldest past the count cap OR the byte budget
     std::uint64_t oversize_drops = 0; ///< over a viewer's negotiated payload ceiling
 };
 
@@ -125,15 +138,23 @@ public:
 
     // ---- the ring ----
 
-    /// Append one message, byte-exact. Drop-OLDEST on overflow.
+    /// Append one message, byte-exact. Drop-OLDEST on overflow - past the
+    /// message-count cap OR the retained-bytes budget (one shared loop; a
+    /// message dropped by either bound decrements the byte tracker). Both
+    /// bounds move BaseSeq forward, so viewer cursors snap up with
+    /// lagged_drops in Pump exactly as before - drop-oldest never
+    /// backpressures the publisher. Amortized O(1): each message is pushed
+    /// once and popped at most once.
     void Append(const void* data, std::size_t len)
     {
         const auto* bytes = static_cast<const std::uint8_t*>(data);
         ring_.push_back(Message{.bytes = std::vector<std::uint8_t>(bytes, bytes + len)});
+        ring_bytes_ += len;
         ++next_seq_;
         ++messages_sent_;
-        while (ring_.size() > config_.capacity)
+        while (!ring_.empty() && (ring_.size() > config_.capacity || ring_bytes_ > config_.byte_budget))
         {
+            ring_bytes_ -= ring_.front().bytes.size();
             ring_.pop_front();
             ++ring_drops_;
         }
@@ -283,7 +304,8 @@ private:
     std::string                          name_;
     BroadcasterConfig                    config_;
     std::deque<Message>                  ring_;
-    std::uint64_t                        next_seq_ = 0; // sequence number the next Append will use
+    std::size_t                          ring_bytes_ = 0; // retained payload bytes (incremental; the byte-budget bound)
+    std::uint64_t                        next_seq_   = 0; // sequence number the next Append will use
     WtSessionHandle                      publisher_;
     std::map<std::uint64_t, ViewerState> viewers_; // handle id -> cursor
 

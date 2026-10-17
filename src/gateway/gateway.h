@@ -69,6 +69,9 @@ struct GatewayConfig
     std::size_t max_viewers = 16;
     /// Per-stream broadcaster ring depth in messages.
     std::size_t broadcast_capacity = 32768;
+    /// Per-ring retained-bytes budget (drop-oldest past it, counted in
+    /// ring_drops).
+    std::size_t broadcast_byte_budget = 64 * 1024 * 1024;
     /// Ticker/pacing knobs, passed through to the SessionRegistry.
     RegistryConfig registry{};
     /// Webhook delivery (P4.3); an empty URL leaves the feature off.

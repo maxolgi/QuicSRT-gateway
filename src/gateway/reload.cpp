@@ -58,9 +58,13 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     changed("web_bind", old_s.web_bind, new_s.web_bind);
     changed("web_root", optstr(old_s.web_root), optstr(new_s.web_root));
     changed("web_tls", old_s.web_tls ? "true" : "false", new_s.web_tls ? "true" : "false");
-    // Broadcaster rings: the depth is fixed per stream at creation; only a
-    // restart rebuilds every ring at one depth.
+    // Broadcaster rings: the depth and the byte budget are fixed per
+    // stream at creation; only a restart rebuilds every ring at one depth
+    // and one budget.
     changed("broadcast_capacity", std::to_string(old_s.broadcast_capacity), std::to_string(new_s.broadcast_capacity));
+    changed("broadcast_byte_budget",
+            std::to_string(old_s.broadcast_byte_budget),
+            std::to_string(new_s.broadcast_byte_budget));
     // WT admission limits + engine timeouts: the engine settings are built
     // once at Start and the tracker seeds at construction.
     changed(

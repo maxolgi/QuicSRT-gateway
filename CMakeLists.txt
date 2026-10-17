@@ -181,6 +181,16 @@ target_link_libraries(stream_registry_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME stream_registry_test COMMAND stream_registry_test)
 set_tests_properties(stream_registry_test PROPERTIES TIMEOUT 30)
 
+# Unit: the broadcaster ring's two bounds - the per-ring byte budget
+# alongside the message-count cap (drop-oldest past either, counted in
+# ring_drops).
+add_executable(broadcaster_test tests/broadcaster_test.cpp)
+target_compile_features(broadcaster_test PRIVATE cxx_std_20)
+set_target_properties(broadcaster_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(broadcaster_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME broadcaster_test COMMAND broadcaster_test)
+set_tests_properties(broadcaster_test PROPERTIES TIMEOUT 30)
+
 # End-to-end: libwebsrt's WTClient against the gateway's WtServer over
 # loopback (127.0.0.1:4434, ephemeral fallback inside the test).
 add_executable(wt_server_test tests/wt_server_test.cpp)

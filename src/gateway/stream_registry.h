@@ -47,6 +47,11 @@ struct StreamRegistryConfig
     /// Per-stream ring depth in messages; clamps to 1 (the oracle's
     /// `broadcast_capacity.max(1)`).
     std::size_t broadcast_capacity = 32768;
+    /// Per-ring retained-bytes budget (drop-oldest past it, counted in
+    /// ring_drops). No clamp here: the operator path ([server].
+    /// broadcast_byte_budget) validates a 4 MiB floor, and code-side
+    /// embedders own the value they set.
+    std::size_t broadcast_byte_budget = 64 * 1024 * 1024;
 };
 
 /// Stream name -> Broadcaster, with occupancy and the viewer cap.
@@ -55,6 +60,7 @@ class StreamRegistry
 public:
     explicit StreamRegistry(StreamRegistryConfig config)
         : config_{.capacity    = config.broadcast_capacity == 0 ? std::size_t{1} : config.broadcast_capacity,
+                  .byte_budget = config.broadcast_byte_budget,
                   .max_viewers = config.max_viewers == 0 ? std::size_t{1} : config.max_viewers}
     {
     }

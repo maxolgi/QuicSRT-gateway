@@ -153,6 +153,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         const websrt::gateway::ServerConfig& s = config.server;
         gateway_config.max_viewers             = s.max_viewers;
         gateway_config.broadcast_capacity      = s.broadcast_capacity;
+        gateway_config.broadcast_byte_budget   = s.broadcast_byte_budget;
         gateway_config.wt.max_sessions_per_ip  = s.max_sessions_per_ip;
         gateway_config.wt.max_sessions         = s.max_sessions;
         gateway_config.wt.idle_timeout_s       = s.wt_idle_timeout_s;
@@ -206,7 +207,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         }
         std::printf("websrt-gateway: config: %zu stream(s), %s "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
-                    "broadcast_capacity %u)\n",
+                    "broadcast_capacity %u, broadcast_byte_budget %llu)\n",
                     config.streams.size(),
                     config.streams.empty() ? "open mode (no [[stream]] entries)" : "allowlist mode",
                     s.wt_bind.c_str(),
@@ -218,7 +219,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                     s.web_bind.c_str(),
                     s.web_port,
                     s.max_viewers,
-                    s.broadcast_capacity);
+                    s.broadcast_capacity,
+                    static_cast<unsigned long long>(s.broadcast_byte_budget));
         if (!config.webhooks.on_event_url.empty())
         {
             std::printf("websrt-gateway: webhooks on: POST session events to %s (timeout %llu ms)\n",

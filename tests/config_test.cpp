@@ -74,6 +74,7 @@ health_bind = "127.0.0.2"
 web_port = 8080
 web_bind = "0.0.0.0"
 max_viewers = 50
+broadcast_byte_budget = 16777216
 cert_mode = "mkcert"
 cert_pem = "cert.pem"
 key_pem = "key.pem"
@@ -109,6 +110,7 @@ subscribe = false
     Check(c.server.web_port == 8080, "web_port parsed");
     Check(c.server.web_bind == "0.0.0.0", "web_bind parsed");
     Check(c.server.max_viewers == 50, "max_viewers parsed");
+    Check(c.server.broadcast_byte_budget == 16777216, "broadcast_byte_budget parsed");
     Check(c.server.cert_mode == "mkcert", "cert_mode parsed");
     Check(c.server.cert_pem == std::optional<std::string>("cert.pem"), "cert_pem parsed");
     Check(c.server.key_pem == std::optional<std::string>("key.pem"), "key_pem parsed");
@@ -136,6 +138,7 @@ bool TestDefaults()
     Check(c.server.health_port == 0, "default health_port");
     Check(c.server.web_port == 5173, "default web_port");
     Check(c.server.max_viewers == 16, "default max_viewers");
+    Check(c.server.broadcast_byte_budget == 64 * 1024 * 1024, "default broadcast_byte_budget (64 MiB)");
     Check(c.server.cert_mode == "self" && !c.server.cert_pem.has_value() && !c.server.key_pem.has_value(),
           "default cert mode");
     Check(!c.server.log_level.has_value(), "default: no log_level");
@@ -203,6 +206,8 @@ bool TestMissingAndInvalidFields()
     CheckThrows("[server]\nwt_port = 70000\n", "wt_port out of range", "between 1 and 65535");
     CheckThrows("[server]\nlatency_ms = 5\n", "latency below floor", "between 10 and 60000");
     CheckThrows("[server]\nmax_viewers = 0\n", "max_viewers zero", "between 1 and 1000000");
+    CheckThrows("[server]\nbroadcast_byte_budget = 1048576\n", "byte budget below floor", "between 4194304 and");
+    CheckThrows("[server]\nbroadcast_byte_budget = 0\n", "byte budget zero", "between 4194304 and");
     CheckThrows(R"([server]
 cert_mode = "magic"
 )",

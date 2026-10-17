@@ -70,13 +70,20 @@ struct ServerConfig
     /// treats http://127.0.0.1 and LAN pages as secure contexts anyway.
     /// The WebTransport handshake is UNAFFECTED: it stays TLS and is
     /// pinned through the dynamically served cert-hash.js either way.
-    bool                       web_tls            = true;
-    std::uint32_t              max_viewers        = 16;     ///< per-stream viewer cap
-    std::uint32_t              broadcast_capacity = 32768;  ///< per-stream broadcaster ring depth in messages
-    std::string                cert_mode          = "self"; ///< "self" | "mkcert"
-    std::optional<std::string> cert_pem;                    ///< mkcert mode: required
-    std::optional<std::string> key_pem;                     ///< mkcert mode: required
-    std::optional<std::string> srt_passphrase;              ///< SRT PBKEYLEN passphrase (10-79 chars)
+    bool          web_tls            = true;
+    std::uint32_t max_viewers        = 16;    ///< per-stream viewer cap
+    std::uint32_t broadcast_capacity = 32768; ///< per-stream broadcaster ring depth in messages
+    /// Per-stream ring retained-bytes budget: past it the OLDEST messages
+    /// are dropped (counted in ring_drops, like count-cap drops). Range
+    /// 4 MiB..1 TiB; the floor is the largest message the publish path
+    /// reassembles (SessionRegistry's 4 MiB receive-buffer cap), so even
+    /// at the minimum one whole maximum-size message stays buffered - the
+    /// key can never zero out all buffering.
+    std::uint64_t              broadcast_byte_budget = 64 * 1024 * 1024;
+    std::string                cert_mode             = "self"; ///< "self" | "mkcert"
+    std::optional<std::string> cert_pem;                       ///< mkcert mode: required
+    std::optional<std::string> key_pem;                        ///< mkcert mode: required
+    std::optional<std::string> srt_passphrase;                 ///< SRT PBKEYLEN passphrase (10-79 chars)
     /// lsquic diagnostic log level, lsquic's own set ("emerg".."debug").
     /// Absent leaves the process default; the CLI --log-level flag
     /// overrides the file at boot. Runtime-swappable on SIGHUP reload
