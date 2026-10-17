@@ -47,10 +47,6 @@ constexpr int kStreamIdBufBytes = 513;
 // MiB is a generous ceiling that keeps one connection's footprint sane.
 constexpr std::size_t kRecvBufBytes = std::size_t{1024} * 1024;
 
-// MPEG-TS packet size - every framed message is a whole number of these
-// (libwebsrt's kTsPacketSize, publisher.h:103).
-constexpr std::size_t kTsPacketSize = 188;
-
 void Log(const char* fmt, ...)
 {
     std::fputs("srt-ingest: ", stderr);
@@ -423,7 +419,7 @@ void SrtIngest::AcceptOne()
     // TsStatsHandle at connection setup (main.rs:562-568), replacing any
     // frozen entry a previous publisher on this name left behind.
     stream_cc_[stream] = TsCcStats{};
-    Conn conn;
+    Conn conn{.chunker = websrt::TsChunker{config_.payload_size}};
     conn.sock       = ns;
     conn.stream     = stream;
     conn.remote     = remote;
@@ -490,30 +486,18 @@ void SrtIngest::FeedAndChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
         return;
     }
     Conn& conn = it->second;
-    conn.pending.insert(conn.pending.end(), data, data + len);
 
-    // TsChunker framing, ported from libwebsrt's publisher
-    // (publisher.cpp:69-80): each message is the largest whole multiple of
-    // 188 that fits the payload size, and a sub-188 remainder carries over
-    // between messages. Messages must be TS-aligned and <= the payload
-    // ceiling because the viewers drop anything larger than what they
-    // negotiated (Broadcaster::Pump: never truncate, never retry).
-    const std::size_t per_msg = static_cast<std::size_t>(config_.payload_size) / kTsPacketSize;
-    std::size_t       emitted = 0;
-    for (;;)
+    // TsChunker framing, libwebsrt's publisher rules (parity.md row 35):
+    // each message is the largest whole multiple of 188 that fits the
+    // payload size, and a sub-188 remainder carries over between
+    // messages. Messages must be TS-aligned and <= the payload ceiling
+    // because the viewers drop anything larger than what they negotiated
+    // (Broadcaster::Pump: never truncate, never retry).
+    conn.chunker.Feed(data, len);
+    for (int n = conn.chunker.NextChunkLen(); n > 0; n = conn.chunker.NextChunkLen())
     {
-        const std::size_t whole_ts = (conn.pending.size() - emitted) / kTsPacketSize;
-        if (whole_ts == 0)
-        {
-            break;
-        }
-        const std::size_t take = std::min(whole_ts, per_msg) * kTsPacketSize;
-        PublishChunk(sock, conn.pending.data() + emitted, take);
-        emitted += take;
-    }
-    if (emitted > 0)
-    {
-        conn.pending.erase(conn.pending.begin(), conn.pending.begin() + static_cast<std::ptrdiff_t>(emitted));
+        PublishChunk(sock, conn.chunker.data(), static_cast<std::size_t>(n));
+        conn.chunker.Consume(n);
     }
 }
 
@@ -562,10 +546,10 @@ void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
     // A sub-188 tail is not a whole TS packet, but dropping it would lose
     // bytes: libwebsrt's publisher flushes it on End()
     // (publisher.cpp:628-635) and so do we, then the viewers get their EOF.
-    if (!it->second.pending.empty())
+    const std::size_t tail = it->second.chunker.pending();
+    if (tail > 0)
     {
-        const std::size_t tail = it->second.pending.size();
-        PublishChunk(sock, it->second.pending.data(), tail);
+        PublishChunk(sock, it->second.chunker.data(), tail);
         Bump(tail_flushes_);
         Log("stream '%s': flushed a %zu-byte sub-188 tail before the publisher went away", stream.c_str(), tail);
     }
@@ -609,7 +593,7 @@ void SrtIngest::RefreshSnapshot()
         s.bytes_in    = conn.bytes_in;
         s.messages_in = conn.messages_in;
         s.chunks_out  = conn.chunks_out;
-        s.tail_bytes  = conn.pending.size();
+        s.tail_bytes  = conn.chunker.pending();
         s.cc          = conn.cc.Stats();
         s.srt_stats   = srt_bstats(conn.sock, &s.srt, 0) == 0;
         live.push_back(std::move(s));

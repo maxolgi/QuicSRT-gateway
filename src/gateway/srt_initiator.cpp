@@ -1,4 +1,5 @@
 #include "gateway/srt_initiator.h"
+#include "srt_session/negotiate.h"
 
 #include <algorithm>
 #include <cstring>
@@ -235,32 +236,12 @@ SRT_SOCKSTATUS SrtInitiator::ConnectionState()
         return state;
     }
 
-    // First connected observation: read back the negotiated payload cap.
-    // SRTO_PAYLOADSIZE reports the configured/expected size; the real
-    // ceiling is MSS - 44 (UDP + IP + SRT data headers). The Rust
-    // initiator fills the HSv5 MTU field with its payload size although
-    // the field is documented as including UDP/IP headers, so a
-    // fork-to-Rust negotiation can land MSS at 1128 and the cap at 1084 -
-    // floored to 940 = 5 x 188 to keep the framing TS-aligned (the same
-    // readback libwebsrt's publisher session performs).
+    // First connected observation: read back the negotiated payload cap
+    // via libwebsrt's NegotiatePayload (the same readback the publisher
+    // session performs; srt_session/negotiate.h carries the full MSS - 44
+    // / Rust MTU-field-quirk story).
     payload_read_done_ = true;
-    int payload        = config_.payload_size;
-    int optlen         = static_cast<int>(sizeof payload);
-    if (srt_getsockopt(sock_, 0, SRTO_PAYLOADSIZE, &payload, &optlen) == SRT_ERROR || payload < 188)
-    {
-        payload = config_.payload_size;
-    }
-    int mss = 1500;
-    optlen  = static_cast<int>(sizeof mss);
-    if (srt_getsockopt(sock_, 0, SRTO_MSS, &mss, &optlen) != SRT_ERROR)
-    {
-        const int cap = mss - (28 + 16);
-        if (cap >= 188)
-        {
-            payload = std::min(payload, cap / 188 * 188);
-        }
-    }
-    max_payload_ = payload;
+    max_payload_       = NegotiatePayload(sock_, config_.payload_size);
     return state;
 }
 

@@ -83,6 +83,7 @@
 #include "gateway/ingest/ts_continuity.h"
 #include "gateway/webhooks.h"
 #include "srt.h"
+#include "srt_session/publisher.h"
 
 namespace websrt::gateway
 {
@@ -207,16 +208,16 @@ public:
 private:
     struct Conn
     {
-        SRTSOCKET                 sock = SRT_INVALID_SOCK;
-        std::string               stream;
-        std::string               remote;
-        std::uint64_t             session_id = 0; ///< webhook identity (ingest-minted, nothing else consumes it)
-        std::vector<char>         recv_buf;
-        std::vector<std::uint8_t> pending; ///< sub-188 carry-over, in stream order
-        std::uint64_t             bytes_in    = 0;
-        std::uint64_t             messages_in = 0;
-        std::uint64_t             chunks_out  = 0;
-        TsContinuityChecker       cc; ///< the connection's TS-continuity probe
+        SRTSOCKET           sock = SRT_INVALID_SOCK;
+        std::string         stream;
+        std::string         remote;
+        std::uint64_t       session_id = 0; ///< webhook identity (ingest-minted, nothing else consumes it)
+        std::vector<char>   recv_buf;
+        websrt::TsChunker   chunker; ///< 188-aligned framing (libwebsrt's TsChunker rules)
+        std::uint64_t       bytes_in    = 0;
+        std::uint64_t       messages_in = 0;
+        std::uint64_t       chunks_out  = 0;
+        TsContinuityChecker cc; ///< the connection's TS-continuity probe
     };
 
     // ---- ingest thread ----

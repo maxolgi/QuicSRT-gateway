@@ -42,6 +42,7 @@
 #include "core/event_loop.h"
 #include "gateway/cert.h"
 #include "gateway/policy.h"
+#include "proto/constants.h"
 
 struct lsquic_engine;
 struct lsquic_conn;
@@ -143,9 +144,11 @@ class WtServer : private websrt::EngineHost
 {
 public:
     /// Largest payload SendDatagram accepts (fits next to the context
-    /// prefix in a minimum-MTU datagram frame; SRT's 1128-byte payloads do).
-    static constexpr std::size_t kMaxDatagramSize    = 1184;
-    static constexpr std::size_t kMaxQueuedDatagrams = 256;
+    /// prefix in a minimum-MTU datagram frame; SRT's 1128-byte payloads
+    /// do). Aliases libwebsrt's shared protocol constants so the client
+    /// library and the gateway cannot drift apart.
+    static constexpr std::size_t kMaxDatagramSize    = websrt::kMaxDatagramSize;
+    static constexpr std::size_t kMaxQueuedDatagrams = websrt::kMaxQueuedDatagrams;
 
     /// ADMISSION CONTROL - consulted AFTER the SessionPolicy accepts and
     /// BEFORE the 200 response is written, with the query already
