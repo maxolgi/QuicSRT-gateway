@@ -173,8 +173,11 @@ public:
     /// Thread-safe evidence.
     [[nodiscard]] bool SessionInfoFor(WtSessionHandle handle, SessionInfo* out) const;
     /// Every live (not-yet-finished) session's identity + counters + SRT
-    /// stats, in handle order (health/stats). Thread-safe: the same map
-    /// mutex SessionInfoFor takes, so an off-loop health worker may call it.
+    /// stats, in handle order (health/stats). Thread-safe for an off-loop
+    /// health worker: copies the live entries under the map mutex, then
+    /// samples each entry outside it (each entry's own synchronization -
+    /// atomics, backlog_mutex, the initiator's socket guard), so the map
+    /// mutex is never held across srt calls.
     [[nodiscard]] std::vector<SessionSnapshot> SnapshotSessions() const;
     [[nodiscard]] bool                         IsConnected(WtSessionHandle handle) const;
     [[nodiscard]] bool                         Stats(WtSessionHandle handle, SRT_TRACEBSTATS* out) const;
@@ -218,9 +221,11 @@ private:
     bool                     shutting_down_ = false;   // dtor path: no WtServer calls
 
     // Live sessions keyed by handle id. The mutex guards the MAP only
-    // (insert/erase/snapshot); entry internals are loop-thread except the
-    // atomics and the guarded viewer backlog. Never held across srt calls
-    // outside FinishEntry's erase.
+    // (insert/erase/snapshot); entry internals are loop-thread except
+    // the atomics, the backlog-mutex-guarded viewer backlog (including
+    // its drop counters) and the initiator's any-thread stats surface
+    // (max_payload/StatsOut - see srt_initiator.h). Never held across
+    // srt calls outside FinishEntry's erase.
     mutable std::map<std::uint64_t, std::shared_ptr<struct RegistryEntry>> entries_;
     mutable std::mutex                                                     entries_mutex_;
 

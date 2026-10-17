@@ -73,6 +73,8 @@ struct RegistryEntry
 
     // Viewer send backlog: EnqueueForViewer (any thread) vs the ticker's
     // ServiceViewer (loop thread) - guarded, unlike everything else here.
+    // The drop counters live under the same mutex (their off-loop reads
+    // in InfoOf take it too).
     std::mutex                            backlog_mutex;
     std::deque<std::vector<std::uint8_t>> backlog;
     std::uint64_t                         backlog_start_drops    = 0; // first-connect drop_backlog
@@ -96,21 +98,27 @@ namespace
 {
 
 /// The evidence both SessionInfoFor and SnapshotSessions report (one
-/// definition, so the two views can never disagree).
+/// definition, so the two views can never disagree). Any thread:
+/// immutable-after-publication fields, atomics, and the backlog evidence
+/// under the same mutex its writes take.
 SessionInfo InfoOf(RegistryEntry& entry)
 {
     SessionInfo info;
-    info.stream_name            = entry.stream_name;
-    info.publisher_role         = entry.publisher_role;
-    info.connected              = entry.connected_seen.load(std::memory_order_relaxed);
-    info.max_payload            = entry.initiator->max_payload();
-    info.messages_sent          = entry.messages_sent.load(std::memory_order_relaxed);
-    info.messages_received      = entry.messages_received.load(std::memory_order_relaxed);
-    info.backlog_start_drops    = entry.backlog_start_drops;
-    info.backlog_overflow_drops = entry.backlog_overflow_drops;
+    info.stream_name       = entry.stream_name;
+    info.publisher_role    = entry.publisher_role;
+    info.connected         = entry.connected_seen.load(std::memory_order_relaxed);
+    info.max_payload       = entry.initiator->max_payload();
+    info.messages_sent     = entry.messages_sent.load(std::memory_order_relaxed);
+    info.messages_received = entry.messages_received.load(std::memory_order_relaxed);
     {
+        // Backlog evidence under backlog_mutex: every write to the drop
+        // counters takes it (Tick's drop_backlog, EnqueueForViewer's
+        // drop-oldest, ServiceViewer's oversize drop) - reading them
+        // unlocked raced the loop thread's writes.
         const std::lock_guard<std::mutex> lock(entry.backlog_mutex);
-        info.backlog_size = entry.backlog.size();
+        info.backlog_size           = entry.backlog.size();
+        info.backlog_start_drops    = entry.backlog_start_drops;
+        info.backlog_overflow_drops = entry.backlog_overflow_drops;
     }
     return info;
 }
@@ -484,21 +492,34 @@ bool SessionRegistry::SessionInfoFor(WtSessionHandle handle, SessionInfo* out) c
 
 std::vector<SessionSnapshot> SessionRegistry::SnapshotSessions() const
 {
-    std::vector<SessionSnapshot>      out;
-    const std::lock_guard<std::mutex> lock(entries_mutex_);
-    out.reserve(entries_.size());
-    for (const auto& entry : entries_)
+    // Live entries copied under the map mutex (the shared_ptrs keep them
+    // alive), each sampled OUTSIDE it: per-entry state has its own
+    // synchronization (atomics, backlog_mutex, the initiator's socket
+    // guard), and holding the map mutex across the srt sampling would
+    // contend with the 2 ms tick's own Snapshot().
+    std::vector<std::shared_ptr<RegistryEntry>> live;
     {
-        // Finished entries are on their way out; the oracle filters them
-        // out of snapshot_sessions for the same reason.
-        if (entry.second->finished.load(std::memory_order_relaxed))
+        const std::lock_guard<std::mutex> lock(entries_mutex_);
+        live.reserve(entries_.size());
+        for (const auto& entry : entries_)
         {
-            continue;
+            // Finished entries are on their way out; the oracle filters
+            // them out of snapshot_sessions for the same reason.
+            if (!entry.second->finished.load(std::memory_order_relaxed))
+            {
+                live.push_back(entry.second);
+            }
         }
+    }
+
+    std::vector<SessionSnapshot> out;
+    out.reserve(live.size());
+    for (const auto& entry : live)
+    {
         SessionSnapshot snapshot;
-        snapshot.session_id = entry.first;
-        snapshot.info       = InfoOf(*entry.second);
-        snapshot.srt_valid  = entry.second->initiator->StatsOut(&snapshot.srt);
+        snapshot.session_id = entry->handle.Id();
+        snapshot.info       = InfoOf(*entry);
+        snapshot.srt_valid  = entry->initiator->StatsOut(&snapshot.srt);
         out.push_back(snapshot);
     }
     return out;

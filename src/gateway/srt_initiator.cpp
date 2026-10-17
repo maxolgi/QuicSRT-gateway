@@ -226,12 +226,13 @@ int SrtInitiator::Send(const void* data, int len)
 
 SRT_SOCKSTATUS SrtInitiator::ConnectionState()
 {
+    const std::lock_guard<std::mutex> lock(sock_mutex_);
     if (sock_ == SRT_INVALID_SOCK || closed_.load(std::memory_order_relaxed))
     {
         return SRTS_CLOSED;
     }
     const SRT_SOCKSTATUS state = srt_getsockstate(sock_);
-    if (state != SRTS_CONNECTED || payload_read_done_)
+    if (state != SRTS_CONNECTED || payload_read_done_.load(std::memory_order_acquire))
     {
         return state;
     }
@@ -239,9 +240,12 @@ SRT_SOCKSTATUS SrtInitiator::ConnectionState()
     // First connected observation: read back the negotiated payload cap
     // via libwebsrt's NegotiatePayload (the same readback the publisher
     // session performs; srt_session/negotiate.h carries the full MSS - 44
-    // / Rust MTU-field-quirk story).
-    payload_read_done_ = true;
-    max_payload_       = NegotiatePayload(sock_, config_.payload_size);
+    // / Rust MTU-field-quirk story). The value is stored before the flag
+    // (release/acquire), so an observed set flag implies the negotiated
+    // cap; max_payload() itself only needs a coherent value.
+    const int negotiated = NegotiatePayload(sock_, config_.payload_size);
+    max_payload_.store(negotiated, std::memory_order_relaxed);
+    payload_read_done_.store(true, std::memory_order_release);
     return state;
 }
 
@@ -252,7 +256,16 @@ bool SrtInitiator::IsConnected()
 
 bool SrtInitiator::StatsOut(SRT_TRACEBSTATS* out)
 {
-    if (out == nullptr || sock_ == SRT_INVALID_SOCK || closed_.load(std::memory_order_relaxed))
+    if (out == nullptr)
+    {
+        return false;
+    }
+    // Under sock_mutex_ across the whole sample: Teardown nulls and
+    // closes the socket under the same mutex, so this either samples the
+    // live socket before the close or observes SRT_INVALID_SOCK after -
+    // never a handle mid-close (or its id recycled into a new socket).
+    const std::lock_guard<std::mutex> lock(sock_mutex_);
+    if (sock_ == SRT_INVALID_SOCK || closed_.load(std::memory_order_relaxed))
     {
         return false;
     }
@@ -269,16 +282,25 @@ void SrtInitiator::Teardown()
     // the send callback (it swallows sends and claims success so srt's
     // control machinery stays quiet), close the socket - it sends the SRT
     // shutdown through the still-attached transport - then release the
-    // transport handle and the epoll (the enforced fork order).
+    // transport handle and the epoll (the enforced fork order). The
+    // handle is detached under sock_mutex_ BEFORE the close: a concurrent
+    // off-loop scrape (StatsOut/ConnectionState) either completes on the
+    // live socket before this or sees SRT_INVALID_SOCK after - the close
+    // itself runs outside the mutex so no scrape ever waits on it.
     closed_.store(true, std::memory_order_relaxed);
-    if (epoll_ != SRT_ERROR && sock_ != SRT_INVALID_SOCK)
+    SRTSOCKET sock = SRT_INVALID_SOCK;
     {
-        srt_epoll_remove_usock(epoll_, sock_);
-    }
-    if (sock_ != SRT_INVALID_SOCK)
-    {
-        srt_close(sock_);
+        const std::lock_guard<std::mutex> lock(sock_mutex_);
+        sock  = sock_;
         sock_ = SRT_INVALID_SOCK;
+    }
+    if (epoll_ != SRT_ERROR && sock != SRT_INVALID_SOCK)
+    {
+        srt_epoll_remove_usock(epoll_, sock);
+    }
+    if (sock != SRT_INVALID_SOCK)
+    {
+        srt_close(sock);
     }
     if (vt_ != nullptr)
     {

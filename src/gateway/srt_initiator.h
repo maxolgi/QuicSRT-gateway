@@ -50,16 +50,20 @@
 //
 // THREADS AND TEARDOWN ORDER. Everything except the send callback runs on
 // the EventLoop thread (Setup at session accept, Inject from OnDatagram,
-// ReceiveNext/Send/ConnectionState/Teardown from the ticker or close
-// path); they serialize on the single loop thread, so no internal mutex
-// is needed. Teardown follows the fork's enforced order: remove the
-// socket from the srt epoll, mark closed (the send callback swallows
-// further sends), srt_close the socket (it sends the SRT shutdown through
-// the still-attached transport - the M0 lesson), then release the
-// transport handle, then release the epoll. The handshake completes
-// asynchronously on srt's threads; poll ConnectionState() for the
-// CONNECTED transition (first observation also reads back the negotiated
-// payload cap).
+// ReceiveNext/Send/Teardown from the ticker or close path); they serialize
+// on the single loop thread. The exceptions are the any-thread surface the
+// /health and /stats workers scrape: ConnectionState/IsConnected/StatsOut
+// (sock_'s lifetime is guarded by sock_mutex_ - Teardown nulls and closes
+// under it, so a racing scrape can never sample a handle being closed or
+// a recycled id) and max_payload() (atomic; the loop writes the
+// negotiated cap at the first connected observation). Teardown follows
+// the fork's enforced order: mark closed (the send callback swallows
+// further sends), remove the socket from the srt epoll, srt_close the
+// socket (it sends the SRT shutdown through the still-attached transport
+// - the M0 lesson), then release the transport handle, then release the
+// epoll. The handshake completes asynchronously on srt's threads; poll
+// ConnectionState() for the CONNECTED transition (first observation also
+// reads back the negotiated payload cap).
 
 #ifndef WEBSRT_GATEWAY_SRT_INITIATOR_H
 #define WEBSRT_GATEWAY_SRT_INITIATOR_H
@@ -69,6 +73,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <string>
 
 #include "gateway/wt_server.h"
@@ -152,7 +157,8 @@ public:
     int Send(const void* data, int len);
 
     /// Any thread. The socket's status (SRTS_CONNECTING / SRTS_CONNECTED /
-    /// SRTS_BROKEN / ...). The FIRST connected observation reads back the
+    /// SRTS_BROKEN / ...); sock_mutex_ serializes the sample against
+    /// Teardown's close. The FIRST connected observation reads back the
     /// negotiated payload cap (SRTO_PAYLOADSIZE vs SRTO_MSS - 44 floored
     /// to whole TS packets, mirroring libwebsrt's publisher session: the
     /// Rust initiator fills the HSv5 MTU field with its payload size
@@ -165,11 +171,14 @@ public:
 
     /// Effective per-message payload ceiling after the handshake
     /// negotiation; the configured payload until ConnectionState() has
-    /// observed the connection. Send() rejects anything larger.
-    [[nodiscard]] int max_payload() const { return max_payload_; }
+    /// observed the connection. Send() rejects anything larger. Any
+    /// thread: atomic (the loop thread writes it at the first connected
+    /// observation; off-loop info/stats paths read a coherent value).
+    [[nodiscard]] int max_payload() const { return max_payload_.load(std::memory_order_relaxed); }
 
     /// Any thread, best effort. Snapshots the socket stats (srt_bstats,
-    /// no clear). False when there is no connected socket.
+    /// no clear). False when there is no connected socket; sock_mutex_
+    /// serializes the sample against Teardown's close.
     bool StatsOut(SRT_TRACEBSTATS* out);
 
     /// Idempotent terminal cleanup in the fork's enforced order (see the
@@ -193,11 +202,22 @@ private:
     // from the handle). The address never reaches a network.
     sockaddr_in peer_label_ = {};
 
+    // sock_'s lifetime is guarded by sock_mutex_ for the any-thread stats
+    // surface: Teardown nulls and srt_closes under it while
+    // ConnectionState/StatsOut sample under it, so a racing scrape can
+    // never observe a handle being closed (or its id recycled). The
+    // loop-only paths (Setup, Send, ReceiveNext) serialize with Teardown
+    // on the loop thread.
     SRTSOCKET            sock_  = SRT_INVALID_SOCK;
     SRTVirtualTransport* vt_    = nullptr;
     int                  epoll_ = SRT_ERROR;
-    int                  max_payload_; // configured until the connected readback
-    bool                 payload_read_done_ = false;
+    std::mutex           sock_mutex_;
+    // Negotiated payload: written once on the loop thread at the first
+    // connected ConnectionState() observation, read off-loop - atomics,
+    // with the value published before the flag (release/acquire), so an
+    // observed set flag implies the negotiated cap.
+    std::atomic<int>  max_payload_; // configured until the connected readback
+    std::atomic<bool> payload_read_done_ = false;
 
     // Lock-free mirror of "torn down" for the srt send callback.
     std::atomic<bool> closed_{false};

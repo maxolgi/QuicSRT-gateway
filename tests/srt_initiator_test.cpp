@@ -21,6 +21,10 @@
 //   6. Teardown: session close leaves no leaked srt sockets (fd-count
 //      accounting, the M0 pattern) and the loop keeps running - a second
 //      session after the first closed works.
+//   7. Scrape consistency: an off-loop /health-style reader scraping
+//      SnapshotSessions/SessionInfoFor during the viewer burst and its
+//      teardown sees monotonic counters and sane values (the read side
+//      of the registry's threading contract).
 //
 // Client side: the public websrt::Subscriber and websrt::Publisher each
 // own their EventLoop internally (G3: one engine per loop), so the two
@@ -204,6 +208,33 @@ private:
     std::atomic<bool>                                session_started_{false};
 };
 
+/// Scrape-while-active state: the last-seen per-session counters, so
+/// successive off-loop scrapes (the /health read path) can be checked
+/// for monotonicity and sanity while the loop thread writes them.
+struct ScrapeMonotonic
+{
+    std::uint64_t last_sent           = 0;
+    std::uint64_t last_start_drops    = 0;
+    std::uint64_t last_overflow_drops = 0;
+    int           violations          = 0;
+
+    void Observe(const websrt::gateway::SessionInfo& info)
+    {
+        // Monotonic counters (never reset while the session lives) and
+        // sane values: backlog bounded by the 4096 drop-oldest cap,
+        // payload between one TS packet and the configured ceiling.
+        if (info.messages_sent < last_sent || info.backlog_start_drops < last_start_drops ||
+            info.backlog_overflow_drops < last_overflow_drops || info.backlog_size > 4096 || info.max_payload <= 0 ||
+            info.max_payload > kPayloadSize)
+        {
+            ++violations;
+        }
+        last_sent           = info.messages_sent;
+        last_start_drops    = info.backlog_start_drops;
+        last_overflow_drops = info.backlog_overflow_drops;
+    }
+};
+
 // 127.0.0.1:4435 when free, else an ephemeral port (probe-bind :0, close,
 // hand the port over; the tiny TOCTOU window is acceptable for a test).
 std::uint16_t ChoosePort()
@@ -302,6 +333,33 @@ int main()
         std::fprintf(stderr, "srt_initiator_test: rtt seed msRTT=%.1f (connect %.1f ms)\n", stats.msRTT, connect_ms);
 
         // (1+2) Feed N messages; the ticker paces them out at <= 256/tick.
+        // A concurrent off-loop scraper hammers the /health-style views
+        // (SnapshotSessions/SessionInfoFor) while the loop thread paces,
+        // drops and finally reaps the session: counters must stay
+        // monotonic and values sane across every scrape - the read side
+        // of the registry's threading contract.
+        std::atomic<bool> scrape_stop{false};
+        ScrapeMonotonic   scrape; // scraper-thread-only until join
+        std::thread       scraper(
+            [&registry, viewer_handle, &scrape_stop, &scrape]
+            {
+                while (!scrape_stop.load(std::memory_order_relaxed))
+                {
+                    for (const auto& s : registry.SnapshotSessions())
+                    {
+                        if (s.session_id == viewer_handle.Id())
+                        {
+                            scrape.Observe(s.info);
+                        }
+                    }
+                    SessionInfo info;
+                    if (registry.SessionInfoFor(viewer_handle, &info))
+                    {
+                        scrape.Observe(info);
+                    }
+                    std::this_thread::sleep_for(std::chrono::microseconds{500});
+                }
+            });
         std::uint8_t        msg[kPayloadSize];
         const std::uint64_t ticks_before = registry.TickCount();
         const auto          send_t0      = std::chrono::steady_clock::now();
@@ -381,6 +439,10 @@ int main()
         Check(WaitUntil([&rig_listener] { return rig_listener.EndedCount() == 1; }, 5000),
               "teardown: OnSessionEnded notified");
         Check(registry.TickCount() > ticks_at_close, "teardown: the loop kept ticking");
+
+        scrape_stop.store(true);
+        scraper.join();
+        Check(scrape.violations == 0, "scrape: counters stayed monotonic and sane across the burst and the teardown");
     }
 
     // ---- 3. Publisher direction ----------------------------------------
