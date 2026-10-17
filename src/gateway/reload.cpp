@@ -39,8 +39,7 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     changed("wt_port", std::to_string(old_s.wt_port), std::to_string(new_s.wt_port));
     changed("wt_bind", old_s.wt_bind, new_s.wt_bind);
     // SRT/UDP ingest: the listener socket, its latency-scaled buffers and
-    // its passphrase are set at Start; latency_ms also seeds every
-    // per-session SRT initiator option.
+    // its passphrase are set at Start.
     changed("srt_ingest_port", std::to_string(old_s.srt_ingest_port), std::to_string(new_s.srt_ingest_port));
     changed("srt_ingest_bind", old_s.srt_ingest_bind, new_s.srt_ingest_bind);
     changed("latency_ms", std::to_string(old_s.latency_ms), std::to_string(new_s.latency_ms));

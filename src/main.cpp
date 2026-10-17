@@ -243,9 +243,10 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     }
     std::fflush(stdout);
 
-    // The per-session initiators share the server's TSBPD latency (the
-    // ingest knob): a tiny window makes live senders too-late-drop video.
-    gateway_config.registry.latency_ms = static_cast<int>(ingest_latency_ms);
+    // Per-session TSBPD latency stays at the registry's 10 ms floor (the
+    // Rust SrtConfig default, srt_sender.rs:58-59): a client couples with
+    // the gateway, not with the publisher. [server].latency_ms is the
+    // SRT/UDP ingest knob only.
     websrt::gateway::Gateway gateway(cert, policy, gateway_config);
     if (!gateway.Start(wt_bind, wt_bind_port))
     {
