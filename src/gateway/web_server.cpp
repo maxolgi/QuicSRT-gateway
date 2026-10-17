@@ -16,6 +16,12 @@
 //   - The request is read to the first "\r\n\r\n" (bounded). No request
 //     body is ever read: a POST with a body is answered 405 and the
 //     connection closes, so the unread body cannot desynchronize us.
+//   - One request's headers have a TOTAL budget
+//     (WebServerConfig::header_timeout_s, 30 s default): a client that
+//     trickles a byte every few seconds never trips the 10 s per-read
+//     timeout, so on budget exhaustion it is answered 408 and closed.
+//     Without it, max_connections tricklers wedge every worker - and
+//     with them the player, /health and /stats alike.
 //   - Static paths are canonicalized with realpath() and then required
 //     to sit under the canonicalized root, which rejects "..", symlinks
 //     pointing outside the root, and absolute targets alike.
@@ -96,6 +102,8 @@ const char* ReasonPhrase(int status)
         return "Not Found";
     case 405:
         return "Method Not Allowed";
+    case 408:
+        return "Request Timeout";
     case 413:
         return "Content Too Large";
     case 431:
@@ -646,6 +654,13 @@ void WebServer::Serve(int fd, const std::shared_ptr<std::atomic<bool>>& done)
         // connection closes.
         std::string request;
         char        buf[4096];
+        // The header block's TOTAL budget, from the request's first
+        // byte (a request that never sends one included - though a
+        // fully silent peer is already ended by the per-read timeout
+        // below). Checked after each read, so a read already parked
+        // when the budget runs out still ends on the per-read timeout:
+        // the deadline bounds the trickler, the timeout the silent peer.
+        const auto header_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{config_.header_timeout_s};
         while (request.find("\r\n\r\n") == std::string::npos)
         {
             const long n = wire.Read(buf, sizeof buf);
@@ -658,6 +673,13 @@ void WebServer::Serve(int fd, const std::shared_ptr<std::atomic<bool>>& done)
             {
                 SendSimple(
                     wire, 431, ReasonPhrase(431), "text/plain; charset=utf-8", "request headers too large\n", false);
+                request.clear();
+                break;
+            }
+            if (std::chrono::steady_clock::now() >= header_deadline)
+            {
+                SendSimple(
+                    wire, 408, ReasonPhrase(408), "text/plain; charset=utf-8", "request header timeout\n", false);
                 request.clear();
                 break;
             }

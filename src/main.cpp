@@ -130,7 +130,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     std::uint16_t                                   web_port    = 0;
     std::string                                     web_bind    = "127.0.0.1";
     std::optional<std::string>                      web_root;
-    bool                                            web_tls = true;
+    bool                                            web_tls                  = true;
+    int                                             request_header_timeout_s = 30;
     // The applied config, diff base and fallback of every SIGHUP reload.
     websrt::gateway::Config live_config;
 
@@ -161,19 +162,20 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         gateway_config.wt.handshake_timeout_s  = s.wt_handshake_timeout_s;
         gateway_config.webhooks                = websrt::gateway::WebhookSettings{
                            .url = config.webhooks.on_event_url, .timeout = std::chrono::milliseconds{config.webhooks.timeout_ms}};
-        wt_bind_port        = s.wt_port;
-        wt_bind             = s.wt_bind;
-        ingest_port         = s.srt_ingest_port;
-        ingest_bind         = s.srt_ingest_bind;
-        ingest_latency_ms   = s.latency_ms;
-        ingest_max_sessions = s.max_ingest_sessions;
-        ingest_passphrase   = s.srt_passphrase;
-        health_port         = s.health_port;
-        health_bind         = s.health_bind;
-        web_port            = s.web_port;
-        web_bind            = s.web_bind;
-        web_root            = s.web_root;
-        web_tls             = s.web_tls;
+        wt_bind_port             = s.wt_port;
+        wt_bind                  = s.wt_bind;
+        ingest_port              = s.srt_ingest_port;
+        ingest_bind              = s.srt_ingest_bind;
+        ingest_latency_ms        = s.latency_ms;
+        ingest_max_sessions      = s.max_ingest_sessions;
+        ingest_passphrase        = s.srt_passphrase;
+        health_port              = s.health_port;
+        health_bind              = s.health_bind;
+        web_port                 = s.web_port;
+        web_bind                 = s.web_bind;
+        web_root                 = s.web_root;
+        web_tls                  = s.web_tls;
+        request_header_timeout_s = s.request_header_timeout_s;
         // The file may carry its own lsquic level (P4.1 reload swaps it);
         // the CLI flag wins at boot. Still before any engine exists.
         if (!log_level.has_value() && s.log_level.has_value())
@@ -209,7 +211,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         }
         std::printf("websrt-gateway: config: %zu stream(s), %s "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
-                    "broadcast_capacity %u, broadcast_byte_budget %llu)\n",
+                    "broadcast_capacity %u, broadcast_byte_budget %llu, request_header_timeout %d s)\n",
                     config.streams.size(),
                     config.streams.empty() ? "open mode (no [[stream]] entries)" : "allowlist mode",
                     s.wt_bind.c_str(),
@@ -222,7 +224,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                     s.web_port,
                     s.max_viewers,
                     s.broadcast_capacity,
-                    static_cast<unsigned long long>(s.broadcast_byte_budget));
+                    static_cast<unsigned long long>(s.broadcast_byte_budget),
+                    s.request_header_timeout_s);
         if (!config.webhooks.on_event_url.empty())
         {
             std::printf("websrt-gateway: webhooks on: POST session events to %s (timeout %llu ms)\n",
@@ -360,15 +363,16 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     {
         // web_root is an override; unset serves the embedded player.
         const std::string served_root = web_root.value_or(std::string("<embedded player>"));
-        web.emplace(websrt::gateway::WebServerConfig{.bind            = web_bind,
-                                                     .port            = web_port,
-                                                     .cert            = web_tls ? &cert : nullptr,
-                                                     .web_root        = web_root.value_or(std::string()),
-                                                     .cert_hash_js    = cert_hash_js,
-                                                     .serve_player    = true,
-                                                     .gateway         = gateway_ptr,
-                                                     .ingest          = ingest_ptr,
-                                                     .max_connections = 16});
+        web.emplace(websrt::gateway::WebServerConfig{.bind             = web_bind,
+                                                     .port             = web_port,
+                                                     .cert             = web_tls ? &cert : nullptr,
+                                                     .web_root         = web_root.value_or(std::string()),
+                                                     .cert_hash_js     = cert_hash_js,
+                                                     .serve_player     = true,
+                                                     .gateway          = gateway_ptr,
+                                                     .ingest           = ingest_ptr,
+                                                     .max_connections  = 16,
+                                                     .header_timeout_s = request_header_timeout_s});
         std::string web_error;
         if (!web->Start(&web_error))
         {
@@ -422,13 +426,14 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                          "network\n",
                          health_bind.c_str());
         }
-        health.emplace(websrt::gateway::WebServerConfig{.bind            = health_bind,
-                                                        .port            = health_port,
-                                                        .cert            = nullptr,
-                                                        .web_root        = {},
-                                                        .gateway         = gateway_ptr,
-                                                        .ingest          = ingest_ptr,
-                                                        .max_connections = 16});
+        health.emplace(websrt::gateway::WebServerConfig{.bind             = health_bind,
+                                                        .port             = health_port,
+                                                        .cert             = nullptr,
+                                                        .web_root         = {},
+                                                        .gateway          = gateway_ptr,
+                                                        .ingest           = ingest_ptr,
+                                                        .max_connections  = 16,
+                                                        .header_timeout_s = request_header_timeout_s});
         std::string health_error;
         if (!health->Start(&health_error))
         {

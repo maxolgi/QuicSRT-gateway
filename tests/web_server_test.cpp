@@ -19,6 +19,11 @@
 //      null in mkcert mode, served from the web root - plus the
 //      closed-network mode ([server].web_tls = false), where the same tree
 //      goes out over plain HTTP and the page still pins the WT cert.
+//   5. the TOTAL request-header deadline: a client that trickles header
+//      bytes slower than any single read ever times out (the per-read
+//      idle cutoff is 10 s) must be cut by the budget alone - the
+//      slowloris that would otherwise hold every worker - while a
+//      promptly-sent request under the same short budget is unaffected.
 //
 // Ports: ephemeral everywhere (the config asks for 0 and the test reads
 // Port() back), plus ChoosePort for the gateway and the ingest, so no
@@ -34,6 +39,7 @@
 #include "gateway/web_server.h"
 
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -42,6 +48,7 @@
 #include <openssl/ssl.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -1028,21 +1035,101 @@ int main()
         }
     }
 
+    // ---- 5. the total request-header deadline (the slowloris cut) ----
+    {
+        // A short budget on a standalone plain-HTTP server. The trickler
+        // below feeds one byte every 250 ms - no per-read timeout (10 s)
+        // can ever fire - so ONLY the total budget can end it, which is
+        // exactly the attack the budget exists for.
+        WebServer   slow(WebServerConfig{.bind = "127.0.0.1", .port = 0, .header_timeout_s = 2});
+        std::string slow_error;
+        Check(slow.Start(&slow_error), "5: the short-header-budget server binds");
+        if (slow.Running())
+        {
+            // A prompt request is untouched by the same short budget.
+            HttpClient   client;
+            HttpResponse response;
+            Check(client.Connect(slow.Port(), false), "5: connected for a prompt request");
+            Check(client.Exchange("/health", &response), "5: a prompt request is answered");
+            Check(response.status == 200, "5: a prompt request succeeds under the 2 s budget");
+
+            // The trickler: raw socket, one byte at a time, watching for
+            // the cut between sends. Never a "\r\n\r\n".
+            int         fd = ::socket(AF_INET, SOCK_STREAM, 0);
+            sockaddr_in sa{};
+            sa.sin_family = AF_INET;
+            ::inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr);
+            sa.sin_port = htons(slow.Port());
+            Check(::connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof sa) == 0, "5: the trickler connected");
+
+            const std::string dribble = "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Slow: 0123456789";
+            const auto        t0      = std::chrono::steady_clock::now();
+            bool              closed  = false;
+            std::string       received;
+            std::size_t       sent = 0;
+            while (!closed && std::chrono::steady_clock::now() - t0 < std::chrono::seconds{10})
+            {
+                if (::send(fd, dribble.data() + sent, 1, MSG_NOSIGNAL) != 1)
+                {
+                    closed = true; // the write failed: the server cut us off
+                    break;
+                }
+                ++sent;
+                struct pollfd pfd{};
+                pfd.fd     = fd;
+                pfd.events = POLLIN;
+                if (::poll(&pfd, 1, 250) > 0)
+                {
+                    char buf[512];
+                    for (;;)
+                    {
+                        const long n = ::recv(fd, buf, sizeof buf, MSG_DONTWAIT);
+                        if (n > 0)
+                        {
+                            received.append(buf, static_cast<std::size_t>(n));
+                            continue;
+                        }
+                        // 0 = orderly FIN; a reset racing the 408 out the
+                        // door is the same verdict. EAGAIN just means the
+                        // readable moment passed.
+                        closed = n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK);
+                        break;
+                    }
+                }
+            }
+            const auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+            Check(closed, "5: the trickling connection was cut");
+            Check(elapsed_ms < 8000, "5: the cut came from the 2 s budget, not from going silent");
+            if (!received.empty())
+            {
+                Check(received.rfind("HTTP/1.1 408", 0) == 0, "5: the cut is a 408 Request Timeout");
+            }
+            std::fprintf(stderr,
+                         "web_server_test: 5: trickler cut after %lld ms (%zu bytes sent, %s)\n",
+                         static_cast<long long>(elapsed_ms),
+                         sent,
+                         received.empty() ? "no response bytes reached us" : "408 received");
+            ::close(fd);
+            slow.Stop();
+        }
+    }
+
     // ---- shutdown with a live keep-alive connection ----
     {
         HttpClient idle;
-        Check(idle.Connect(web_port, true), "5: an idle keep-alive connection is open");
+        Check(idle.Connect(web_port, true), "6: an idle keep-alive connection is open");
         HttpResponse response;
-        Check(idle.Exchange("/index.html", &response), "5: the idle connection served a request");
+        Check(idle.Exchange("/index.html", &response), "6: the idle connection served a request");
 
         const auto t0 = std::chrono::steady_clock::now();
         web.Stop();
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
         std::fprintf(
-            stderr, "web_server_test: 5: Stop() with a live connection took %lld ms\n", static_cast<long long>(ms));
-        Check(ms < 5000, "5: Stop() does not wait for the idle connection to time out");
-        Check(!web.Running(), "5: the web server is stopped");
+            stderr, "web_server_test: 6: Stop() with a live connection took %lld ms\n", static_cast<long long>(ms));
+        Check(ms < 5000, "6: Stop() does not wait for the idle connection to time out");
+        Check(!web.Running(), "6: the web server is stopped");
 
         health.Stop();
         ingest.Stop();

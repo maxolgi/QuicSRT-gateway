@@ -152,6 +152,7 @@ ServerConfig ParseServer(Table& table)
                                                  "max_ingest_sessions",
                                                  "wt_idle_timeout_s",
                                                  "wt_handshake_timeout_s",
+                                                 "request_header_timeout_s",
                                                  "cert_mode",
                                                  "cert_pem",
                                                  "key_pem",
@@ -200,6 +201,11 @@ ServerConfig ParseServer(Table& table)
     s.wt_idle_timeout_s = static_cast<int>(OptInt(table, "wt_idle_timeout_s", "[server]", s.wt_idle_timeout_s, 1, 600));
     s.wt_handshake_timeout_s =
         static_cast<int>(OptInt(table, "wt_handshake_timeout_s", "[server]", s.wt_handshake_timeout_s, 1, 60));
+    // The web/health servers' total header-read budget (robustness
+    // addition, not oracle parity); 1 s floor so a promptly-sent
+    // request always fits, 600 s ceiling like wt_idle_timeout_s.
+    s.request_header_timeout_s =
+        static_cast<int>(OptInt(table, "request_header_timeout_s", "[server]", s.request_header_timeout_s, 1, 600));
     s.cert_mode = OptString(table, "cert_mode", "[server]").value_or(s.cert_mode);
     if (s.cert_mode != "self" && s.cert_mode != "mkcert")
     {

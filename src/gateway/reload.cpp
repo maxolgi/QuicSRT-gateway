@@ -76,6 +76,11 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     changed("wt_handshake_timeout_s",
             std::to_string(old_s.wt_handshake_timeout_s),
             std::to_string(new_s.wt_handshake_timeout_s));
+    // The web/health servers bake the header budget into the config
+    // copy they take at Start.
+    changed("request_header_timeout_s",
+            std::to_string(old_s.request_header_timeout_s),
+            std::to_string(new_s.request_header_timeout_s));
     // max_bandwidth_kbps is deliberately absent: it is not wired into any
     // runtime path at boot either, so "requires restart" would be false -
     // a restart changes nothing about it.

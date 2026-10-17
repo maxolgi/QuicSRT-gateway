@@ -124,6 +124,14 @@ struct WebServerConfig
     /// Concurrent connections served at once; one more is closed on
     /// arrival. 16 is generous for the player (6 per browser origin).
     std::size_t max_connections = 16;
+
+    /// TOTAL budget for receiving one request's headers, per request
+    /// (both server roles; each keep-alive request gets a fresh one).
+    /// The per-read socket timeout stays the idle cutoff - a client
+    /// that trickles a byte every few seconds never trips it, so on
+    /// budget exhaustion the server answers 408 and closes. Wired from
+    /// [server].request_header_timeout_s (1..600) by the CLI.
+    int header_timeout_s = 30;
 };
 
 class WebServer final

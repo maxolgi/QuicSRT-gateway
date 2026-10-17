@@ -63,13 +63,20 @@ struct ServerConfig
     /// srt buffers, so past the cap the new connection is refused right at
     /// accept (the ingest analogue of max_sessions; the oracle has no such
     /// cap - a C++ robustness addition). Range 0..1000000.
-    int                        max_ingest_sessions    = 100;
-    int                        wt_idle_timeout_s      = 10; ///< WT idle timeout in seconds (1..600)
-    int                        wt_handshake_timeout_s = 10; ///< QUIC/WT handshake budget in seconds (1..60)
-    std::uint16_t              health_port            = 0;  ///< 0 = disabled
-    std::string                health_bind            = "127.0.0.1";
-    std::uint16_t              web_port               = 5173; ///< static web server, 0 disables
-    std::string                web_bind               = "127.0.0.1";
+    int max_ingest_sessions    = 100;
+    int wt_idle_timeout_s      = 10; ///< WT idle timeout in seconds (1..600)
+    int wt_handshake_timeout_s = 10; ///< QUIC/WT handshake budget in seconds (1..60)
+    /// TOTAL budget for receiving one request's headers on the web and
+    /// health HTTP servers, per request (1..600). The per-read 10 s
+    /// socket timeout cannot catch a client that trickles a byte every
+    /// few seconds - this deadline does (408 + close), so a slow sender
+    /// cannot hold a bounded worker forever (the oracle has no such
+    /// knob - a C++ robustness addition).
+    int                        request_header_timeout_s = 30;
+    std::uint16_t              health_port              = 0; ///< 0 = disabled
+    std::string                health_bind              = "127.0.0.1";
+    std::uint16_t              web_port                 = 5173; ///< static web server, 0 disables
+    std::string                web_bind                 = "127.0.0.1";
     std::optional<std::string> web_root; ///< disk override of the embedded player; unset => embedded
     /// TLS on the static web server. false serves the player page over
     /// plain HTTP for the closed-network deployment, where a browser
