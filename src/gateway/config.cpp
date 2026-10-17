@@ -149,6 +149,7 @@ ServerConfig ParseServer(Table& table)
                                                  "broadcast_byte_budget",
                                                  "max_sessions_per_ip",
                                                  "max_sessions",
+                                                 "max_ingest_sessions",
                                                  "wt_idle_timeout_s",
                                                  "wt_handshake_timeout_s",
                                                  "cert_mode",
@@ -191,7 +192,11 @@ ServerConfig ParseServer(Table& table)
     // timeout bounds are the oracle's validate() ranges.
     s.max_sessions_per_ip =
         static_cast<int>(OptInt(table, "max_sessions_per_ip", "[server]", s.max_sessions_per_ip, 0, 1'000'000));
-    s.max_sessions      = static_cast<int>(OptInt(table, "max_sessions", "[server]", s.max_sessions, 0, 100'000'000));
+    s.max_sessions = static_cast<int>(OptInt(table, "max_sessions", "[server]", s.max_sessions, 0, 100'000'000));
+    // The ingest admission cap (robustness addition, not oracle parity);
+    // 0 = unlimited like the WT caps above.
+    s.max_ingest_sessions =
+        static_cast<int>(OptInt(table, "max_ingest_sessions", "[server]", s.max_ingest_sessions, 0, 1'000'000));
     s.wt_idle_timeout_s = static_cast<int>(OptInt(table, "wt_idle_timeout_s", "[server]", s.wt_idle_timeout_s, 1, 600));
     s.wt_handshake_timeout_s =
         static_cast<int>(OptInt(table, "wt_handshake_timeout_s", "[server]", s.wt_handshake_timeout_s, 1, 60));

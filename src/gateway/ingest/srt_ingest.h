@@ -101,11 +101,16 @@ namespace websrt::gateway
 /// from `latency_ms` (see RecvBufferPackets), not configured separately.
 struct SrtIngestConfig
 {
-    std::string                bind         = "127.0.0.1"; ///< IPv4 literal
-    std::uint16_t              port         = 9000;
-    std::uint64_t              latency_ms   = 120;  ///< TSBPD latency (floor 10 ms)
-    int                        payload_size = 1128; ///< WebSRT constant: 6 x 188 TS packets
-    std::optional<std::string> passphrase;          ///< SRT PBKEYLEN passphrase (10-79 chars)
+    std::string   bind         = "127.0.0.1"; ///< IPv4 literal
+    std::uint16_t port         = 9000;
+    std::uint64_t latency_ms   = 120;  ///< TSBPD latency (floor 10 ms)
+    int           payload_size = 1128; ///< WebSRT constant: 6 x 188 TS packets
+    /// Concurrent publisher connections, 0 = unlimited (a C++ robustness
+    /// addition; the oracle's listener has no cap). Past the cap a new
+    /// connection is refused at accept, before any per-connection resource
+    /// or loop round-trip is spent.
+    int                        max_sessions = 100;
+    std::optional<std::string> passphrase; ///< SRT PBKEYLEN passphrase (10-79 chars)
 };
 
 /// One live publisher connection, as the ingest sees it (the health/stats
@@ -127,10 +132,11 @@ struct SrtConnectionStats
 struct SrtIngestStats
 {
     std::uint64_t                   publishers_accepted  = 0;
-    std::uint64_t                   publishers_rejected  = 0; ///< sum of the three reasons below
+    std::uint64_t                   publishers_rejected  = 0; ///< sum of the four reasons below
     std::uint64_t                   rejected_no_streamid = 0;
     std::uint64_t                   rejected_not_allowed = 0; ///< refused by `publish_gate` (the allowlist)
     std::uint64_t                   rejected_occupied    = 0; ///< first-wins: a live publisher held the name
+    std::uint64_t                   rejected_session_cap = 0; ///< admission: the concurrent-publisher cap was hit
     std::uint64_t                   publishers_ended     = 0;
     std::uint64_t                   messages_in          = 0;
     std::uint64_t                   bytes_in             = 0;
@@ -266,6 +272,7 @@ private:
     std::atomic<std::uint64_t> rejected_sid_{0};
     std::atomic<std::uint64_t> rejected_gate_{0};
     std::atomic<std::uint64_t> rejected_occ_{0};
+    std::atomic<std::uint64_t> rejected_cap_{0};
     std::atomic<std::uint64_t> ended_{0};
     std::atomic<std::uint64_t> messages_in_{0};
     std::atomic<std::uint64_t> bytes_in_{0};

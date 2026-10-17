@@ -376,6 +376,28 @@ void SrtIngest::AcceptOne()
         return;
     }
 
+    // ADMISSION CAP, ahead of everything per-connection. Every accepted
+    // publisher costs a ~1 MiB receive buffer plus latency-scaled srt
+    // buffers, and each accept does synchronous round-trips onto the
+    // gateway loop - so a stream of connect attempts must not be an
+    // unbounded resource claim on a non-loopback bind (the WT side's
+    // max_sessions analogue). The live count IS conns_: a slot frees in
+    // EndConn, where every ending path funnels, so this refusal claims
+    // nothing at all. Checked before the streamid/gate/claim work too:
+    // when the cap is full, "cap reached" is the actionable answer for
+    // every caller.
+    if (config_.max_sessions > 0 && conns_.size() >= static_cast<std::size_t>(config_.max_sessions))
+    {
+        Bump(rejected_);
+        Bump(rejected_cap_);
+        Log("rejected publisher from %s: session cap reached (%zu live, cap %d)",
+            PeerText(peer).c_str(),
+            conns_.size(),
+            config_.max_sessions);
+        srt_close(ns);
+        return;
+    }
+
     // The oracle refuses a publisher with no streamid (srt_listener.rs:92-95)
     // - never a "default" name. The streamid only exists on the accepted
     // socket, so this is where the refusal happens; closing it ends the
@@ -616,6 +638,7 @@ SrtIngestStats SrtIngest::Stats() const
     out.rejected_no_streamid = rejected_sid_.load(std::memory_order_relaxed);
     out.rejected_not_allowed = rejected_gate_.load(std::memory_order_relaxed);
     out.rejected_occupied    = rejected_occ_.load(std::memory_order_relaxed);
+    out.rejected_session_cap = rejected_cap_.load(std::memory_order_relaxed);
     out.publishers_ended     = ended_.load(std::memory_order_relaxed);
     out.messages_in          = messages_in_.load(std::memory_order_relaxed);
     out.bytes_in             = bytes_in_.load(std::memory_order_relaxed);

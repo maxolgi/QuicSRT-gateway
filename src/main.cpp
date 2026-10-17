@@ -118,11 +118,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     std::optional<std::string>                      key_pem;
     std::shared_ptr<websrt::gateway::SessionPolicy> policy;
     websrt::gateway::GatewayConfig                  gateway_config;
-    std::uint16_t                                   wt_bind_port      = 4433;
-    std::string                                     wt_bind           = "127.0.0.1";
-    std::uint16_t                                   ingest_port       = 0;
-    std::string                                     ingest_bind       = "127.0.0.1";
-    std::uint64_t                                   ingest_latency_ms = 120;
+    std::uint16_t                                   wt_bind_port        = 4433;
+    std::string                                     wt_bind             = "127.0.0.1";
+    std::uint16_t                                   ingest_port         = 0;
+    std::string                                     ingest_bind         = "127.0.0.1";
+    std::uint64_t                                   ingest_latency_ms   = 120;
+    int                                             ingest_max_sessions = 100;
     std::optional<std::string>                      ingest_passphrase;
     std::uint16_t                                   health_port = 0;
     std::string                                     health_bind = "127.0.0.1";
@@ -160,18 +161,19 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         gateway_config.wt.handshake_timeout_s  = s.wt_handshake_timeout_s;
         gateway_config.webhooks                = websrt::gateway::WebhookSettings{
                            .url = config.webhooks.on_event_url, .timeout = std::chrono::milliseconds{config.webhooks.timeout_ms}};
-        wt_bind_port      = s.wt_port;
-        wt_bind           = s.wt_bind;
-        ingest_port       = s.srt_ingest_port;
-        ingest_bind       = s.srt_ingest_bind;
-        ingest_latency_ms = s.latency_ms;
-        ingest_passphrase = s.srt_passphrase;
-        health_port       = s.health_port;
-        health_bind       = s.health_bind;
-        web_port          = s.web_port;
-        web_bind          = s.web_bind;
-        web_root          = s.web_root;
-        web_tls           = s.web_tls;
+        wt_bind_port        = s.wt_port;
+        wt_bind             = s.wt_bind;
+        ingest_port         = s.srt_ingest_port;
+        ingest_bind         = s.srt_ingest_bind;
+        ingest_latency_ms   = s.latency_ms;
+        ingest_max_sessions = s.max_ingest_sessions;
+        ingest_passphrase   = s.srt_passphrase;
+        health_port         = s.health_port;
+        health_bind         = s.health_bind;
+        web_port            = s.web_port;
+        web_bind            = s.web_bind;
+        web_root            = s.web_root;
+        web_tls             = s.web_tls;
         // The file may carry its own lsquic level (P4.1 reload swaps it);
         // the CLI flag wins at boot. Still before any engine exists.
         if (!log_level.has_value() && s.log_level.has_value())
@@ -301,10 +303,11 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     if (ingest_port != 0)
     {
         websrt::gateway::SrtIngestConfig ingest_config;
-        ingest_config.bind       = ingest_bind;
-        ingest_config.port       = ingest_port;
-        ingest_config.latency_ms = ingest_latency_ms;
-        ingest_config.passphrase = ingest_passphrase;
+        ingest_config.bind         = ingest_bind;
+        ingest_config.port         = ingest_port;
+        ingest_config.latency_ms   = ingest_latency_ms;
+        ingest_config.max_sessions = ingest_max_sessions;
+        ingest_config.passphrase   = ingest_passphrase;
 
         websrt::gateway::SrtIngest::Sink sink;
         // Publish gate = the policy half of the WT accept path: the gateway
@@ -330,11 +333,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             gateway.Shutdown();
             return 1;
         }
-        std::printf("websrt-gateway: SRT/UDP ingest on %s:%u (passphrase: %s, latency %llu ms)\n",
+        std::printf("websrt-gateway: SRT/UDP ingest on %s:%u (passphrase: %s, latency %llu ms, max sessions %d)\n",
                     ingest_bind.c_str(),
                     ingest_port,
                     ingest_passphrase.has_value() ? "set" : "none",
-                    static_cast<unsigned long long>(ingest_latency_ms));
+                    static_cast<unsigned long long>(ingest_latency_ms),
+                    ingest_max_sessions);
         std::fflush(stdout);
     }
 

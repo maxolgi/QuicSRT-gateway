@@ -38,12 +38,14 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     // WT listener: bound once at Start.
     changed("wt_port", std::to_string(old_s.wt_port), std::to_string(new_s.wt_port));
     changed("wt_bind", old_s.wt_bind, new_s.wt_bind);
-    // SRT/UDP ingest: the listener socket, its latency-scaled buffers and
-    // its passphrase are set at Start.
+    // SRT/UDP ingest: the listener socket, its latency-scaled buffers, its
+    // passphrase and its admission cap ride the config copy taken at Start.
     changed("srt_ingest_port", std::to_string(old_s.srt_ingest_port), std::to_string(new_s.srt_ingest_port));
     changed("srt_ingest_bind", old_s.srt_ingest_bind, new_s.srt_ingest_bind);
     changed("latency_ms", std::to_string(old_s.latency_ms), std::to_string(new_s.latency_ms));
     changed("srt_passphrase", optstr(old_s.srt_passphrase), optstr(new_s.srt_passphrase));
+    changed(
+        "max_ingest_sessions", std::to_string(old_s.max_ingest_sessions), std::to_string(new_s.max_ingest_sessions));
     // TLS identity: built once at boot (self mode regenerates per boot,
     // mkcert loads the PEMs); a live engine keeps its SSL_CTX, and the
     // served cert-hash.js pins the identity the browsers already hold.

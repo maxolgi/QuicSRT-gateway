@@ -1301,6 +1301,8 @@ std::string WebServer::StatsJson() const
         out += ",";
         AppendNum(out, "rejected_occupied", stats.rejected_occupied);
         out += ",";
+        AppendNum(out, "rejected_session_cap", stats.rejected_session_cap);
+        out += ",";
         AppendNum(out, "publishers_ended", stats.publishers_ended);
         out += ",";
         AppendNum(out, "messages_in", stats.messages_in);
@@ -1510,6 +1512,7 @@ std::string WebServer::StatsHtml() const
         kv("rejected_no_streamid", stats.rejected_no_streamid);
         kv("rejected_not_allowed", stats.rejected_not_allowed);
         kv("rejected_occupied", stats.rejected_occupied);
+        kv("rejected_session_cap", stats.rejected_session_cap);
         kv("publishers_ended", stats.publishers_ended);
         kv("messages_in", stats.messages_in);
         kv("bytes_in", stats.bytes_in);

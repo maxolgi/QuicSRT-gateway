@@ -20,14 +20,19 @@
 //      over live-mode SRT - its congestion control refuses any message
 //      above the negotiated payload - so the burst is what a real
 //      1316-byte-per-message publisher sends.
+//   6. SESSION CAP - with max_sessions = 2 the third concurrent publisher
+//      is refused right at accept (counted as rejected_session_cap, no
+//      stream slot claimed), and the slot frees when a publisher hangs
+//      up.
 //
 // The gateway under test is the real Gateway built from a real TOML config
 // (config -> StreamAllowlistPolicy -> Gateway) on a loopback port, and the
 // ingest is the real SrtIngest wired exactly as src/main.cpp wires it.
 // Ports: 127.0.0.1:9100 (ingest), :4436 (WebTransport), :9101 (the
-// fake-sink ingest), each with the probe-bind ephemeral fallback the G5 test
-// uses. The Rust gateway's 4433/9000 are never touched. Deterministic: every
-// wait is bounded and asserted.
+// fake-sink ingest), :9102 (the capped fake-sink ingest), each with the
+// probe-bind ephemeral fallback the G5 test uses. The Rust gateway's
+// 4433/9000 are never touched. Deterministic: every wait is bounded and
+// asserted.
 
 #include "gateway/cert.h"
 #include "gateway/config.h"
@@ -324,6 +329,7 @@ int main()
     const std::uint16_t wt_port     = ChoosePort(4436);
     const std::uint16_t ingest_port = ChoosePort(9100);
     const std::uint16_t fake_port   = ChoosePort(9101);
+    const std::uint16_t cap_port    = ChoosePort(9102);
 
     const std::string config_text = std::string{"[server]\n"} + "wt_port = " + std::to_string(wt_port) + "\n" +
                                     "max_viewers = 4\n"
@@ -393,10 +399,11 @@ int main()
         return 1;
     }
     std::fprintf(stderr,
-                 "srt_ingest_test: gateway wt=%u ingest=%u fake=%u, allowlist mode, %zu stream(s)\n",
+                 "srt_ingest_test: gateway wt=%u ingest=%u fake=%u cap=%u, allowlist mode, %zu stream(s)\n",
                  wt_port,
                  ingest_port,
                  fake_port,
+                 cap_port,
                  config.streams.size());
 
     websrt::SubscriberConfig sub_cfg;
@@ -706,6 +713,71 @@ int main()
         Check(fake->claims == 1, "5: the fake sink claimed the publisher exactly once");
         Check(fake->releases == 1, "5: the fake sink released the publisher exactly once");
         fake_loop.Stop();
+    }
+
+    // ---- 6. session cap: the third concurrent publisher is refused ----
+    {
+        websrt::EventLoop cap_loop;
+        cap_loop.Start();
+        auto                             fake = std::make_shared<FakeSink>();
+        websrt::gateway::SrtIngestConfig cfg;
+        cfg.bind         = "127.0.0.1";
+        cfg.port         = cap_port;
+        cfg.latency_ms   = 120;
+        cfg.max_sessions = 2;
+        websrt::gateway::SrtIngest cap_ingest(cfg, MakeFakeSink(fake), cap_loop);
+        std::string                cap_error;
+        if (!Check(cap_ingest.Start(&cap_error), "6: the capped ingest binds"))
+        {
+            std::fprintf(stderr, "srt_ingest_test: %s\n", cap_error.c_str());
+            return 1;
+        }
+
+        SrtCaller   a;
+        std::string err;
+        Check(a.Connect(cap_port, "cap-a", &err), "6: publisher one connects");
+        Check(WaitUntil([&cap_ingest] { return cap_ingest.Stats().connections.size() == 1; }, 5000),
+              "6: the capped ingest holds publisher one");
+        SrtCaller b;
+        Check(b.Connect(cap_port, "cap-b", &err), "6: publisher two connects");
+        Check(WaitUntil([&cap_ingest] { return cap_ingest.Stats().connections.size() == 2; }, 5000),
+              "6: the capped ingest holds publisher two");
+
+        SrtCaller over;
+        over.Connect(cap_port, "cap-over", &err);
+        // The refusal must land whether the caller sees it in the handshake
+        // or as an immediate close after it - and it must claim nothing.
+        bool refused = !over.Connected();
+        if (over.Connected())
+        {
+            refused = WaitUntil([&over] { return !over.Connected(); }, 8000);
+        }
+        Check(refused, "6: the third concurrent publisher is refused at the cap");
+        over.Close();
+        Check(WaitUntil([&cap_ingest] { return cap_ingest.Stats().rejected_session_cap >= 1; }, 5000),
+              "6: the ingest counted a session-cap rejection");
+        Check(WaitUntil([&cap_ingest] { return cap_ingest.Stats().connections.size() == 2; }, 3000),
+              "6: the refused publisher left no connection behind");
+        {
+            const std::lock_guard<std::mutex> lock(fake->mutex);
+            Check(fake->held.count("cap-over") == 0, "6: the refused publisher never claimed a stream slot");
+        }
+
+        a.Close();
+        Check(WaitUntil([&cap_ingest] { return cap_ingest.Stats().connections.size() == 1; }, 8000),
+              "6: hanging up frees the slot");
+        SrtCaller   c;
+        std::string err_c;
+        Check(c.Connect(cap_port, "cap-c", &err_c), "6: a later publisher takes the freed slot");
+        Check(WaitUntil([&cap_ingest] { return cap_ingest.Stats().connections.size() == 2; }, 5000),
+              "6: the freed slot is live again");
+        std::fprintf(stderr,
+                     "srt_ingest_test: 6: rejected_session_cap=%llu accepted=%llu\n",
+                     static_cast<unsigned long long>(cap_ingest.Stats().rejected_session_cap),
+                     static_cast<unsigned long long>(cap_ingest.Stats().publishers_accepted));
+
+        cap_ingest.Stop();
+        cap_loop.Stop();
     }
 
     gateway.Shutdown();

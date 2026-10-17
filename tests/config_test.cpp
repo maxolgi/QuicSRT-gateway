@@ -75,6 +75,7 @@ web_port = 8080
 web_bind = "0.0.0.0"
 max_viewers = 50
 broadcast_byte_budget = 16777216
+max_ingest_sessions = 7
 cert_mode = "mkcert"
 cert_pem = "cert.pem"
 key_pem = "key.pem"
@@ -111,6 +112,7 @@ subscribe = false
     Check(c.server.web_bind == "0.0.0.0", "web_bind parsed");
     Check(c.server.max_viewers == 50, "max_viewers parsed");
     Check(c.server.broadcast_byte_budget == 16777216, "broadcast_byte_budget parsed");
+    Check(c.server.max_ingest_sessions == 7, "max_ingest_sessions parsed");
     Check(c.server.cert_mode == "mkcert", "cert_mode parsed");
     Check(c.server.cert_pem == std::optional<std::string>("cert.pem"), "cert_pem parsed");
     Check(c.server.key_pem == std::optional<std::string>("key.pem"), "key_pem parsed");
@@ -139,6 +141,12 @@ bool TestDefaults()
     Check(c.server.web_port == 5173, "default web_port");
     Check(c.server.max_viewers == 16, "default max_viewers");
     Check(c.server.broadcast_byte_budget == 64 * 1024 * 1024, "default broadcast_byte_budget (64 MiB)");
+    Check(c.server.max_ingest_sessions == 100, "default max_ingest_sessions (100)");
+    // 0 is a VALUE (unlimited), not an error - the WT caps' convention.
+    {
+        const Config zero = ParseConfig("[server]\nmax_ingest_sessions = 0\n", "zero.conf");
+        Check(zero.server.max_ingest_sessions == 0, "max_ingest_sessions 0 = unlimited, not an error");
+    }
     Check(c.server.cert_mode == "self" && !c.server.cert_pem.has_value() && !c.server.key_pem.has_value(),
           "default cert mode");
     Check(!c.server.log_level.has_value(), "default: no log_level");
@@ -208,6 +216,9 @@ bool TestMissingAndInvalidFields()
     CheckThrows("[server]\nmax_viewers = 0\n", "max_viewers zero", "between 1 and 1000000");
     CheckThrows("[server]\nbroadcast_byte_budget = 1048576\n", "byte budget below floor", "between 4194304 and");
     CheckThrows("[server]\nbroadcast_byte_budget = 0\n", "byte budget zero", "between 4194304 and");
+    CheckThrows("[server]\nmax_ingest_sessions = -1\n", "ingest session cap negative", "between 0 and 1000000");
+    CheckThrows(
+        "[server]\nmax_ingest_sessions = 1000001\n", "ingest session cap over ceiling", "between 0 and 1000000");
     CheckThrows(R"([server]
 cert_mode = "magic"
 )",

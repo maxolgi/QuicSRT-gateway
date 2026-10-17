@@ -55,15 +55,21 @@ struct ServerConfig
     std::string   srt_ingest_bind = "127.0.0.1";
     std::uint64_t latency_ms =
         120; ///< SRT/UDP ingest TSBPD latency; per-session viewer latency is the fixed 10 ms floor (srt_sender.rs)
-    std::uint64_t max_bandwidth_kbps     = 0;    ///< 0 = unlimited
-    int           max_sessions_per_ip    = 10;   ///< WT sessions per peer IP, 0 = unlimited (Rust GatewayLimits)
-    int           max_sessions           = 1000; ///< total WT sessions, 0 = unlimited
-    int           wt_idle_timeout_s      = 10;   ///< WT idle timeout in seconds (1..600)
-    int           wt_handshake_timeout_s = 10;   ///< QUIC/WT handshake budget in seconds (1..60)
-    std::uint16_t health_port            = 0;    ///< 0 = disabled
-    std::string   health_bind            = "127.0.0.1";
-    std::uint16_t web_port               = 5173; ///< static web server, 0 disables
-    std::string   web_bind               = "127.0.0.1";
+    std::uint64_t max_bandwidth_kbps  = 0;    ///< 0 = unlimited
+    int           max_sessions_per_ip = 10;   ///< WT sessions per peer IP, 0 = unlimited (Rust GatewayLimits)
+    int           max_sessions        = 1000; ///< total WT sessions, 0 = unlimited
+    /// Concurrent SRT ingest publisher connections, 0 = unlimited. Each
+    /// accepted publisher holds a ~1 MiB receive buffer plus latency-scaled
+    /// srt buffers, so past the cap the new connection is refused right at
+    /// accept (the ingest analogue of max_sessions; the oracle has no such
+    /// cap - a C++ robustness addition). Range 0..1000000.
+    int                        max_ingest_sessions    = 100;
+    int                        wt_idle_timeout_s      = 10; ///< WT idle timeout in seconds (1..600)
+    int                        wt_handshake_timeout_s = 10; ///< QUIC/WT handshake budget in seconds (1..60)
+    std::uint16_t              health_port            = 0;  ///< 0 = disabled
+    std::string                health_bind            = "127.0.0.1";
+    std::uint16_t              web_port               = 5173; ///< static web server, 0 disables
+    std::string                web_bind               = "127.0.0.1";
     std::optional<std::string> web_root; ///< disk override of the embedded player; unset => embedded
     /// TLS on the static web server. false serves the player page over
     /// plain HTTP for the closed-network deployment, where a browser
