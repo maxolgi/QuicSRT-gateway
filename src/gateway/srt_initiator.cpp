@@ -17,8 +17,8 @@ namespace
 constexpr int kBytesPerPacket = 1500 - 28;
 
 // The fake peer network the per-session labels live in (M0's harness
-// addressing; the fork synthesizes 10.213.255.254 for bind-less
-// listeners). Distinct ports keep concurrent session pairs apart.
+// addressing; the libwebsrt listener side binds 10.213.255.254 as its
+// label). Distinct ports keep concurrent session pairs apart.
 constexpr const char*   kPeerLabelIp       = "10.213.255.254";
 constexpr std::uint16_t kPeerLabelPortBase = 20000;
 
