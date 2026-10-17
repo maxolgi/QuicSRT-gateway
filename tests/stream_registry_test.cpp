@@ -67,7 +67,7 @@ bool TestPublisherEndNoViewers()
 
 bool TestSequentialFreshNamesStayBounded()
 {
-    StreamRegistry    reg(StreamRegistryConfig{});
+    StreamRegistry     reg(StreamRegistryConfig{});
     const std::uint8_t ts_packet[188]{}; // one TS packet, so the dropped ring held data
     for (std::uint64_t i = 0; i < 64; ++i)
     {
@@ -86,7 +86,7 @@ bool TestSequentialFreshNamesStayBounded()
 
 bool TestViewerPathStillDropsOnLastDetach()
 {
-    StreamRegistry reg(StreamRegistryConfig{});
+    StreamRegistry        reg(StreamRegistryConfig{});
     const WtSessionHandle pub    = Handle(1);
     const WtSessionHandle viewer = Handle(2);
     Check(reg.PublishAttempt("with-viewer", pub) == Decision::Accept, "3: the publish claims the name");
