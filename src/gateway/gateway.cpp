@@ -328,8 +328,10 @@ void Gateway::EndPublish(const std::string& stream, const std::string& reason)
     //     Subscriber's SRT session) running.
     //   CloseSession    - the registry teardown of that viewer's SRT
     //     initiator, which also FINs the (now closing) session stream.
-    // The viewers' OnSessionEnded -> DetachViewer then drops the idle
-    // stream; a reconnecting viewer recreates it as waiting.
+    // Stream drop, both paths: with viewers attached their OnSessionEnded
+    // -> DetachViewer drops the now-idle stream (the last detach); with
+    // none attached OnPublisherEnd already dropped it. Either way a
+    // reconnecting viewer recreates it as waiting.
     const std::vector<WtSessionHandle> closing = streams_.OnPublisherEnd(stream);
     for (const WtSessionHandle viewer : closing)
     {

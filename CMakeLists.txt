@@ -191,6 +191,16 @@ target_link_libraries(broadcaster_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME broadcaster_test COMMAND broadcaster_test)
 set_tests_properties(broadcaster_test PROPERTIES TIMEOUT 30)
 
+# Unit: the session registry's viewer chunk sizing - a negotiated payload
+# below one TS packet must clamp UP to 188 (chunking never turns off); a
+# normal payload sizes chunks unchanged.
+add_executable(session_registry_test tests/session_registry_test.cpp)
+target_compile_features(session_registry_test PRIVATE cxx_std_20)
+set_target_properties(session_registry_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(session_registry_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME session_registry_test COMMAND session_registry_test)
+set_tests_properties(session_registry_test PROPERTIES TIMEOUT 30)
+
 # End-to-end: libwebsrt's WTClient against the gateway's WtServer over
 # loopback (127.0.0.1:4434, ephemeral fallback inside the test).
 add_executable(wt_server_test tests/wt_server_test.cpp)

@@ -431,7 +431,7 @@ bool SessionRegistry::EnqueueForViewer(WtSessionHandle handle, const void* data,
     // messages there. Payload is 188-aligned, so a TS byte stream is
     // split transparently for the receiver's demuxer.
     const int         payload  = entry->initiator->max_payload();
-    const std::size_t chunk    = payload >= 188 ? static_cast<std::size_t>(payload) : len;
+    const std::size_t chunk    = ViewerChunkSize(payload);
     bool              enqueued = false;
     for (std::size_t off = 0; off < len; off += chunk)
     {

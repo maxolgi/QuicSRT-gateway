@@ -597,7 +597,7 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     settings.es_versions                        = 1U << LSQVER_I001; // QUIC v1 + h3, as the clients speak
     settings.es_datagrams                       = 1;                 // advertise MAX_DATAGRAM_FRAME_SIZE
     settings.es_webtransport_server             = 1;                 // SETTINGS_ENABLE_WEBTRANSPORT
-    settings.es_max_webtransport_server_streams = 100;               // sane default; CLI config lands later
+    settings.es_max_webtransport_server_streams = 100;               // sane default; no config key governs it
     // WT idle timeout (Rust limits.rs max_idle_timeout, quinn parity):
     // a connection silent for this many seconds is closed. lsquic's own
     // default is 30 s; the oracle runs 10 s. Media flows reset it (any

@@ -131,6 +131,20 @@ public:
     virtual void OnSessionEnded(WtSessionHandle /*handle*/, const std::string& /*reason*/) {}
 };
 
+/// The per-message size EnqueueForViewer slices a viewer's ring message
+/// into: the negotiated payload ceiling, clamped UP to one 188-byte TS
+/// packet when the value lands below that (the degenerate end of the
+/// HSv5 MTU-field quirk ConnectionState documents). The clamp direction
+/// matters: falling back to the WHOLE message would silently disable
+/// chunking, and a publish-side message reassembles up to 4 MiB - one
+/// unbounded backlog entry. One 188-byte message still fits the
+/// transport's 1200-byte minimum datagram, and a bounded backlog beats
+/// honoring a sub-packet payload hint.
+[[nodiscard]] constexpr std::size_t ViewerChunkSize(int negotiated_payload)
+{
+    return negotiated_payload >= 188 ? static_cast<std::size_t>(negotiated_payload) : std::size_t{188};
+}
+
 /// One registry of all live sessions, polled by a single repeating timer.
 /// Construct, AttachServer, then Start (before or after the loop runs);
 /// destroy with the WtServer still alive (teardown posts to the loop when
