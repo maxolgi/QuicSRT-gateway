@@ -18,6 +18,17 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
+        },
+        {
+            "name": "tsan",
+            "displayName": "TSan (Ninja)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/tsan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_C_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+                "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer"
+            }
         }
     ],
     "buildPresets": [
@@ -28,6 +39,10 @@
         {
             "name": "debug",
             "configurePreset": "debug"
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan"
         }
     ],
     "testPresets": [
@@ -36,6 +51,21 @@
             "configurePreset": "release",
             "output": {
                 "outputOnFailure": true
+            }
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan",
+            "output": {
+                "outputOnFailure": true
+            },
+            "environment": {
+                "TSAN_OPTIONS": "halt_on_error=1:suppressions=${sourceDir}/cmake/tsan.supp"
+            },
+            "filter": {
+                "exclude": {
+                    "name": "concurrency_test|gateway_e2e_test|srt_initiator_test|srt_ingest_test|web_server_test|reload_test|webhook_test"
+                }
             }
         }
     ]

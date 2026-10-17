@@ -80,6 +80,58 @@ jobs:
           path: build/release/websrt-gateway
           if-no-files-found: error
 
+  # TSan coverage of the gateway's concurrency surfaces, same approach as
+  # libwebsrt's ci (it builds the identical dependency tree). Scope, set
+  # via the tsan preset in CMakePresets.json: everything compiled from
+  # source is instrumented (-fsanitize=thread on both C and CXX flags) -
+  # first-party gateway + tests, libwebsrt, the srt fork and lsquic;
+  # BoringSSL stays uninstrumented (fetched + prebuilt Release by
+  # ./build.sh setup, consumed unmodified). halt_on_error=1 makes any
+  # race fail the job; cmake/tsan.supp carries the two known
+  # dep-internal ones: the srt fork's CUDT::startup registered-flag guard
+  # (same entry and reasoning as libwebsrt's tsan.supp) and
+  # lsquic_global_init - lsquic globals are init-once with no internal
+  # guard, and the in-process server+client tests can init while the
+  # engine runs (never triggered by libwebsrt's own suite; production
+  # has one engine per process).
+  #
+  # Test scope: the always-run set MINUS seven tests, via the tsan test
+  # preset's exclusion filter (delete the filter entries to re-include):
+  #   - concurrency_test, gateway_e2e_test, srt_ingest_test,
+  #     web_server_test, reload_test, webhook_test all run
+  #     Gateway::Start, which has a GENUINE first-party race: it calls
+  #     loop_.SetTimer() from the caller thread after the loop thread is
+  #     live (EventLoop's contract is loop-thread-only; see the note in
+  #     cmake/tsan.supp). Under TSan timing the race does not just get
+  #     flagged, it manifests - torn TimerEntry reads (use-after-free of
+  #     the old timers_ buffer) and empty-callback bad_function_call
+  #     aborts - so these tests are flaky-to-crashing and excluded until
+  #     the gateway fix lands. (concurrency_test itself measured CI-sane
+  #     under TSan - 48 s local, budgets held - the race, not runtime,
+  #     keeps it out.)
+  #   - srt_initiator_test: no race involved; its 10 s internal read
+  #     deadline is blown by TSan's slowdown alone (16.7 s pass vs
+  #     36.5 s fail-of-timeout locally, 2 fails in 3 runs).
+  # The remaining 19 tests + the 4 live-oracle self-skips run green and
+  # stable (~22 s locally, facade_race_test dominating).
+  tsan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build golang-go nasm zlib1g-dev
+      - name: Setup (submodules, BoringSSL)
+        run: ./build.sh setup
+      - name: Build (TSan)
+        run: |
+          cmake --preset tsan -DWEBSRT_ENABLE_WT=ON
+          cmake --build --preset tsan -j "$(nproc)"
+      - name: Test (TSan)
+        run: ctest --preset tsan
+
   # Publish a GitHub Release for every successful master build, like
   # WebSRT's build.yml: master push -> dev-<short_sha> marked latest
   # (must NOT be a prerelease - GitHub ignores make_latest on

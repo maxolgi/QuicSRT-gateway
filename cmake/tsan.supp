@@ -1,0 +1,39 @@
+# srt fork (via deps/libwebsrt/deps/srt, inherited from upstream):
+# CUDT::startup() guards its pthread_atfork registration with a plain
+# function-local `static bool registered` (srtcore/api.cpp) instead of
+# call_once, so concurrent srt_startup() calls data-race on the flag.
+# Worst case is the atfork handler being registered twice; the actual
+# refcounted global init (CUDTUnited::startup) is properly locked.
+# Genuine fork bug - to be fixed in the srt fork repo (maxolgi/srt,
+# branch websrt), then this entry gets deleted.
+race:srt::CUDT::startup
+
+# GENUINE first-party race (NOT benign - delete when fixed): the gateway's
+# Gateway::Start (src/gateway/gateway.cpp) calls loop_.SetTimer() from the
+# caller's thread AFTER loop_.Start() spawned the loop thread, violating
+# EventLoop's loop-thread-only contract (AssertLoopThread, compiled out in
+# release): the timers_ push_back races the live loop's RunTimers.
+# SessionRegistry::Start shows the correct pattern (arm via loop_.Post).
+# Under TSan timing the race actually manifests (torn TimerEntry reads ->
+# use-after-free of the old vector buffer; empty cb -> bad_function_call),
+# so every Gateway::Start test is excluded in the tsan test preset until
+# the gateway-side fix lands - then delete this comment block; no
+# suppression entry is needed while those tests are excluded.
+
+# lsquic (deps/libwebsrt/deps/lsquic, consumed unmodified): its globals
+# are init-once-per-process with no internal guard - a second
+# lsquic_global_init writes globals (the enc-session ex-data index s_idx
+# in iquic_esf_global_init, the conn-hash seed in
+# lsquic_hash_set_global_seed, ...) unsynchronized against engines
+# already running. The gateway's tests embed server AND client engines
+# in one process, and WTClient's lazy lsquic_global_init
+# (src/wt/client.cpp, call_once per client) can land while the gateway's
+# loop thread is mid-crypto (observed: iquic_esfi_init_server reading
+# s_idx, get_seed reading the seed). WtServer::Bind has the matching
+# "whichever runs second re-runs lsquic_global_init" comment.
+# Production is unaffected (one engine per process). Proper fix =
+# process-wide init coordination between WtServer and WTClient
+# (libwebsrt + gateway follow-up), or an upstream lsquic guard; until
+# then suppress on the lsquic_global_init writer frame only, so races
+# NOT involving a concurrent global_init still surface.
+race:lsquic_global_init
