@@ -9,15 +9,12 @@ project(websrt-gateway
 # pulls in (srt fork, lsquic) build with their own settings.
 add_library(gateway_warnings INTERFACE)
 target_compile_options(gateway_warnings INTERFACE -Wall -Wextra -Wpedantic)
-# lsquic.h gates the server-side WebTransport API (lsquic_stream_set_
-# webtransport_session etc.) behind this define; libwebsrt compiles lsquic
-# with it but does not propagate it through websrt::wt-deps, so the gateway
-# - the one consumer hosting a server engine - defines it for its own TUs.
-target_compile_definitions(gateway_warnings INTERFACE LSQUIC_WEBTRANSPORT_SERVER_SUPPORT=1)
 
 # The gateway is a libwebsrt CONSUMER: it sees the library exclusively
 # through the exported interface targets (websrt::websrt, websrt::srt-deps,
-# websrt::wt-deps) - never raw deps/ include paths. BoringSSL must already
+# websrt::wt-deps) - never raw deps/ include paths. websrt::wt-deps also
+# propagates LSQUIC_WEBTRANSPORT_SERVER_SUPPORT, the define lsquic.h gates
+# the server-side WebTransport API behind. BoringSSL must already
 # be fetched + built inside the libwebsrt checkout (./build.sh setup).
 # The gateway is the only thing this project installs. The dependency
 # chain pulled in below (srt fork, lsquic) carries its own install()
