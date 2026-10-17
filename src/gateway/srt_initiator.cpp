@@ -232,6 +232,12 @@ SRT_SOCKSTATUS SrtInitiator::ConnectionState()
         return SRTS_CLOSED;
     }
     const SRT_SOCKSTATUS state = srt_getsockstate(sock_);
+    if (state == SRTS_BROKEN && break_reason_.load(std::memory_order_relaxed) < 0)
+    {
+        // First BROKEN observation: capture why srt broke the socket
+        // (handshake rejection / peer error) while it is still open.
+        break_reason_.store(srt_getrejectreason(sock_), std::memory_order_relaxed);
+    }
     if (state != SRTS_CONNECTED || payload_read_done_.load(std::memory_order_acquire))
     {
         return state;

@@ -169,6 +169,12 @@ public:
     /// Any thread, best effort (false once torn down or not connected).
     [[nodiscard]] bool IsConnected();
 
+    /// Any thread, best effort. The srt reject reason captured when
+    /// ConnectionState() first observed SRTS_BROKEN (srt_getrejectreason:
+    /// why a handshake-stage or connected socket broke), -1 when none was
+    /// captured. Purely diagnostic - appended to the session-end reason.
+    [[nodiscard]] int BreakReason() const { return break_reason_.load(std::memory_order_relaxed); }
+
     /// Effective per-message payload ceiling after the handshake
     /// negotiation; the configured payload until ConnectionState() has
     /// observed the connection. Send() rejects anything larger. Any
@@ -218,6 +224,9 @@ private:
     // observed set flag implies the negotiated cap.
     std::atomic<int>  max_payload_; // configured until the connected readback
     std::atomic<bool> payload_read_done_ = false;
+
+    // srt reject reason at the first BROKEN observation (-1 = not captured).
+    std::atomic<int> break_reason_{-1};
 
     // Lock-free mirror of "torn down" for the srt send callback.
     std::atomic<bool> closed_{false};

@@ -281,7 +281,12 @@ void SessionRegistry::Tick()
         }
         if (state != SRTS_CONNECTED)
         {
-            FinishEntry(entry, std::string("srt connection ") + StateName(state));
+            std::string reason = std::string("srt connection ") + StateName(state);
+            if (const int br = entry->initiator->BreakReason(); br >= 0)
+            {
+                reason += std::string(" (") + srt_rejectreason_str(br) + ")";
+            }
+            FinishEntry(entry, reason);
             continue;
         }
 
