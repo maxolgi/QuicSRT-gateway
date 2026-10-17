@@ -139,7 +139,7 @@ SessionRegistry::~SessionRegistry()
         // Mirror WtServer's destructor: drain on the loop thread, wait.
         std::promise<void> done;
         auto               future = done.get_future();
-        loop_.Post(
+        (void)loop_.Post(
             [this, &done]
             {
                 CancelAndDrain();
@@ -163,7 +163,7 @@ void SessionRegistry::Start()
     auto arm = [this] { timer_id_ = loop_.SetTimer(config_.tick_interval, true, [this] { Tick(); }); };
     if (loop_.IsRunning() && !loop_.OnLoopThread())
     {
-        loop_.Post(std::move(arm));
+        (void)loop_.Post(std::move(arm));
     }
     else
     {
@@ -461,7 +461,7 @@ void SessionRegistry::CloseSession(WtSessionHandle handle, const std::string& re
     }
     else
     {
-        loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
+        (void)loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
     }
 }
 

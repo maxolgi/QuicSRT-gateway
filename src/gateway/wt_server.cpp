@@ -508,7 +508,7 @@ WtServer::~WtServer()
     if (loop_.IsRunning())
     {
         auto done = teardown_done_.get_future();
-        loop_.Post(
+        (void)loop_.Post(
             [this]
             {
                 Teardown();
@@ -676,7 +676,7 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     bound_ = true;
     if (!loop_.OnLoopThread() && loop_.IsRunning())
     {
-        loop_.Post([this] { AttachLoop(); });
+        (void)loop_.Post([this] { AttachLoop(); });
     }
     else
     {
@@ -712,7 +712,7 @@ bool WtServer::SendDatagram(WtSessionHandle handle, const void* data, std::size_
     }
     else
     {
-        loop_.Post(
+        (void)loop_.Post(
             [this, handle, payload = std::move(payload)]() mutable
             {
                 const auto it = sessions_.find(handle.Id());
@@ -759,7 +759,7 @@ void WtServer::Close()
     }
     else
     {
-        loop_.Post([this] { CloseOnLoop(); });
+        (void)loop_.Post([this] { CloseOnLoop(); });
     }
 }
 
@@ -788,7 +788,7 @@ void WtServer::CloseSession(WtSessionHandle handle, const std::string& reason)
     }
     else
     {
-        loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
+        (void)loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
     }
 }
 
@@ -804,7 +804,7 @@ void WtServer::CloseConnection(WtSessionHandle handle, const std::string& reason
     }
     else
     {
-        loop_.Post([this, handle, reason] { CloseConnectionOnLoop(handle, reason); });
+        (void)loop_.Post([this, handle, reason] { CloseConnectionOnLoop(handle, reason); });
     }
 }
 

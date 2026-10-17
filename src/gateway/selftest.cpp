@@ -56,7 +56,7 @@ int RunSelftest()
         websrt::EventLoop loop;
         std::atomic<bool> posted{false};
         loop.Start();
-        loop.Post([&posted] { posted = true; });
+        (void)loop.Post([&posted] { posted = true; });
         for (int i = 0; i < 500 && !posted; ++i)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));

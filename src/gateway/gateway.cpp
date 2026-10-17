@@ -105,7 +105,7 @@ Gateway::~Gateway()
     {
         std::promise<void> done;
         auto               future = done.get_future();
-        loop_.Post(
+        (void)loop_.Post(
             [this, &done]
             {
                 CancelHousekeeping();
@@ -201,7 +201,7 @@ void Gateway::ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy,
         return;
     }
     std::promise<void> done;
-    loop_.Post(
+    (void)loop_.Post(
         [&]
         {
             apply();
@@ -438,7 +438,7 @@ std::vector<StreamStats> Gateway::SnapshotStreams() const
     }
     std::promise<std::vector<StreamStats>> done;
     auto                                   future = done.get_future();
-    loop.Post([this, &done] { done.set_value(streams_.SnapshotStreams()); });
+    (void)loop.Post([this, &done] { done.set_value(streams_.SnapshotStreams()); });
     return future.get();
 }
 

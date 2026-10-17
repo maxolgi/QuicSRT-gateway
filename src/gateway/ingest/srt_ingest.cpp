@@ -548,7 +548,8 @@ void SrtIngest::PublishChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
     auto        publish = sink_.publish;
     auto        payload = std::make_shared<std::vector<std::uint8_t>>(data, data + len);
     std::string stream  = it->second.stream;
-    loop_.Post([publish, stream = std::move(stream), payload] { publish(stream, payload->data(), payload->size()); });
+    (void)loop_.Post([publish, stream = std::move(stream), payload]
+                     { publish(stream, payload->data(), payload->size()); });
 }
 
 void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
@@ -662,7 +663,7 @@ bool SrtIngest::GateOnLoop(const std::string& stream)
     }
     std::promise<bool> done;
     auto               future = done.get_future();
-    loop_.Post([this, &done, stream] { done.set_value(sink_.publish_gate(stream)); });
+    (void)loop_.Post([this, &done, stream] { done.set_value(sink_.publish_gate(stream)); });
     return future.get();
 }
 
@@ -674,7 +675,7 @@ bool SrtIngest::ClaimOnLoop(const std::string& stream)
     }
     std::promise<bool> done;
     auto               future = done.get_future();
-    loop_.Post([this, &done, stream] { done.set_value(sink_.claim(stream)); });
+    (void)loop_.Post([this, &done, stream] { done.set_value(sink_.claim(stream)); });
     return future.get();
 }
 
@@ -686,7 +687,7 @@ void SrtIngest::ReleaseOnLoop(const std::string& stream)
     }
     std::promise<void> done;
     auto               future = done.get_future();
-    loop_.Post(
+    (void)loop_.Post(
         [this, &done, stream]
         {
             sink_.release(stream);
