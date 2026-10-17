@@ -56,6 +56,14 @@ extern "C" void OnReloadSignal(int /*signo*/)
     g_reload = 1;
 }
 
+/// Is this bind address loopback-only? Binds are IPv4 literals (or
+/// "localhost"); anything else - including 0.0.0.0 and private ranges -
+/// is reachable from the network.
+bool IsLoopbackBind(const std::string& bind)
+{
+    return bind == "localhost" || bind == "::1" || bind.rfind("127.", 0) == 0;
+}
+
 /// A bare run (no --config) drops the fully commented example config as
 /// ./gateway.conf when it does not exist yet - the release artifact is a
 /// lone binary, so the first run leaves the operator something to edit.
@@ -176,6 +184,25 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             std::fprintf(stderr,
                          "websrt-gateway: WARNING: no [[stream]] entries in %s - any stream name accepted\n",
                          config_path->c_str());
+        }
+        // Public-bind warnings: an open-mode WT listener or a passphrase-less
+        // SRT ingest on a non-loopback bind is reachable by any network
+        // client - the dangerous combinations get their own loud lines.
+        if (!IsLoopbackBind(s.wt_bind) && config.streams.empty())
+        {
+            std::fprintf(stderr,
+                         "websrt-gateway: WARNING: open-mode WebTransport on non-loopback %s:%u - "
+                         "any network client may publish or view any stream name\n",
+                         s.wt_bind.c_str(),
+                         s.wt_port);
+        }
+        if (!IsLoopbackBind(s.srt_ingest_bind) && !s.srt_passphrase.has_value())
+        {
+            std::fprintf(stderr,
+                         "websrt-gateway: WARNING: SRT ingest on non-loopback %s:%u with no passphrase - "
+                         "any network client may publish\n",
+                         s.srt_ingest_bind.c_str(),
+                         s.srt_ingest_port);
         }
         std::printf("websrt-gateway: config: %zu stream(s), %s "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
