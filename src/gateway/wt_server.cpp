@@ -505,21 +505,20 @@ WtServer::~WtServer()
         return; // never bound, or already torn down
     }
     assert(!loop_.OnLoopThread()); // never destroy from inside a callback
-    if (loop_.IsRunning())
-    {
-        auto done = teardown_done_.get_future();
-        (void)loop_.Post(
+    // Post refused = the loop already stopped: no engine callback can fire
+    // mid-teardown, so the engine dies here - the same path a server bound
+    // before loop Start() takes at destruction.
+    if (!loop_.Post(
             [this]
             {
                 Teardown();
                 teardown_done_.set_value();
-            });
-        done.wait();
-    }
-    else
+            }))
     {
         Teardown();
+        return;
     }
+    teardown_done_.get_future().wait(); // Post true guarantees Teardown ran
 }
 
 bool WtServer::Bind(const std::string& host, std::uint16_t port)
@@ -674,12 +673,15 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     }
 
     bound_ = true;
-    if (!loop_.OnLoopThread() && loop_.IsRunning())
+    if (loop_.OnLoopThread())
     {
-        (void)loop_.Post([this] { AttachLoop(); });
+        AttachLoop();
     }
-    else
+    else if (!loop_.Post([this] { AttachLoop(); }))
     {
+        // Post refused = the loop stopped mid-bind: no loop thread exists
+        // to race the epoll registration, so attach here - the same path
+        // Bind-before-Start takes.
         AttachLoop();
     }
     Log("listening on %s:%u (WT server)", host.c_str(), port);
@@ -712,15 +714,20 @@ bool WtServer::SendDatagram(WtSessionHandle handle, const void* data, std::size_
     }
     else
     {
-        (void)loop_.Post(
-            [this, handle, payload = std::move(payload)]() mutable
-            {
-                const auto it = sessions_.find(handle.Id());
-                if (it != sessions_.end())
+        if (!loop_.Post(
+                [this, handle, payload = std::move(payload)]() mutable
                 {
-                    EnqueueDatagram(*it->second, std::move(payload));
-                }
-            });
+                    const auto it = sessions_.find(handle.Id());
+                    if (it != sessions_.end())
+                    {
+                        EnqueueDatagram(*it->second, std::move(payload));
+                    }
+                }))
+        {
+            // Post refused = the loop is gone and the datagram never left:
+            // the same drop accounting a full send queue takes.
+            datagrams_dropped_.fetch_add(1);
+        }
     }
     return true;
 }
@@ -756,10 +763,14 @@ void WtServer::Close()
     if (loop_.OnLoopThread())
     {
         CloseOnLoop();
+        return;
     }
-    else
+    if (!loop_.Post([this] { CloseOnLoop(); }))
     {
-        (void)loop_.Post([this] { CloseOnLoop(); });
+        // Post refused = the loop already stopped: the destructor's
+        // Teardown destroys the engine and every connection - nothing
+        // left to close.
+        return;
     }
 }
 
@@ -785,10 +796,13 @@ void WtServer::CloseSession(WtSessionHandle handle, const std::string& reason)
     if (loop_.OnLoopThread())
     {
         CloseSessionOnLoop(handle, reason);
+        return;
     }
-    else
+    if (!loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); }))
     {
-        (void)loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
+        // Post refused = the loop already stopped: Teardown frees every
+        // session, so this close has nothing left to act on.
+        return;
     }
 }
 
@@ -801,10 +815,13 @@ void WtServer::CloseConnection(WtSessionHandle handle, const std::string& reason
     if (loop_.OnLoopThread())
     {
         CloseConnectionOnLoop(handle, reason);
+        return;
     }
-    else
+    if (!loop_.Post([this, handle, reason] { CloseConnectionOnLoop(handle, reason); }))
     {
-        (void)loop_.Post([this, handle, reason] { CloseConnectionOnLoop(handle, reason); });
+        // Post refused = the loop already stopped: Teardown closes every
+        // connection - this close has nothing left to act on.
+        return;
     }
 }
 

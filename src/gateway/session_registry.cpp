@@ -134,18 +134,23 @@ SessionRegistry::SessionRegistry(websrt::EventLoop& loop, SessionRegistryListene
 
 SessionRegistry::~SessionRegistry()
 {
-    if (loop_.IsRunning() && !loop_.OnLoopThread())
+    if (loop_.OnLoopThread())
     {
-        // Mirror WtServer's destructor: drain on the loop thread, wait.
-        std::promise<void> done;
-        auto               future = done.get_future();
-        (void)loop_.Post(
+        CancelAndDrain();
+        return;
+    }
+    // Mirror WtServer's destructor: drain on the loop thread, wait. Post
+    // false = the loop already stopped: the tick timer can never fire
+    // again, so draining here races nothing.
+    std::promise<void> done;
+    if (loop_.Post(
             [this, &done]
             {
                 CancelAndDrain();
                 done.set_value();
-            });
-        future.wait();
+            }))
+    {
+        done.get_future().wait(); // Post true guarantees the job ran
     }
     else
     {
@@ -161,12 +166,13 @@ void SessionRegistry::AttachServer(WtServer& server)
 void SessionRegistry::Start()
 {
     auto arm = [this] { timer_id_ = loop_.SetTimer(config_.tick_interval, true, [this] { Tick(); }); };
-    if (loop_.IsRunning() && !loop_.OnLoopThread())
+    // The lambda is copied, not moved: the inline fallback below needs it
+    // after a refused Post.
+    if (loop_.OnLoopThread() || !loop_.Post(arm))
     {
-        (void)loop_.Post(std::move(arm));
-    }
-    else
-    {
+        // Inline arm: we are the loop thread, or the loop stopped
+        // mid-Start (Post refused) - the timer simply fires once a loop
+        // runs again, the same as a Start before loop Start().
         arm();
     }
 }
@@ -458,10 +464,13 @@ void SessionRegistry::CloseSession(WtSessionHandle handle, const std::string& re
     if (loop_.OnLoopThread())
     {
         CloseSessionOnLoop(handle, reason);
+        return;
     }
-    else
+    if (!loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); }))
     {
-        (void)loop_.Post([this, handle, reason] { CloseSessionOnLoop(handle, reason); });
+        // Post refused = the loop already stopped: the registry's own
+        // destructor drains every entry, so there is nothing to close.
+        return;
     }
 }
 

@@ -101,17 +101,22 @@ Gateway::Gateway(const CertProvider& cert, std::shared_ptr<const SessionPolicy> 
 Gateway::~Gateway()
 {
     // The housekeeping timer must be gone before the members it touches die.
-    if (loop_.IsRunning() && !loop_.OnLoopThread())
+    if (loop_.OnLoopThread())
     {
-        std::promise<void> done;
-        auto               future = done.get_future();
-        (void)loop_.Post(
+        CancelHousekeeping();
+        return;
+    }
+    std::promise<void> done;
+    // Post false = the loop already stopped: no thread can be inside the
+    // timer callback, so cancelling here races nothing.
+    if (loop_.Post(
             [this, &done]
             {
                 CancelHousekeeping();
                 done.set_value();
-            });
-        future.wait();
+            }))
+    {
+        done.get_future().wait(); // Post true guarantees the job ran
     }
     else
     {
@@ -195,19 +200,28 @@ void Gateway::ApplyRuntimeConfig(std::shared_ptr<const SessionPolicy> policy,
         webhooks_.SetSettings(webhooks);
         Log("runtime config applied (max_viewers %zu)", streams_.MaxViewers());
     };
-    if (loop_.OnLoopThread() || !loop_.IsRunning())
+    if (loop_.OnLoopThread())
     {
         apply();
         return;
     }
     std::promise<void> done;
-    (void)loop_.Post(
-        [&]
-        {
-            apply();
-            done.set_value();
-        });
-    done.get_future().wait();
+    // Post false = the loop already stopped: no CONNECT can interleave, so
+    // applying here is atomic too - and the "returned HAS applied"
+    // contract above still holds.
+    if (loop_.Post(
+            [&]
+            {
+                apply();
+                done.set_value();
+            }))
+    {
+        done.get_future().wait();
+    }
+    else
+    {
+        apply();
+    }
 }
 
 // ---- SessionRegistryListener (loop thread) ----
@@ -432,14 +446,15 @@ std::vector<StreamStats> Gateway::SnapshotStreams() const
     {
         return streams_.SnapshotStreams();
     }
-    if (!loop.IsRunning())
-    {
-        return {}; // a posted snapshot would never be answered
-    }
     std::promise<std::vector<StreamStats>> done;
-    auto                                   future = done.get_future();
-    (void)loop.Post([this, &done] { done.set_value(streams_.SnapshotStreams()); });
-    return future.get();
+    // Post decides atomically whether the loop will answer; only a true
+    // return resolves the future (the loop drains before its thread
+    // exits), so a stopped loop can never hang the caller.
+    if (!loop.Post([this, &done] { done.set_value(streams_.SnapshotStreams()); }))
+    {
+        return {}; // the loop is gone: no snapshot exists to wait for
+    }
+    return done.get_future().get();
 }
 
 } // namespace websrt::gateway

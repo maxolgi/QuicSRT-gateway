@@ -56,11 +56,14 @@ int RunSelftest()
         websrt::EventLoop loop;
         std::atomic<bool> posted{false};
         loop.Start();
-        (void)loop.Post([&posted] { posted = true; });
+        // Post's contract under test: true on a live loop (the job is
+        // guaranteed to run), false once it has stopped - never a wait.
+        const bool accepted = loop.Post([&posted] { posted = true; });
         for (int i = 0; i < 500 && !posted; ++i)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
+        check(accepted, "EventLoop Post accepted the job on a live loop");
         check(posted, "EventLoop Post ran on the loop thread");
         loop.Stop();
     }

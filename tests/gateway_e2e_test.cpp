@@ -538,6 +538,20 @@ int main()
     Check(gateway.TickCount() > 0, "the ~2 ms registry ticker ran");
 
     gateway.Shutdown();
+
+    // Post-contract regression: with the loop stopped, a future-waiting
+    // round-trip must take its "not available" branch instead of blocking
+    // on a future no one will ever resolve. SnapshotStreams is the
+    // representative: Post returns false and the empty result comes back
+    // immediately (2 s is a generous CI margin - the call is a no-wait).
+    {
+        const auto                     t0      = std::chrono::steady_clock::now();
+        const std::vector<StreamStats> streams = gateway.SnapshotStreams();
+        const auto                     elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0);
+        Check(streams.empty(), "post-shutdown SnapshotStreams returns the empty result");
+        Check(elapsed_ms.count() < 2000, "post-shutdown SnapshotStreams does not block");
+    }
     const auto elapsed_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t_total0);
 

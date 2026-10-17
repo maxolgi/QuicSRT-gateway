@@ -531,9 +531,6 @@ void SrtIngest::PublishChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
         return;
     }
     Conn& conn = it->second;
-    ++conn.chunks_out;
-    Bump(chunks_out_);
-    Bump(bytes_out_, len);
 
     // The read-only TS-continuity probe (the oracle's TsContinuityChecker
     // wrapping its ingester): every published chunk is a whole number of
@@ -548,8 +545,17 @@ void SrtIngest::PublishChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
     auto        publish = sink_.publish;
     auto        payload = std::make_shared<std::vector<std::uint8_t>>(data, data + len);
     std::string stream  = it->second.stream;
-    (void)loop_.Post([publish, stream = std::move(stream), payload]
-                     { publish(stream, payload->data(), payload->size()); });
+    if (!loop_.Post([publish, stream = std::move(stream), payload]
+                    { publish(stream, payload->data(), payload->size()); }))
+    {
+        // Post refused = the gateway loop is gone: the chunk is dropped
+        // with it (the TEARDOWN contract above). The out-counters stay
+        // untouched - a chunk that never left was never handed over.
+        return;
+    }
+    ++conn.chunks_out;
+    Bump(chunks_out_);
+    Bump(bytes_out_, len);
 }
 
 void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
@@ -657,43 +663,55 @@ bool SrtIngest::GateOnLoop(const std::string& stream)
     {
         return true;
     }
-    if (!loop_.IsRunning())
+    std::promise<bool> done;
+    // Post decides atomically whether the loop will answer; a refused Post
+    // means the gateway is going away, so the gate refuses - the same
+    // answer the gate itself gives for a denied name.
+    if (!loop_.Post([this, &done, stream] { done.set_value(sink_.publish_gate(stream)); }))
     {
         return false;
     }
-    std::promise<bool> done;
-    auto               future = done.get_future();
-    (void)loop_.Post([this, &done, stream] { done.set_value(sink_.publish_gate(stream)); });
-    return future.get();
+    return done.get_future().get();
 }
 
 bool SrtIngest::ClaimOnLoop(const std::string& stream)
 {
-    if (!sink_.claim || !loop_.IsRunning())
+    if (!sink_.claim)
     {
         return false;
     }
     std::promise<bool> done;
-    auto               future = done.get_future();
-    (void)loop_.Post([this, &done, stream] { done.set_value(sink_.claim(stream)); });
-    return future.get();
+    // A refused Post means the gateway loop is gone: the claim cannot be
+    // granted, so the publisher is refused (the occupancy stays with
+    // whatever the gateway's teardown does with it).
+    if (!loop_.Post([this, &done, stream] { done.set_value(sink_.claim(stream)); }))
+    {
+        return false;
+    }
+    return done.get_future().get();
 }
 
 void SrtIngest::ReleaseOnLoop(const std::string& stream)
 {
-    if (!sink_.release || !loop_.IsRunning())
+    if (!sink_.release)
     {
         return;
     }
     std::promise<void> done;
-    auto               future = done.get_future();
-    (void)loop_.Post(
-        [this, &done, stream]
-        {
-            sink_.release(stream);
-            done.set_value();
-        });
-    future.wait();
+    // A refused Post means the gateway loop is gone: the release is
+    // skipped rather than waited on (the TEARDOWN contract in the header)
+    // - a stopped loop can never answer, and the gateway's own teardown
+    // drops the occupancy with the stream registry.
+    if (!loop_.Post(
+            [this, &done, stream]
+            {
+                sink_.release(stream);
+                done.set_value();
+            }))
+    {
+        return;
+    }
+    done.get_future().wait();
 }
 
 } // namespace websrt::gateway
