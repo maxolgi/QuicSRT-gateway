@@ -68,7 +68,15 @@ using websrt::gateway::Gateway;
 using websrt::gateway::GatewayConfig;
 using websrt::gateway::StreamStats;
 
-constexpr const char* kFixture    = "/home/flibb/maxolgi/WebSRT/fixtures/test.ts";
+// WebSRT checkout fixture; override with WEBSRT_TEST_FIXTURE, default
+// follows the workspace layout under $HOME.
+std::string FixturePath()
+{
+    if (const char* env = std::getenv("WEBSRT_TEST_FIXTURE"))
+        return env;
+    const char* home = std::getenv("HOME");
+    return home ? std::string(home) + "/maxolgi/WebSRT/fixtures/test.ts" : std::string();
+}
 constexpr int         kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
 constexpr std::size_t kTsPacket   = 188;
 
@@ -289,13 +297,13 @@ websrt::gateway::SrtIngest::Sink MakeFakeSink(const std::shared_ptr<FakeSink>& s
 
 std::vector<std::uint8_t> LoadPayload()
 {
-    std::ifstream in(kFixture, std::ios::in | std::ios::binary);
+    std::ifstream in(FixturePath(), std::ios::in | std::ios::binary);
     if (in.is_open())
     {
         std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         if (!bytes.empty())
         {
-            std::fprintf(stderr, "srt_ingest_test: payload: %zu bytes from %s\n", bytes.size(), kFixture);
+            std::fprintf(stderr, "srt_ingest_test: payload: %zu bytes from %s\n", bytes.size(), FixturePath().c_str());
             return bytes;
         }
     }
@@ -314,7 +322,7 @@ std::vector<std::uint8_t> LoadPayload()
         byte = static_cast<std::uint8_t>(state >> 24);
     }
     std::fprintf(
-        stderr, "srt_ingest_test: payload: %s absent, using %zu deterministic pattern bytes\n", kFixture, bytes.size());
+        stderr, "srt_ingest_test: payload: %s absent, using %zu deterministic pattern bytes\n", FixturePath().c_str(), bytes.size());
     return bytes;
 }
 
