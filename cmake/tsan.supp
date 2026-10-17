@@ -8,17 +8,22 @@
 # branch websrt), then this entry gets deleted.
 race:srt::CUDT::startup
 
-# GENUINE first-party race (NOT benign - delete when fixed): the gateway's
-# Gateway::Start (src/gateway/gateway.cpp) calls loop_.SetTimer() from the
-# caller's thread AFTER loop_.Start() spawned the loop thread, violating
-# EventLoop's loop-thread-only contract (AssertLoopThread, compiled out in
-# release): the timers_ push_back races the live loop's RunTimers.
-# SessionRegistry::Start shows the correct pattern (arm via loop_.Post).
-# Under TSan timing the race actually manifests (torn TimerEntry reads ->
-# use-after-free of the old vector buffer; empty cb -> bad_function_call),
-# so every Gateway::Start test is excluded in the tsan test preset until
-# the gateway-side fix lands - then delete this comment block; no
-# suppression entry is needed while those tests are excluded.
+# srt fork (via deps/libwebsrt/deps/srt, inherited from upstream): its GC
+# thread's CUDTUnited::checkBrokenSockets scans the CUDT blocks of live
+# sockets while the receive queue's worker thread is still completing a
+# handshake on one of them - CUDT::prepareBuffers lazily creates and
+# publishes the send/receive buffers (m_pSndBuffer, m_pRcvBuffer, ...)
+# under no lock the GC scan honors (observed in gateway_e2e_test:
+# CRcvQueue::worker -> processAsyncConnectResponse -> postConnect ->
+# prepareBuffers vs garbageCollect -> checkBrokenSockets, racing the
+# 8-byte buffer-pointer store on the CUDT block). Both racing frames are
+# srt-fork-internal; the gateway merely srt_connect()ed the socket an
+# instant earlier and touches neither side. Proper fix = a fork change
+# (guard the lazy buffer creation or the GC's read of it), which takes a
+# fork commit plus two pin bumps (srt -> libwebsrt -> here) - deferred
+# to the human. Until then suppress on the writer frame only, so races
+# NOT involving lazy buffer creation still surface.
+race:srt::CUDT::prepareBuffers
 
 # lsquic (deps/libwebsrt/deps/lsquic, consumed unmodified): its globals
 # are init-once-per-process with no internal guard - a second

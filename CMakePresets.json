@@ -64,7 +64,7 @@
             },
             "filter": {
                 "exclude": {
-                    "name": "concurrency_test|gateway_e2e_test|srt_initiator_test|srt_ingest_test|web_server_test|reload_test|webhook_test"
+                    "name": "srt_initiator_test|reload_test"
                 }
             }
         }

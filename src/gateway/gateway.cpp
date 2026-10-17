@@ -137,8 +137,34 @@ bool Gateway::Start(const std::string& host, std::uint16_t port)
         return false;
     }
     registry_.Start();
-    housekeeping_timer_ = loop_.SetTimer(kHousekeepingInterval, true, [this] { PrimePendingViewers(); });
-    running_            = true;
+    // Arm ON the loop thread: SetTimer is loop-thread-only once loop_.Start
+    // has spawned the engine thread (EventLoop's contract); arming here on
+    // the caller's thread raced the live loop's RunTimers. Same Post-arm as
+    // SessionRegistry::Start, with the member assigned inside the job - the
+    // lifecycle that implies:
+    // - Start returns before the arm ran: only CancelHousekeeping reads
+    //   housekeeping_timer_ while the loop is live, and it runs on the loop
+    //   thread - FIFO behind this arm whenever it rides a Post.
+    // - a quick Start-then-Shutdown: an accepted arm always runs before the
+    //   loop thread exits (Stop drains posted jobs), so when the
+    //   destructor's Post is then refused the member is armed and the
+    //   inline CancelHousekeeping cancels it on a stopped loop - no thread
+    //   left to race.
+    // - a not-yet-armed observation cannot happen: posted cancel jobs queue
+    //   behind the arm, and the inline cancel path only runs after every
+    //   accepted job has drained - or Start armed inline below.
+    auto arm = [this]
+    { housekeeping_timer_ = loop_.SetTimer(kHousekeepingInterval, true, [this] { PrimePendingViewers(); }); };
+    // The lambda is copied, not moved: the inline fallback below needs it
+    // after a refused Post.
+    if (loop_.OnLoopThread() || !loop_.Post(arm))
+    {
+        // Inline arm: we are the loop thread, or the loop stopped
+        // mid-Start (Post refused) - the timer simply fires once a loop
+        // runs again, the same as a Start before loop Start().
+        arm();
+    }
+    running_ = true;
     Log("serving WebTransport on %s:%u (max_viewers %zu, broadcast_capacity %zu)",
         host.c_str(),
         port,
