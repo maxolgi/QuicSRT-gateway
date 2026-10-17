@@ -321,8 +321,10 @@ std::vector<std::uint8_t> LoadPayload()
         state ^= state << 5;
         byte = static_cast<std::uint8_t>(state >> 24);
     }
-    std::fprintf(
-        stderr, "srt_ingest_test: payload: %s absent, using %zu deterministic pattern bytes\n", FixturePath().c_str(), bytes.size());
+    std::fprintf(stderr,
+                 "srt_ingest_test: payload: %s absent, using %zu deterministic pattern bytes\n",
+                 FixturePath().c_str(),
+                 bytes.size());
     return bytes;
 }
 
