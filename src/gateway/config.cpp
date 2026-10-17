@@ -146,6 +146,10 @@ ServerConfig ParseServer(Table& table)
                                                  "web_tls",
                                                  "max_viewers",
                                                  "broadcast_capacity",
+                                                 "max_sessions_per_ip",
+                                                 "max_sessions",
+                                                 "wt_idle_timeout_s",
+                                                 "wt_handshake_timeout_s",
                                                  "cert_mode",
                                                  "cert_pem",
                                                  "key_pem",
@@ -178,6 +182,14 @@ ServerConfig ParseServer(Table& table)
     s.max_viewers = static_cast<std::uint32_t>(OptInt(table, "max_viewers", "[server]", s.max_viewers, 1, 1'000'000));
     s.broadcast_capacity = static_cast<std::uint32_t>(
         OptInt(table, "broadcast_capacity", "[server]", s.broadcast_capacity, 1, 10'000'000));
+    // Rust GatewayLimits parity (limits.rs): caps 0 = unlimited (Option::None);
+    // timeout bounds are the oracle's validate() ranges.
+    s.max_sessions_per_ip =
+        static_cast<int>(OptInt(table, "max_sessions_per_ip", "[server]", s.max_sessions_per_ip, 0, 1'000'000));
+    s.max_sessions      = static_cast<int>(OptInt(table, "max_sessions", "[server]", s.max_sessions, 0, 100'000'000));
+    s.wt_idle_timeout_s = static_cast<int>(OptInt(table, "wt_idle_timeout_s", "[server]", s.wt_idle_timeout_s, 1, 600));
+    s.wt_handshake_timeout_s =
+        static_cast<int>(OptInt(table, "wt_handshake_timeout_s", "[server]", s.wt_handshake_timeout_s, 1, 60));
     s.cert_mode = OptString(table, "cert_mode", "[server]").value_or(s.cert_mode);
     if (s.cert_mode != "self" && s.cert_mode != "mkcert")
     {

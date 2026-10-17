@@ -238,7 +238,11 @@ int main()
     // Open mode (no allowlist): PathPolicy + AcceptAll, viewer cap 64.
     const auto policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
                                                std::make_shared<websrt::gateway::AcceptAll>());
-    Gateway    gateway(cert, policy, GatewayConfig{.max_viewers = kMaxViewers});
+    // 50 viewers from one loopback IP: lift the Rust-default per-IP cap
+    // (the oracle's own concurrency test lifts it via the builder too).
+    websrt::gateway::GatewayConfig gw_cfg{.max_viewers = kMaxViewers};
+    gw_cfg.wt.max_sessions_per_ip = 0;
+    Gateway gateway(cert, policy, gw_cfg);
     if (!Check(gateway.Start("127.0.0.1", port), "gateway binds 127.0.0.1:4436 (or the ephemeral fallback)"))
     {
         return 1;

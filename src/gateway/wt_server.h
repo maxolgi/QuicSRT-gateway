@@ -136,6 +136,19 @@ public:
     virtual void OnSessionStreamData(WtSessionHandle /*handle*/, const std::uint8_t* /*data*/, std::size_t /*size*/) {}
 };
 
+/// Connection-level admission limits and engine timeouts - the Rust
+/// oracle's GatewayLimits (limits.rs:40-49, enforced by its
+/// ConnectionTracker at session admission). A cap of 0 disables it
+/// (Rust's Option::None); the timeouts carry the oracle's defaults and
+/// the bounds its validate() enforces (idle 1..600 s, handshake 1..60 s).
+struct WtServerLimits
+{
+    int max_sessions_per_ip = 10;   ///< concurrent sessions from one peer IP
+    int max_sessions        = 1000; ///< concurrent sessions across all IPs
+    int idle_timeout_s      = 10;   ///< WT idle timeout (quinn max_idle_timeout parity)
+    int handshake_timeout_s = 10;   ///< QUIC/WT handshake budget
+};
+
 /// One WebTransport server: a bound UDP socket, one lsquic HTTP/3 server
 /// engine (WT server support compiled in), and the accept path that runs
 /// the SessionPolicy seam. Mirrors WTClient's proven engine recipe
@@ -178,7 +191,8 @@ public:
              const CertProvider&                  cert,
              std::shared_ptr<const SessionPolicy> policy,
              WtServerListener&                    listener,
-             AdmissionCheck                       admission = {});
+             AdmissionCheck                       admission = {},
+             WtServerLimits                       limits    = WtServerLimits{});
     ~WtServer() override;
 
     WtServer(const WtServer&)            = delete;
@@ -268,8 +282,12 @@ private:
     [[nodiscard]] Session* FindSessionByContext(const ConnCtx& cc, std::uint64_t context_id) const;
     static void            Respond(lsquic_stream_t* stream, const char* status, bool half_close);
     void                   ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet& hset);
-    void                   HandleSessionStreamRead(StreamCtx& sc);
-    void                   HandleSubstreamRead(lsquic_stream_t* stream);
+    // Connection-limit accounting (loop thread; the Rust ConnectionTracker).
+    [[nodiscard]] bool SessionLimitOk(const char* peer_ip) const;
+    void               CountSession(Session& session);
+    void               UncountSession(Session& session);
+    void               HandleSessionStreamRead(StreamCtx& sc);
+    void               HandleSubstreamRead(lsquic_stream_t* stream);
     // Returns false when a CLOSE capsule terminated the session (the
     // caller stops and terminates - ParseCapsules never frees).
     [[nodiscard]] static bool ParseCapsules(Session& session, const std::uint8_t* data, std::size_t size);
@@ -280,6 +298,7 @@ private:
     std::shared_ptr<const SessionPolicy> policy_;
     WtServerListener&                    listener_;
     AdmissionCheck                       admission_;
+    WtServerLimits                       limits_;
 
     // Bound state (loop thread or Bind's caller, before attach).
     bool           bound_         = false;
@@ -295,6 +314,9 @@ private:
     // Live server state, loop thread only.
     std::map<std::uint64_t, ConnCtx*> conns_;    // keyed by raw conn ptr
     std::map<std::uint64_t, Session*> sessions_; // handle -> session
+    // Connection-limit state, loop thread only (Rust ConnectionTracker).
+    std::map<std::string, std::size_t> sessions_per_ip_;
+    std::size_t                        established_sessions_ = 0;
     // (Datagram context routing lives per connection in ConnCtx: every
     // client's CONNECT stream is stream 0, so a context id only names a
     // session within its own connection.)

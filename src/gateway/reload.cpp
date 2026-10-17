@@ -61,6 +61,15 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     // Broadcaster rings: the depth is fixed per stream at creation; only a
     // restart rebuilds every ring at one depth.
     changed("broadcast_capacity", std::to_string(old_s.broadcast_capacity), std::to_string(new_s.broadcast_capacity));
+    // WT admission limits + engine timeouts: the engine settings are built
+    // once at Start and the tracker seeds at construction.
+    changed(
+        "max_sessions_per_ip", std::to_string(old_s.max_sessions_per_ip), std::to_string(new_s.max_sessions_per_ip));
+    changed("max_sessions", std::to_string(old_s.max_sessions), std::to_string(new_s.max_sessions));
+    changed("wt_idle_timeout_s", std::to_string(old_s.wt_idle_timeout_s), std::to_string(new_s.wt_idle_timeout_s));
+    changed("wt_handshake_timeout_s",
+            std::to_string(old_s.wt_handshake_timeout_s),
+            std::to_string(new_s.wt_handshake_timeout_s));
     // max_bandwidth_kbps is deliberately absent: it is not wired into any
     // runtime path at boot either, so "requires restart" would be false -
     // a restart changes nothing about it.

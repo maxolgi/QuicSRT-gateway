@@ -73,6 +73,8 @@ struct GatewayConfig
     RegistryConfig registry{};
     /// Webhook delivery (P4.3); an empty URL leaves the feature off.
     WebhookSettings webhooks{};
+    /// WT admission limits + engine timeouts (Rust GatewayLimits).
+    WtServerLimits wt{};
 };
 
 class Gateway final : public SessionRegistryListener

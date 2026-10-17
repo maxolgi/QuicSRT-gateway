@@ -145,6 +145,10 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         const websrt::gateway::ServerConfig& s = config.server;
         gateway_config.max_viewers             = s.max_viewers;
         gateway_config.broadcast_capacity      = s.broadcast_capacity;
+        gateway_config.wt.max_sessions_per_ip  = s.max_sessions_per_ip;
+        gateway_config.wt.max_sessions         = s.max_sessions;
+        gateway_config.wt.idle_timeout_s       = s.wt_idle_timeout_s;
+        gateway_config.wt.handshake_timeout_s  = s.wt_handshake_timeout_s;
         gateway_config.webhooks                = websrt::gateway::WebhookSettings{
                            .url = config.webhooks.on_event_url, .timeout = std::chrono::milliseconds{config.webhooks.timeout_ms}};
         wt_bind_port      = s.wt_port;

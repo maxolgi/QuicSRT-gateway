@@ -204,6 +204,7 @@ struct WtServer::Session
     bool                    headers_done = false;
     bool                    established  = false;
     bool                    terminal     = false;
+    std::string             peer_ip; // admission key ("" when unknown)
 };
 
 // Per-stream state: the CONNECT/session stream or a WT client substream.
@@ -284,6 +285,7 @@ struct WtServerCallbacks
             {
                 session->sc->session = nullptr;
             }
+            server->UncountSession(*session);
             server->sessions_.erase(it);
             if (!server->tearing_down_)
             {
@@ -473,12 +475,14 @@ WtServer::WtServer(websrt::EventLoop&                   loop,
                    const CertProvider&                  cert,
                    std::shared_ptr<const SessionPolicy> policy,
                    WtServerListener&                    listener,
-                   AdmissionCheck                       admission)
+                   AdmissionCheck                       admission,
+                   WtServerLimits                       limits)
     : loop_(loop)
     , cert_(cert)
     , policy_(std::move(policy))
     , listener_(listener)
     , admission_(std::move(admission))
+    , limits_(limits)
 {
 }
 
@@ -582,6 +586,15 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     settings.es_datagrams                       = 1;                 // advertise MAX_DATAGRAM_FRAME_SIZE
     settings.es_webtransport_server             = 1;                 // SETTINGS_ENABLE_WEBTRANSPORT
     settings.es_max_webtransport_server_streams = 100;               // sane default; CLI config lands later
+    // WT idle timeout (Rust limits.rs max_idle_timeout, quinn parity):
+    // a connection silent for this many seconds is closed. lsquic's own
+    // default is 30 s; the oracle runs 10 s. Media flows reset it (any
+    // received packet does - datagrams, ACKs, the lsquic client's 15 s
+    // keepalive PINGs), so only truly abandoned connections hit it.
+    settings.es_idle_timeout = static_cast<unsigned>(limits_.idle_timeout_s);
+    // QUIC handshake budget (Rust handshake_timeout; lsquic's default is
+    // also 10 s, made config-driven for parity).
+    settings.es_handshake_to = static_cast<unsigned long>(limits_.handshake_timeout_s) * 1000000UL;
     // No-op-CC approximation (P3 step 7; PLAN.md risk 1): the Rust gateway
     // runs a no-op quinn congestion controller (nocc.rs: window() ==
     // u64::MAX, never paces) so SRT owns all congestion control and
@@ -1016,6 +1029,22 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
         return;
     }
 
+    // Connection limit (per-IP + global), the Rust tracker.try_acquire
+    // (gateway.rs:461-472): between the policy and the occupancy checks,
+    // answered 429 on the CONNECT response the caller is waiting for.
+    if (!SessionLimitOk(remote_host))
+    {
+        sessions_rejected_.fetch_add(1);
+        Log("session rejected: connection limit exceeded on stream %" PRIu64 " (peer %s, %zu established)",
+            session.stream_id,
+            remote_host,
+            established_sessions_);
+        Respond(session.stream, StatusForDecision(Decision::TooManyRequests), true);
+        sc.session = nullptr; // on_close must not touch the dead session
+        delete &session;
+        return;
+    }
+
     // Query decomposition exactly like the Rust oracle's accept loop
     // (gateway.rs:326-333): ?stream= then ?subscribe= names the stream to
     // view; ?publish= names the stream to publish. Done BEFORE the 200 so
@@ -1059,7 +1088,8 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
     // Accepted: 200, flush, mark the WT session stream, expose the session.
     Respond(session.stream, "200", false);
     lsquic_stream_set_webtransport_session(session.stream);
-    session.established = true;
+    session.peer_ip = remote_host;
+    CountSession(session); // established = true + the limit accounting
     session.conn->session_handles.push_back(session.handle.Id());
     session.conn->ctx_to_handle[session.stream_id >> 2] = session.handle.Id();
     sessions_[session.handle.Id()]                      = &session;
@@ -1192,9 +1222,49 @@ bool WtServer::ParseCapsules(Session& session, const std::uint8_t* data, std::si
     return true;
 }
 
+bool WtServer::SessionLimitOk(const char* peer_ip) const
+{
+    if (limits_.max_sessions > 0 && established_sessions_ >= static_cast<std::size_t>(limits_.max_sessions))
+    {
+        return false;
+    }
+    if (limits_.max_sessions_per_ip > 0)
+    {
+        const auto it = sessions_per_ip_.find(peer_ip);
+        if (it != sessions_per_ip_.end() && it->second >= static_cast<std::size_t>(limits_.max_sessions_per_ip))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void WtServer::CountSession(Session& session)
+{
+    session.established = true;
+    ++established_sessions_;
+    ++sessions_per_ip_[session.peer_ip];
+}
+
+void WtServer::UncountSession(Session& session)
+{
+    if (!session.established)
+    {
+        return; // rejected pre-200 sessions were never counted
+    }
+    session.established = false;
+    --established_sessions_;
+    const auto it = sessions_per_ip_.find(session.peer_ip);
+    if (it != sessions_per_ip_.end() && --it->second == 0)
+    {
+        sessions_per_ip_.erase(it);
+    }
+}
+
 void WtServer::TerminateSession(Session& session, const std::string& reason)
 {
     session.terminal = true;
+    UncountSession(session);
     // sc is set at Session creation (OnNewStream) and never null; clearing
     // it here is how callers detect the free.
     session.sc->session = nullptr;

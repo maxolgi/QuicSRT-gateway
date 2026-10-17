@@ -87,7 +87,7 @@ Gateway::Gateway(const CertProvider& cert, std::shared_ptr<const SessionPolicy> 
     , streams_{StreamRegistryConfig{.max_viewers = config.max_viewers, .broadcast_capacity = config.broadcast_capacity}}
     , policy_{std::move(policy)}
     , registry_{loop_, *this, config.registry}
-    , server_{loop_, cert, policy_, registry_, [this](const WtSessionStart& start) { return Admit(start); }}
+    , server_{loop_, cert, policy_, registry_, [this](const WtSessionStart& start) { return Admit(start); }, config.wt}
 {
     // The registry needs the server it serves (egress + close); the server
     // is constructed after it, so the wiring happens here.
