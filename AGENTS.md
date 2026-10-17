@@ -108,12 +108,12 @@ their own settings), BoringSSL fetched into `deps/libwebsrt/deps/boringssl`
 ## Critical build order (two-level pins)
 
 1. Gateway changes only (`src/`) → `./build.sh gateway`, no submodule work.
-2. libwebsrt changes → work in `~/maxolgi/libwebsrt` (**never edit
+2. libwebsrt changes → work in `~/maxolgi/WebSRT-cpp/libwebsrt` (**never edit
    `deps/libwebsrt` in place** — it is a submodule checkout and git will
    clobber it). Commit there, human pushes, then bump this repo's pin and
    rebuild. **Pins track master**: agents keep `deps/libwebsrt` at
    origin/master head — bump before building, commit the gitlink routinely.
-3. srt fork changes → two hops: work in `~/maxolgi/srt` per libwebsrt's
+3. srt fork changes → two hops: work in `~/maxolgi/WebSRT-cpp/srt` per libwebsrt's
    fork discipline (commit, human pushes, libwebsrt bumps its `deps/srt`
    pin), THEN bump this repo's `deps/libwebsrt` pin as above.
 
