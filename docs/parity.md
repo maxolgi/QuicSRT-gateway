@@ -13,6 +13,12 @@ documentation only; no gateway behavior was changed for parity):
 `send_failures` semantics and the `/health` `ingester` map (below);
 the ingester shape was re-checked against the live oracle.
 
+2026-10-16: robustness ports from the oracle (GatewayLimits, the
+>= 1200-byte datagram PMTU gate, public-bind warnings) landed with
+parity rows below; the per-session TSBPD latency was decoupled to the
+Rust 10 ms floor; drifted gateway.rs citations were re-anchored after
+upstream refactors.
+
 Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 `websrt-dump`, plus the WebSRT oracle bins (`wt_hs_probe`, `mock_obs`).
 
@@ -20,12 +26,20 @@ Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 
 | Behavior | Rust gateway | C++ gateway | Verdict |
 |---|---|---|---|
-| Publish to occupied name | HTTP 403 at pre-accept (gateway.rs:352); ffmpeg publish exits 158 "Address already in use" | HTTP 403 at admission (Gateway::Admit → WtServer); ffmpeg publish exits 158 "Address already in use" | **Parity** (measured both, identical ffmpeg exit + message) |
-| Subscribe unknown stream | HTTP 404 (stream not alive, gateway.rs:345-349); ffmpeg subscribe exits 145 "Connection refused" | HTTP 404 (allowlist Reject for unconfigured names) or admission Reject; ffmpeg subscribe exits 145 "Connection refused" | **Parity** (measured both, identical) |
+| Publish to occupied name | HTTP 403 at pre-accept (gateway.rs:501-507); ffmpeg publish exits 158 "Address already in use" | HTTP 403 at admission (Gateway::Admit → WtServer); ffmpeg publish exits 158 "Address already in use" | **Parity** (measured both, identical ffmpeg exit + message) |
+| Subscribe unknown stream | HTTP 404 (stream not alive, gateway.rs:489-497); ffmpeg subscribe exits 145 "Connection refused" | HTTP 404 (allowlist Reject for unconfigured names) or admission Reject; ffmpeg subscribe exits 145 "Connection refused" | **Parity** (measured both, identical) |
 | Subscribe configured-but-idle stream | 404 (no live broadcaster) | **Accepted — waiting viewer** (idle stream, served when a publisher appears) | **Deliberate divergence** (refinement item 2, documented; kills client retry hacks; e2e test §2) |
 | Publisher end → viewers | clean EOF; viewer ffmpeg exits 0 (out 5.15 s / 58468 B) | clean EOF; viewer ffmpeg exits 0 (out 5.15 s / 58468 B, byte-identical encode) | **Parity** (measured both) |
 | First-wins occupancy (cross-source) | WT publisher vs SRT ingester contend for one name | same shared `StreamRegistry::PublishAttempt` claim (WT + ingest) | **Parity** (design + e2e/ingest tests) |
-| No `?stream=` query on CONNECT | defaults to stream `"default"` (gateway.rs:330-332); 404 unless "default" is alive | 404 always (no name resolved) | **Minor divergence** (only observable with a stream literally named "default"; ours is stricter) |
+| No `?stream=` query on CONNECT | defaults to stream `"default"` (gateway.rs:476-483); 404 unless "default" is alive | 404 always (no name resolved) | **Minor divergence** (only observable with a stream literally named "default"; ours is stricter) |
+| Dual-role `?publish=X&stream=Y` | one session publishes X and views Y — a different name (gateway.rs:546-566) | publish-only: `?publish=` wins and the subscribe half is ignored (`ResolveRole`) | **Deliberate divergence** (single-role sessions keep admission and the registry simple; no current consumer needs the dual role) |
+| Viewer cap exceeded | post-accept: `subscribe()` fails after the 200 and the connection is closed (gateway.rs:572-580) | pre-accept: 429 answered on the CONNECT response (`ViewerSlotFree` → admission) | **C++ improvement** (the refused viewer observes the status on the response it is waiting for, same as the other refusals) |
+| Web-port endpoints | static player only — `/health` and `/stats` live on the health port | static player plus `/health` and `/stats` on the web port too | **Additive** (one port fewer to expose in simple deployments) |
+| Unknown web paths | SPA fallback: unknown paths serve `index.html` (web_server.rs:79-95) | 404 | **Minor divergence** (the player is a single page with no client-side routes; nothing depends on the fallback) |
+| `max_bandwidth` knob | `SrtConfig.max_bandwidth` → srt `LiveBandwidthMode::Max` (srt_sender.rs:161-165) | `[server].max_bandwidth_kbps` parsed, validated, and unwired (documented in the example conf) | **Deliberate divergence** (reserved for a later port; nothing dials it in this build) |
+| Connection limits | `GatewayLimits` defaults: 10 sessions/IP, 1000 global, 10 s WT idle, 10 s handshake (limits.rs:40-49; idle = quinn `max_idle_timeout`) | same defaults via `[server].max_sessions_per_ip` / `max_sessions` / `wt_idle_timeout_s` / `wt_handshake_timeout_s`; over-cap CONNECTs answered 429; counting is per established WT session where the oracle counts connections | **Parity** (defaults and enforcement point match; counting unit documented) |
+| WT datagram PMTU | post-accept session check: `max_datagram_size() < 1200` (or datagrams unsupported) → close (gateway.rs:525-543) | per connection at `on_new_conn`: the min-datagram pin requested at 1200 fails on exactly the same conditions → connection closed | **Parity** (same 1200 floor, enforced one step earlier — before the CONNECT is answered) |
+| Public-bind warnings | none at boot | WARNING when an open-mode WT listener or a passphrase-less SRT ingest binds non-loopback | **C++ additive** (robustness; loopback binds stay silent) |
 | Session stream rejected (404/403) | wtransport resets the stream — client can observe a transport error instead of the status (the 404-reset race, PLAN.md defect 2) | response headers flushed, then write-side FIN — status observed deterministically (RespondAndHalfClose) | **C++ fixes an oracle defect** |
 | ≥3 concurrent WT handshakes | accept-loop stall 10–20 s (PLAN.md defect 1; ffmpeg-gate staggers handshakes to avoid it) | 50 concurrent handshakes complete in ~0.6 s (concurrency_test) | **C++ fixes an oracle defect** |
 | SRT payload | 1128 (6×188, srt_sender.rs:29) | 1128 (constant throughout) | **Parity** |
@@ -52,6 +66,11 @@ Nested objects:
 - `per_stream[]`: **identical field sets** — `name`, `alive`, `viewers`,
   `messages_sent`, `send_failures`.
 - `ticker`: **identical field sets** — `count`, `avg_us`, `max_us`.
+  Semantics differ under repeated scrapes: the oracle's counters are
+  read-and-reset per poll (`ticker_stats_reset`, a per-scrape window;
+  registry.rs), ours accumulate over the process lifetime
+  (`TickAvgUs`, session_registry.h) — no decision reads them, so the
+  divergence only shows when comparing consecutive scrapes.
 - `ingester`: **parity (ported 2026-10-15)** — a map keyed by stream
   name carrying that publisher connection's TS-continuity probe
   (`cc_checks`, `cc_gaps`, `messages_seen`), `null` while no publisher

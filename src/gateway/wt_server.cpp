@@ -1058,7 +1058,7 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
     }
 
     // Query decomposition exactly like the Rust oracle's accept loop
-    // (gateway.rs:326-333): ?stream= then ?subscribe= names the stream to
+    // (gateway.rs:476-483): ?stream= then ?subscribe= names the stream to
     // view; ?publish= names the stream to publish. Done BEFORE the 200 so
     // the admission gate below sees the same routing the session gets.
     std::optional<std::string> subscribe = ParseQueryParam(query, "stream");

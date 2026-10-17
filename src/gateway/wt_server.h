@@ -98,7 +98,7 @@ private:
 
 /// What OnWtSession tells the consumer about the accepted session, with the
 /// query already decomposed the way the Rust oracle's accept loop does
-/// (gateway.rs:326-333): `?stream=`/`?subscribe=` names the stream to view,
+/// (gateway.rs:476-483): `?stream=`/`?subscribe=` names the stream to view,
 /// `?publish=` names the stream to publish (a session may ask for both).
 /// Names are percent-decoded (ParseQueryParam).
 struct WtSessionStart

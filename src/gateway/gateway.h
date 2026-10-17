@@ -25,7 +25,7 @@
 //     consult and the claim below.
 //   - THE CLAIM (SessionRegistryListener::OnSessionStart, post-200, loop
 //     thread). Re-checks and then claims, exactly the oracle's try_publish
-//     after its pre-check (gateway.rs:408-417). Losing that race is not a
+//     after its pre-check (gateway.rs:551-585). Losing that race is not a
 //     protocol violation: the 200 is already out, so the session is closed
 //     with CloseSession instead.
 //
