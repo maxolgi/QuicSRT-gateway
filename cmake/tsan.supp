@@ -42,3 +42,21 @@ race:srt::CUDT::prepareBuffers
 # then suppress on the lsquic_global_init writer frame only, so races
 # NOT involving a concurrent global_init still surface.
 race:lsquic_global_init
+
+# lsquic (deps/libwebsrt/deps/lsquic, consumed unmodified):
+# lsquic_set_log_level rewrites the global lsq_log_levels catalog with
+# plain stores, unsynchronized against a concurrently running engine
+# reading it in its LSQ_DEBUG macros. The reload routes its log-level
+# write onto the gateway's loop thread (reload.cpp
+# SetLogLevelOnLoop), which serializes it against the gateway's own
+# engine - but reload_test embeds a second lsquic engine (its
+# in-process WTClient viewer), and the gateway cannot serialize with a
+# loop it does not own (observed under TSan: the loop-thread
+# lsq_log_levels write vs the client engine's LSQ_DEBUG catalog read).
+# Same dual-engine test reality as the lsquic_global_init entry above;
+# production runs one engine per process, where the loop-thread routing
+# fully serializes access. Proper fix = atomic log-level access in
+# lsquic itself, which the unmodified-lsquic policy defers. Until then
+# suppress on the lsquic_set_log_level writer frame only, so races NOT
+# involving the log-level setter still surface.
+race:lsquic_set_log_level

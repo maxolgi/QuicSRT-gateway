@@ -8,6 +8,7 @@
 #include "gateway/reload.h"
 
 #include <cstdio>
+#include <future>
 
 #include "wt/client.h"
 
@@ -86,6 +87,42 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
     // a restart changes nothing about it.
 }
 
+/// Set lsquic's log level ON the gateway's loop thread. The API is an
+/// init-time one (its wrapper documents "call before Connect"): it
+/// rewrites the global lsq_log_levels tables while a live engine reads
+/// them on the loop thread, so calling it from the SIGHUP thread with
+/// the engine running is a cross-thread race (observed under TSan: the
+/// table write here vs lsquic_engine_earliest_adv_tick there). The
+/// boot-time sets (main.cpp) stay direct calls - they run before the
+/// loop, and any engine, exists. Same Post discipline as
+/// Gateway::ApplyRuntimeConfig; Post false (loop never started or
+/// already stopped) runs inline - no engine remains to race the
+/// tables.
+void SetLogLevelOnLoop(Gateway& gateway, const std::string& level)
+{
+    auto&      loop = gateway.Loop();
+    const auto set  = [&level] { websrt::SetLsquicLogLevel(level.c_str()); };
+    if (loop.OnLoopThread())
+    {
+        set();
+        return;
+    }
+    std::promise<void> done;
+    if (loop.Post(
+            [&]
+            {
+                set();
+                done.set_value();
+            }))
+    {
+        done.get_future().wait(); // Post true guarantees the job ran
+    }
+    else
+    {
+        set();
+    }
+}
+
 } // namespace
 
 std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, const Config& current, std::string* error)
@@ -109,8 +146,8 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
     }
 
     // The swappable set. Policy + viewer cap + webhook settings land
-    // atomically on the loop; the log level is process-wide state, applied
-    // here.
+    // atomically on the loop; the log level is process-wide state, set
+    // on the loop too (SetLogLevelOnLoop below).
     gateway.ApplyRuntimeConfig(Chain(std::make_shared<PathPolicy>("/wt"), BuildAllowlistPolicy(next)),
                                next.server.max_viewers,
                                WebhookSettings{.url     = next.webhooks.on_event_url,
@@ -125,7 +162,7 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
     {
         if (next.server.log_level.has_value())
         {
-            websrt::SetLsquicLogLevel(next.server.log_level->c_str());
+            SetLogLevelOnLoop(gateway, *next.server.log_level);
             std::fprintf(stderr, "websrt-gateway: reload: log level -> %s\n", next.server.log_level->c_str());
         }
         else
