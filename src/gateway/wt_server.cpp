@@ -1148,7 +1148,10 @@ void WtServer::HandleSessionStreamRead(StreamCtx& sc)
         {
             if (!ParseCapsules(*session, buf, static_cast<std::size_t>(n)))
             {
-                TerminateSession(*session, "WT CLOSE capsule");
+                // ParseCapsules never frees, so the session (and its sticky
+                // overflow flag) is still readable here to name the cause:
+                // the parser's other false is the CLOSE capsule.
+                TerminateSession(*session, session->caps.overflow() ? "capsule framing overflow" : "WT CLOSE capsule");
                 return;
             }
             continue;
@@ -1220,12 +1223,24 @@ void WtServer::HandleSubstreamRead(lsquic_stream_t* stream)
 }
 
 // Capsule consumption via libwebsrt's WtCapsuleParser (RFC 9599): type +
-// length varints, skip the payload. CLOSE (0x2843) is the only type that
-// changes session state; it is reported (false) rather than acted on so
-// this function never frees the session underneath its caller.
+// length varints, skip the payload. Two framing faults end the session and
+// are reported (false) rather than acted on so this function never frees
+// the session underneath its caller: a CLOSE capsule (0x2843) and a
+// capsule header demanding more than WtCapsuleParser::kMaxPendingBytes -
+// the one-client OOM vector where a client streams an incomplete capsule
+// claiming an enormous length. The bounded parser trips its sticky
+// overflow flag instead of buffering; the caller kills the session.
 bool WtServer::ParseCapsules(Session& session, const std::uint8_t* data, std::size_t size)
 {
     session.caps.Feed(data, size);
+    if (session.caps.overflow() && !session.terminal)
+    {
+        Log("capsule framing overflow on stream %" PRIu64
+            ": capsule header demanded more than %zu pending bytes; killing the session",
+            session.stream_id,
+            websrt::WtCapsuleParser::kMaxPendingBytes);
+        return false;
+    }
     if (session.caps.closed() && !session.terminal)
     {
         Log("WT CLOSE capsule received on stream %" PRIu64, session.stream_id);

@@ -210,6 +210,17 @@ target_link_libraries(wt_server_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME wt_server_test COMMAND wt_server_test)
 set_tests_properties(wt_server_test PROPERTIES TIMEOUT 60)
 
+# Adversarial session-stream framing: a raw WT client (WTClient's engine
+# recipe + a public session-stream write) claims a huge capsule length
+# without completing it - the gateway must kill the session promptly and
+# stay healthy (127.0.0.1:4436, ephemeral fallback inside the test).
+add_executable(wt_overflow_test tests/wt_overflow_test.cpp)
+target_compile_features(wt_overflow_test PRIVATE cxx_std_20)
+set_target_properties(wt_overflow_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(wt_overflow_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME wt_overflow_test COMMAND wt_overflow_test)
+set_tests_properties(wt_overflow_test PROPERTIES TIMEOUT 60)
+
 # G4: per-session SRT initiator + registry ticker over WT loopback, driven
 # by libwebsrt's public Subscriber/Publisher (127.0.0.1:4435, ephemeral
 # fallback inside the test).

@@ -288,8 +288,10 @@ private:
     void               UncountSession(Session& session);
     void               HandleSessionStreamRead(StreamCtx& sc);
     void               HandleSubstreamRead(lsquic_stream_t* stream);
-    // Returns false when a CLOSE capsule terminated the session (the
-    // caller stops and terminates - ParseCapsules never frees).
+    // Returns false when a CLOSE capsule or a capsule-framing overflow
+    // (a header demanding more than WtCapsuleParser::kMaxPendingBytes)
+    // terminated the session (the caller stops and terminates -
+    // ParseCapsules never frees).
     [[nodiscard]] static bool ParseCapsules(Session& session, const std::uint8_t* data, std::size_t size);
     void                      TerminateSession(Session& session, const std::string& reason);
 
