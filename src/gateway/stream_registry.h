@@ -148,9 +148,13 @@ public:
     /// attached viewer so the caller can close them (Rust parity: viewers
     /// see EOF when the source ends). The handles are snapshotted BEFORE
     /// the release because closing them re-enters the registry through each
-    /// viewer's OnSessionEnded -> DetachViewer; the stream itself is
-    /// dropped by that last detach.
-    [[nodiscard]] std::vector<WtSessionHandle> OnPublisherEnd(const std::string& stream) const
+    /// viewer's OnSessionEnded -> DetachViewer; with viewers attached that
+    /// last detach drops the stream (MaybeDrop below is then a no-op - the
+    /// broadcaster still holds viewers). With ZERO viewers nothing ever
+    /// re-enters, so the stream is dropped right here, after the release
+    /// leaves it holding neither participant - safe because `closing` is a
+    /// by-value snapshot, so erasing the broadcaster cannot dangle it.
+    [[nodiscard]] std::vector<WtSessionHandle> OnPublisherEnd(const std::string& stream)
     {
         Broadcaster* bc = Find(stream);
         if (bc == nullptr)
@@ -159,6 +163,7 @@ public:
         }
         std::vector<WtSessionHandle> closing = bc->Viewers();
         bc->ReleasePublisher(bc->Publisher());
+        MaybeDrop(stream);
         return closing;
     }
 

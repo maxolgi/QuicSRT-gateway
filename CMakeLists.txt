@@ -172,6 +172,15 @@ target_link_libraries(cert_test PRIVATE gateway_warnings websrtgw)
 add_test(NAME cert_test COMMAND cert_test)
 set_tests_properties(cert_test PROPERTIES TIMEOUT 30)
 
+# Unit: the stream registry's lifetime rules - the publisher-end drop of a
+# stream left with no viewers (the /stats contract gateway.h documents).
+add_executable(stream_registry_test tests/stream_registry_test.cpp)
+target_compile_features(stream_registry_test PRIVATE cxx_std_20)
+set_target_properties(stream_registry_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stream_registry_test PRIVATE gateway_warnings websrtgw)
+add_test(NAME stream_registry_test COMMAND stream_registry_test)
+set_tests_properties(stream_registry_test PROPERTIES TIMEOUT 30)
+
 # End-to-end: libwebsrt's WTClient against the gateway's WtServer over
 # loopback (127.0.0.1:4434, ephemeral fallback inside the test).
 add_executable(wt_server_test tests/wt_server_test.cpp)
