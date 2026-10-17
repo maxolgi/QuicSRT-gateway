@@ -59,6 +59,10 @@ namespace
 
 constexpr std::size_t kRecvBufSize = 16384;
 
+// QUIC minimum MTU (RFC 9000 s.14.2) - the datagram floor the Rust
+// oracle demands post-accept (gateway.rs:525-543).
+constexpr std::size_t kPmtuFloorBytes = 1200;
+
 void Log(const char* fmt, ...)
 {
     std::fputs("wt-server: ", stderr);
@@ -237,12 +241,20 @@ struct WtServerCallbacks
         cc->server   = server;
         cc->conn     = conn;
         server->conns_[reinterpret_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(conn))] = cc;
-        // Same min-datagram-size pin as WTClient's OnHskDone: with the
-        // default 0, on_dg_write may be called with only a nearly-full
-        // packet's leftover space, which is not a transport ceiling.
-        if (lsquic_conn_set_min_datagram_size(conn, WtServer::kMaxDatagramSize) != 0)
+        // PMTU gate + write pin (the Rust oracle's post-accept check,
+        // gateway.rs:525-543): lsquic has no max-datagram-size getter, but
+        // set_min_datagram_size doubles as the query - it fails exactly
+        // when datagrams are unsupported (the oracle's None case) or the
+        // peer's advertised MAX_DATAGRAM_FRAME_SIZE is below the request
+        // (its Some(max < 1200) case). A transport that cannot carry a
+        // 1200-byte datagram cannot move SRT payloads, so the connection
+        // is closed instead of left to drop every datagram whole. On
+        // success the on_dg_write floor is >= 1200, which preserves the
+        // 1184-byte kMaxDatagramSize write pin above it.
+        if (lsquic_conn_set_min_datagram_size(conn, kPmtuFloorBytes) != 0)
         {
-            Log("could not pin min datagram size %zu; large datagrams may drop", WtServer::kMaxDatagramSize);
+            Log("WT datagram PMTU too small (required %zu bytes); closing connection", kPmtuFloorBytes);
+            lsquic_conn_close(conn);
         }
         return reinterpret_cast<lsquic_conn_ctx_t*>(cc);
     }
