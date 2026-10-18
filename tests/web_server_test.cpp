@@ -568,6 +568,8 @@ int main()
         Check(response.Header("content-type") == "text/html; charset=utf-8", "1: index.html Content-Type");
         Check(response.body == index_html, "1: index.html body byte-for-byte");
         Check(response.Header("x-content-type-options") == "nosniff", "1: nosniff on every response");
+        Check(response.Header("cross-origin-opener-policy") == "same-origin", "1: COOP on the document");
+        Check(response.Header("cross-origin-embedder-policy") == "require-corp", "1: COEP on the document");
 
         Check(client.Exchange("/app.js", &response), "1: GET /app.js answered");
         Check(response.status == 200 && response.Header("content-type") == "text/javascript; charset=utf-8",
@@ -576,6 +578,7 @@ int main()
         Check(client.Exchange("/mod.wasm", &response), "1: GET /mod.wasm answered");
         Check(response.status == 200 && response.Header("content-type") == "application/wasm",
               "1: wasm is application/wasm (instantiateStreaming depends on it)");
+        Check(response.Header("cross-origin-embedder-policy") == "require-corp", "1: COEP rides on assets too");
 
         Check(client.Exchange("/assets/index-abc.js", &response), "1: GET /assets/index-abc.js answered");
         Check(response.status == 200 && response.body == "console.log('hi')\n", "1: nested asset served");
@@ -597,6 +600,7 @@ int main()
         Check(response.status == 304, "1: a matching If-None-Match gets a 304");
         Check(response.body.empty(), "1: a 304 carries no body");
         Check(response.Header("etag") == etag, "1: the 304 repeats the ETag");
+        Check(response.Header("cross-origin-embedder-policy") == "require-corp", "1: the 304 repeats COEP");
 
         Check(client.ExchangeHead("/index.html", &response), "1: HEAD answered");
         Check(response.status == 200, "1: HEAD is 200");

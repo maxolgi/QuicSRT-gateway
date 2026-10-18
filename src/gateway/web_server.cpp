@@ -171,6 +171,19 @@ const char* ContentType(const std::string& path)
     return "application/octet-stream";
 }
 
+/// The player responses' extra headers. COOP+COEP make the document
+/// cross-origin isolated, which the emcc pthreads engine needs for its
+/// SharedArrayBuffer; both player paths (the web_root disk override and
+/// the embedded table) build their set here, 304s included. Harmless for
+/// the single-threaded dist: every player subresource is same-origin, so
+/// require-corp excludes nothing the page loads.
+std::vector<std::pair<std::string, std::string>> PlayerHeaders(const std::string& etag)
+{
+    return {{"ETag", etag},
+            {"Cross-Origin-Opener-Policy", "same-origin"},
+            {"Cross-Origin-Embedder-Policy", "require-corp"}};
+}
+
 /// RFC 9110 percent-decoding, in place over `path`. The player links
 /// plain ASCII assets, but a hand-typed URL may carry escapes.
 void PercentDecode(std::string& path)
@@ -908,11 +921,11 @@ bool WebServer::Handle(Wire&              wire,
 
         if (!if_none_match.empty() && if_none_match.find(etag) != std::string::npos)
         {
-            SendSimple(wire, 304, ReasonPhrase(304), ContentType(full), {}, head, {{"ETag", etag}});
+            SendSimple(wire, 304, ReasonPhrase(304), ContentType(full), {}, head, PlayerHeaders(etag));
             return true;
         }
 
-        SendSimple(wire, 200, ReasonPhrase(200), ContentType(full), body, head, {{"ETag", etag}});
+        SendSimple(wire, 200, ReasonPhrase(200), ContentType(full), body, head, PlayerHeaders(etag));
         return true;
     }
 
@@ -932,10 +945,10 @@ bool WebServer::Handle(Wire&              wire,
             const std::string etag = "\"bin-" + std::to_string(body.size()) + "\"";
             if (!if_none_match.empty() && if_none_match.find(etag) != std::string::npos)
             {
-                SendSimple(wire, 304, ReasonPhrase(304), ContentType(relative), {}, head, {{"ETag", etag}});
+                SendSimple(wire, 304, ReasonPhrase(304), ContentType(relative), {}, head, PlayerHeaders(etag));
                 return true;
             }
-            SendSimple(wire, 200, ReasonPhrase(200), ContentType(relative), body, head, {{"ETag", etag}});
+            SendSimple(wire, 200, ReasonPhrase(200), ContentType(relative), body, head, PlayerHeaders(etag));
             return true;
         }
     }
