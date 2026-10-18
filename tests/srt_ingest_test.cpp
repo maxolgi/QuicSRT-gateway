@@ -68,14 +68,13 @@ using websrt::gateway::Gateway;
 using websrt::gateway::GatewayConfig;
 using websrt::gateway::StreamStats;
 
-// WebSRT checkout fixture; override with WEBSRT_TEST_FIXTURE, default
-// follows the workspace layout under $HOME.
+// Vendored fixture (tests/fixtures/test.ts); override with
+// WEBSRT_TEST_FIXTURE if needed.
 std::string FixturePath()
 {
     if (const char* env = std::getenv("WEBSRT_TEST_FIXTURE"))
         return env;
-    const char* home = std::getenv("HOME");
-    return home ? std::string(home) + "/maxolgi/WebSRT/fixtures/test.ts" : std::string();
+    return WEBSRT_TEST_FIXTURE_DEFAULT;
 }
 constexpr int         kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
 constexpr std::size_t kTsPacket   = 188;

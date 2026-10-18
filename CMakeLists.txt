@@ -34,7 +34,7 @@ endif()
 find_package(Threads REQUIRED)
 
 # ---- The embedded player (rust-embed parity) ----
-# web/dist is fetched from a pinned websrt-wasm-cpp release (./build.sh
+# web/dist is fetched from the latest websrt-wasm-cpp release (./build.sh
 # setup or
 # ./build.sh web-dist) and baked into the binary: a generated table in
 # CMAKE_CURRENT_BINARY_DIR. Generation runs at CONFIGURE time; the glob is
@@ -239,6 +239,8 @@ add_executable(gateway_e2e_test tests/gateway_e2e_test.cpp)
 target_compile_features(gateway_e2e_test PRIVATE cxx_std_20)
 set_target_properties(gateway_e2e_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(gateway_e2e_test PRIVATE gateway_warnings websrtgw_config)
+target_compile_definitions(gateway_e2e_test PRIVATE
+    WEBSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
 add_test(NAME gateway_e2e_test COMMAND gateway_e2e_test)
 set_tests_properties(gateway_e2e_test PROPERTIES TIMEOUT 180)
 
@@ -249,6 +251,8 @@ add_executable(srt_ingest_test tests/srt_ingest_test.cpp)
 target_compile_features(srt_ingest_test PRIVATE cxx_std_20)
 set_target_properties(srt_ingest_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(srt_ingest_test PRIVATE gateway_warnings websrtgw_config)
+target_compile_definitions(srt_ingest_test PRIVATE
+    WEBSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
 add_test(NAME srt_ingest_test COMMAND srt_ingest_test)
 set_tests_properties(srt_ingest_test PROPERTIES TIMEOUT 180)
 
