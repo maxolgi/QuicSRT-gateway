@@ -87,14 +87,18 @@ jobs:
   # first-party gateway + tests, libwebsrt, the srt fork and lsquic;
   # BoringSSL stays uninstrumented (fetched + prebuilt Release by
   # ./build.sh setup, consumed unmodified). halt_on_error=1 makes any
-  # race fail the job; cmake/tsan.supp carries the four known
+  # race fail the job; cmake/tsan.supp carries the five known
   # dep-internal ones: the srt fork's CUDT::startup registered-flag guard
   # (same entry and reasoning as libwebsrt's tsan.supp), the srt fork's
   # GC race (CUDTUnited::checkBrokenSockets on the GC thread vs
   # CUDT::prepareBuffers' lazy buffer creation on the receive queue's
   # worker thread - both frames fork-internal; the proper fix is a fork
   # change, which takes a fork commit plus two pin bumps and is deferred
-  # to the human), lsquic_global_init - lsquic globals are
+  # to the human), the srt fork's TSBPD too-late drop racing the receive
+  # worker's loss report on the receiver loss list (same fork-internal,
+  # deferred-to-human reasoning; only reached under TSan's slowdown,
+  # concurrency_test's too-late drop storm),
+  # lsquic_global_init - lsquic globals are
   # init-once with no internal guard, and the in-process server+client
   # tests can init while the engine runs (never triggered by
   # libwebsrt's own suite; production has one engine per process), and

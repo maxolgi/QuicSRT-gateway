@@ -25,6 +25,24 @@ race:srt::CUDT::startup
 # NOT involving lazy buffer creation still surface.
 race:srt::CUDT::prepareBuffers
 
+# srt fork (via deps/libwebsrt/deps/srt): the receiver's loss list is
+# written by the lazily-spawned TSBPD thread's too-late drop
+# (CUDT::tsbpd -> rcvDropTooLateUpTo -> dropFromLossLists ->
+# CRcvLossList::removeUpTo) while the receive queue's worker thread
+# reads it lock-free inside the loss report it builds from incoming
+# data (CRcvQueue::worker -> processData -> sendLossReport -> sendCtrl
+# -> CRcvLossList::getLossLength). Observed in concurrency_test's
+# 50-viewer run, where TSan's slowdown sends the sessions into a
+# sustained too-late drop storm (RCV-DROPPED bursts, tick overruns
+# >100 ms) that normal-speed runs never reach. Both frames are
+# srt-fork-internal; the gateway only drives the sockets through
+# libwebsrt. Proper fix = a fork change (guard the loss-list accesses
+# on the two paths), which takes a fork commit plus two pin bumps
+# (srt -> libwebsrt -> here) - deferred to the human. Until then
+# suppress on the writer frame only, so races NOT involving the
+# too-late drop still surface.
+race:srt::CRcvLossList::removeUpTo
+
 # lsquic (deps/libwebsrt/deps/lsquic, consumed unmodified): its globals
 # are init-once-per-process with no internal guard - a second
 # lsquic_global_init writes globals (the enc-session ex-data index s_idx
