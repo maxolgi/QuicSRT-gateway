@@ -70,10 +70,30 @@ include paths or link anything the targets don't export.
   under core contention).
 - The tsan preset excludes `srt_initiator_test` (TSan slowdown alone blows its
   10 s internal deadline).
-- Golden acceptance commands against a running gateway (via the
+- Golden acceptance commands against the supervised gateway (via the
   libwebsrt-patched ffmpeg, `~/maxolgi/WebSRT-cpp/libwebsrt/deps/ffmpeg/ffmpeg`):
   `ffmpeg -f lavfi -i testsrc2 … -f mpegts websrt://gw:443?stream=test` and
   `ffmpeg -f mpegts -i websrt://gw:443?stream=test -c copy out.ts`.
+
+## Live gateway (supervisord)
+
+The host's gateway runs under supervisord — program `websrt-cpp`, straight
+from this repo's build tree — alongside the always-on publisher
+`websrt-cpp-testpub` (stream `browsertest`). All live testing (golden
+commands, parity measurements, `/health` and `/stats` curls, the player
+page) goes through these services; never launch ad-hoc `websrt-gateway`
+processes (bare runs, `/tmp` dev configs). Ports, binds, and the allowlist
+live in the deployed configs — read the supervisord program entries and the
+`--config` they name; don't guess from the repo.
+
+- Deploy a code change: `./build.sh gateway && sudo supervisorctl restart
+  websrt-cpp` (a rebuild alone does nothing until the restart; agents may
+  restart freely). Config edit touching hot-reloadable keys only:
+  `sudo kill -HUP $(pidof websrt-gateway)`.
+- Test stream: `sudo supervisorctl restart websrt-cpp-testpub` — never run
+  the publisher script by hand.
+- ctest suites are the exception: they run in-process gateway cores with
+  ephemeral-port fallback and never touch the supervised services.
 
 ## Formatting / lint
 
@@ -93,6 +113,7 @@ include paths or link anything the targets don't export.
 - `cert-hash.js` is runtime-generated (never committed); in self cert mode the
   cert regenerates every boot, so the browser pin changes on restart.
 - A bare first run writes `./gateway.conf` (the embedded example); never when
-  `--config` is given.
+  `--config` is given. Binary behavior — on this host never bare-run; test
+  against the supervised gateway (see "Live gateway").
 - Never commit: `cert-hash.js`, `web/dist/`, `build/`, submodule checkouts' contents.
 - MPL-2.0 (this repo and the srt fork patches).
