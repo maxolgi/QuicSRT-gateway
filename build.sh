@@ -77,9 +77,8 @@ setup_boringssl() {
 case "${1:-}" in
     setup)
         # libwebsrt declares the srt fork and lsquic submodules; lsquic in
-        # turn declares ls-qpack/ls-hpack, so --recursive. Local-path
-        # submodule URLs (soft-pin workaround) need file transport allowed.
-        git -c protocol.file.allow=always submodule update --init --recursive
+        # turn declares ls-qpack/ls-hpack, so --recursive.
+        git submodule update --init --recursive
         fetch_web_dist
         setup_boringssl
         cmake --preset release -DWEBSRT_ENABLE_WT=ON
