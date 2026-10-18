@@ -22,7 +22,7 @@ BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 # (rust-embed parity with the Rust gateway). The dist is never built here:
 # it is fetched from the latest WebSRT release artifact. The resolved tag
 # is logged; re-running setup (or web-dist) picks up newer releases.
-WEB_DIST_LATEST_API=https://api.github.com/repos/maxolgi/WebSRT/releases/latest
+WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/WebSRT/releases/latest
 WEB_DIST_ASSET=websrt-web-dist.zip
 
 # Fetch the player dist into web/dist (gitignored). Requires curl + unzip.
@@ -30,7 +30,13 @@ fetch_web_dist() {
     command -v curl >/dev/null 2>&1 || { echo "build.sh: curl is required to fetch the player dist" >&2; exit 1; }
     command -v unzip >/dev/null 2>&1 || { echo "build.sh: unzip is required to unpack the player dist" >&2; exit 1; }
     local tag
-    tag=$(curl -fsSL "${WEB_DIST_LATEST_API}" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+    # Resolve the tag WITHOUT the REST API: api.github.com is rate-limited
+    # per IP (60/h unauthenticated; shared CI runner IPs exhaust it - seen
+    # as a curl 22 / HTTP 403 killing ./build.sh setup in tsan runs).
+    # /releases/latest redirects to /releases/tag/<tag> and github.com
+    # serves that redirect freely. The || true matters: with pipefail a
+    # failed curl would abort the script before the friendly error below.
+    tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' "${WEB_DIST_LATEST_RELEASE}" | sed -n 's|.*/tag/||p' || true)
     [ -n "${tag}" ] || { echo "build.sh: cannot resolve the latest WebSRT release" >&2; exit 1; }
     local tmp
     tmp=$(mktemp -d)
