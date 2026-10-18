@@ -13,6 +13,10 @@ cert-hash.js
 # Fetched player dist (build.sh setup/web-dist) - embedded at compile time
 web/dist/
 
+# Local player override ([server].web_root disk dir) - hand-edited copy of
+# web/dist the supervised gateway serves when configured; never committed
+web/dist-local/
+
 # Tooling artifacts
 compile_commands.json
 .cache/
