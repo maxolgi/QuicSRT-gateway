@@ -12,12 +12,12 @@
 
 #include <string_view>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// The full text of scripts/gateway.example.conf (never empty).
 [[nodiscard]] std::string_view EmbeddedExampleConf();
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H

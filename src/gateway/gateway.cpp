@@ -9,7 +9,7 @@
 #include <thread>
 #include <utility>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -203,10 +203,10 @@ void Gateway::Shutdown()
 
 void Gateway::CancelHousekeeping()
 {
-    if (housekeeping_timer_ != websrt::EventLoop::kInvalidTimerId)
+    if (housekeeping_timer_ != quicsrt::EventLoop::kInvalidTimerId)
     {
         loop_.CancelTimer(housekeeping_timer_);
-        housekeeping_timer_ = websrt::EventLoop::kInvalidTimerId;
+        housekeeping_timer_ = quicsrt::EventLoop::kInvalidTimerId;
     }
 }
 
@@ -364,7 +364,7 @@ void Gateway::EndPublish(const std::string& stream, const std::string& reason)
     //     (registry.rs:370-386: "closes the WT connection, which the browser
     //     surfaces as wtClosed so its auto-reconnect can resubscribe"). It is
     //     also the only close a WT client sees as a session end - a
-    //     session-stream FIN leaves the connection (and a libwebsrt
+    //     session-stream FIN leaves the connection (and a libquicsrt
     //     Subscriber's SRT session) running.
     //   CloseSession    - the registry teardown of that viewer's SRT
     //     initiator, which also FINs the (now closing) session stream.
@@ -467,7 +467,7 @@ bool Gateway::PublishAllowed(const std::string& stream) const
 
 std::vector<StreamStats> Gateway::SnapshotStreams() const
 {
-    auto& loop = const_cast<websrt::EventLoop&>(loop_); // Post only enqueues
+    auto& loop = const_cast<quicsrt::EventLoop&>(loop_); // Post only enqueues
     if (loop.OnLoopThread())
     {
         return streams_.SnapshotStreams();
@@ -483,4 +483,4 @@ std::vector<StreamStats> Gateway::SnapshotStreams() const
     return done.get_future().get();
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

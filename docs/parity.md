@@ -40,7 +40,7 @@ player, the same artifact the deployed gateway serves via web_root. One
 source of truth for the player; the Rust player stops being the embedded
 parity reference. The serving mechanism is unchanged (row below).
 
-Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
+Client tooling: libquicsrt's patched ffmpeg (`websrt://` protocol) and
 `websrt-dump`, plus the WebSRT oracle bins (`wt_hs_probe`, `mock_obs`).
 
 ## Behavior matrix

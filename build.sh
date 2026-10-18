@@ -7,7 +7,7 @@ Usage: ./build.sh <command>
 
 Commands:
     setup      One-time: submodule init (recursive), player dist fetch, BoringSSL fetch+build, CMake configure (release)
-    lib        Build the tree (libwebsrt + srt fork + lsquic)
+    lib        Build the tree (libquicsrt + srt fork + lsquic)
     gateway    Build the QuicSRT-gateway binary
     test       Run tests via ctest (release)
     web-dist   Fetch the player dist (latest websrt-wasm-cpp release) into web/dist, then re-run cmake configure
@@ -15,7 +15,7 @@ EOF
 }
 
 # Pinned per lsquic's README.md and appveyor-linux.yml (tag 0.20250807.0 is
-# the revision lsquic CI builds against). Same pin libwebsrt builds with.
+# the revision lsquic CI builds against). Same pin libquicsrt builds with.
 BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 
 # The player (web/dist) is EMBEDDED into the binary at compile time
@@ -56,12 +56,12 @@ fetch_web_dist() {
     echo "build.sh: player dist ${tag} -> web/dist (embedded at compile time)"
 }
 
-# BoringSSL is fetched (not a submodule, gitignored by libwebsrt) into the
-# libwebsrt checkout and built out-of-source; idempotent: no-op clone when
+# BoringSSL is fetched (not a submodule, gitignored by libquicsrt) into the
+# libquicsrt checkout and built out-of-source; idempotent: no-op clone when
 # the pin matches, fetch+checkout otherwise, incremental rebuild when
 # already built.
 setup_boringssl() {
-    local bssl=deps/libwebsrt/deps/boringssl
+    local bssl=deps/libquicsrt/deps/boringssl
     if [ ! -d "$bssl/.git" ]; then
         git clone https://github.com/google/boringssl.git "$bssl"
     fi
@@ -76,12 +76,12 @@ setup_boringssl() {
 
 case "${1:-}" in
     setup)
-        # libwebsrt declares the srt fork and lsquic submodules; lsquic in
+        # libquicsrt declares the srt fork and lsquic submodules; lsquic in
         # turn declares ls-qpack/ls-hpack, so --recursive.
         git submodule update --init --recursive
         fetch_web_dist
         setup_boringssl
-        cmake --preset release -DWEBSRT_ENABLE_WT=ON
+        cmake --preset release -DQUICSRT_ENABLE_WT=ON
         ;;
     lib)
         cmake --build --preset release
@@ -99,7 +99,7 @@ case "${1:-}" in
         # Refresh the embedded player: fetch + re-configure (the asset
         # table is generated at configure time), then rebuild via lib/gateway.
         fetch_web_dist
-        cmake --preset release -DWEBSRT_ENABLE_WT=ON
+        cmake --preset release -DQUICSRT_ENABLE_WT=ON
         ;;
     -h | --help | help)
         usage

@@ -45,16 +45,16 @@
 #include <thread>
 #include <vector>
 
-#include "websrt/publisher.hpp"
-#include "websrt/subscriber.hpp"
+#include "quicsrt/publisher.hpp"
+#include "quicsrt/subscriber.hpp"
 
 namespace
 {
 
-using websrt::gateway::WebhookDispatcher;
-using websrt::gateway::WebhookEvent;
-using websrt::gateway::WebhookSettings;
-using websrt::gateway::WebhookSnapshot;
+using quicsrt::gateway::WebhookDispatcher;
+using quicsrt::gateway::WebhookEvent;
+using quicsrt::gateway::WebhookSettings;
+using quicsrt::gateway::WebhookSnapshot;
 
 constexpr int kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
 
@@ -452,18 +452,18 @@ std::vector<std::uint8_t> PatternBytes(std::size_t n, std::uint32_t seed)
 
 void TestGatewayLifecycle()
 {
-    const websrt::gateway::CertProvider cert;
-    const std::uint16_t                 port = ChoosePort();
-    Receiver                            receiver(Receiver::Mode::kOk);
+    const quicsrt::gateway::CertProvider cert;
+    const std::uint16_t                  port = ChoosePort();
+    Receiver                             receiver(Receiver::Mode::kOk);
 
-    const auto policy = websrt::gateway::Chain(
-        std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-        std::make_shared<websrt::gateway::StreamAllowlistPolicy>(std::vector<websrt::gateway::StreamAclEntry>{
-            websrt::gateway::StreamAclEntry{.name_pattern = "wh-live", .token = std::nullopt}}));
-    websrt::gateway::Gateway gateway(
+    const auto policy = quicsrt::gateway::Chain(
+        std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+        std::make_shared<quicsrt::gateway::StreamAllowlistPolicy>(std::vector<quicsrt::gateway::StreamAclEntry>{
+            quicsrt::gateway::StreamAclEntry{.name_pattern = "wh-live", .token = std::nullopt}}));
+    quicsrt::gateway::Gateway gateway(
         cert,
         policy,
-        websrt::gateway::GatewayConfig{
+        quicsrt::gateway::GatewayConfig{
             .max_viewers = 4,
             .webhooks    = WebhookSettings{.url = receiver.Url(), .timeout = std::chrono::milliseconds{2000}}});
     if (!Check(gateway.Start("127.0.0.1", port), "B: gateway binds 127.0.0.1:4438 (or the ephemeral fallback)"))
@@ -473,24 +473,24 @@ void TestGatewayLifecycle()
     const std::string hash = cert.Sha256Hex();
     std::fprintf(stderr, "webhook_test: gateway on 127.0.0.1:%u, receiver %s\n", port, receiver.Url().c_str());
 
-    websrt::SubscriberConfig sub_cfg;
+    quicsrt::SubscriberConfig sub_cfg;
     sub_cfg.host             = "127.0.0.1";
     sub_cfg.port             = port;
     sub_cfg.stream_name      = "wh-live";
     sub_cfg.cert_sha256_hex  = hash;
     sub_cfg.tsbpd_latency_ms = 120;
 
-    websrt::PublisherConfig pub_cfg;
+    quicsrt::PublisherConfig pub_cfg;
     pub_cfg.host            = "127.0.0.1";
     pub_cfg.port            = port;
     pub_cfg.stream_name     = "wh-live";
     pub_cfg.cert_sha256_hex = hash;
 
     // Waiting viewer first, then the publisher: both connect events fire.
-    websrt::Subscriber viewer;
-    Check(viewer.Start(sub_cfg) == websrt::kStartOk, "B: viewer attaches (waiting)");
-    websrt::Publisher pub;
-    Check(pub.Start(pub_cfg) == websrt::kPublishOk, "B: publisher accepted");
+    quicsrt::Subscriber viewer;
+    Check(viewer.Start(sub_cfg) == quicsrt::kStartOk, "B: viewer attaches (waiting)");
+    quicsrt::Publisher pub;
+    Check(pub.Start(pub_cfg) == quicsrt::kPublishOk, "B: publisher accepted");
 
     const std::vector<std::uint8_t> chunk = PatternBytes(std::size_t{16} * kMaxPayload, 0xC0FFEE);
     std::size_t                     off   = 0;
@@ -524,7 +524,7 @@ void TestGatewayLifecycle()
     pub.End(15000);
     char      buf[kMaxPayload];
     const int end = viewer.Read(buf, sizeof buf, 5000);
-    Check(end == websrt::kReadEnd || end == websrt::kReadClosed, "B: the viewer observes a clean EOF");
+    Check(end == quicsrt::kReadEnd || end == quicsrt::kReadClosed, "B: the viewer observes a clean EOF");
 
     // All five lifecycle events must land, with the right fields.
     const char* events[] = {

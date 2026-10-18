@@ -1,4 +1,4 @@
-// WtServer end-to-end over the loopback: libwebsrt's WTClient drives the
+// WtServer end-to-end over the loopback: libquicsrt's WTClient drives the
 // gateway's WebTransport server. Asserts the P3 accept path plus the two
 // Rust-gateway defect fixes:
 //   1. Accept: CONNECT /wt?stream=test -> 200, OnWtSession with the right
@@ -72,8 +72,8 @@ bool WaitUntil(const std::function<bool()>& pred, int timeout_ms, int slice_ms =
     return true;
 }
 
-/// One libwebsrt WTClient on its own EventLoop (one engine per loop).
-class TestClient : public websrt::WTClientListener
+/// One libquicsrt WTClient on its own EventLoop (one engine per loop).
+class TestClient : public quicsrt::WTClientListener
 {
 public:
     explicit TestClient(std::uint16_t port, const std::string& cert_hash)
@@ -154,33 +154,33 @@ private:
     std::chrono::steady_clock::time_point connect_started_;
     std::chrono::steady_clock::time_point ready_at_;
 
-    websrt::EventLoop        loop_;
-    websrt::WTClient::Target target_{};
-    websrt::WTClient         client_;
+    quicsrt::EventLoop        loop_;
+    quicsrt::WTClient::Target target_{};
+    quicsrt::WTClient         client_;
 };
 
 /// The gateway side: one WtServer + recorded listener events. Datagrams
 /// are echoed back (SendDatagram from OnDatagram - a listener callback on
 /// the loop thread may call back into WtServer).
-class TestServer : public websrt::gateway::WtServerListener
+class TestServer : public quicsrt::gateway::WtServerListener
 {
 public:
-    TestServer(websrt::EventLoop&                                    loop,
-               const websrt::gateway::CertProvider&                  cert,
-               std::shared_ptr<const websrt::gateway::SessionPolicy> policy)
+    TestServer(quicsrt::EventLoop&                                    loop,
+               const quicsrt::gateway::CertProvider&                  cert,
+               std::shared_ptr<const quicsrt::gateway::SessionPolicy> policy)
         : server_(loop, cert, std::move(policy), *this)
     {
     }
 
     [[nodiscard]] bool Bind(std::uint16_t port) { return server_.Bind("127.0.0.1", port); }
     void               Close() { server_.Close(); }
-    [[nodiscard]] bool SendDatagram(websrt::gateway::WtSessionHandle h, const void* data, std::size_t size)
+    [[nodiscard]] bool SendDatagram(quicsrt::gateway::WtSessionHandle h, const void* data, std::size_t size)
     {
         return server_.SendDatagram(h, data, size);
     }
     [[nodiscard]] int SessionsAccepted() const { return server_.SessionsAccepted(); }
 
-    [[nodiscard]] websrt::gateway::WtSessionHandle LastHandle() const
+    [[nodiscard]] quicsrt::gateway::WtSessionHandle LastHandle() const
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         return last_handle_;
@@ -201,26 +201,26 @@ public:
         return session_closed_count_;
     }
     /// (handle, payload) pairs in arrival order.
-    [[nodiscard]] std::vector<std::pair<websrt::gateway::WtSessionHandle, std::string>> Datagrams() const
+    [[nodiscard]] std::vector<std::pair<quicsrt::gateway::WtSessionHandle, std::string>> Datagrams() const
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         return datagrams_;
     }
 
 private:
-    void OnWtSession(websrt::gateway::WtSessionHandle handle, const websrt::gateway::WtSessionStart& start) override
+    void OnWtSession(quicsrt::gateway::WtSessionHandle handle, const quicsrt::gateway::WtSessionStart& start) override
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         last_handle_         = handle;
         last_subscribe_name_ = start.subscribe_name.value_or("");
         last_publish_name_   = start.publish_name.value_or("");
     }
-    void OnSessionClosed(websrt::gateway::WtSessionHandle /*handle*/, const std::string& /*reason*/) override
+    void OnSessionClosed(quicsrt::gateway::WtSessionHandle /*handle*/, const std::string& /*reason*/) override
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         ++session_closed_count_;
     }
-    void OnDatagram(websrt::gateway::WtSessionHandle handle, const std::uint8_t* data, std::size_t size) override
+    void OnDatagram(quicsrt::gateway::WtSessionHandle handle, const std::uint8_t* data, std::size_t size) override
     {
         {
             const std::lock_guard<std::mutex> lock{mutex_};
@@ -229,20 +229,20 @@ private:
         server_.SendDatagram(handle, data, size); // echo back
     }
 
-    mutable std::mutex                                                    mutex_;
-    websrt::gateway::WtSessionHandle                                      last_handle_;
-    std::string                                                           last_subscribe_name_;
-    std::string                                                           last_publish_name_;
-    int                                                                   session_closed_count_ = 0;
-    std::vector<std::pair<websrt::gateway::WtSessionHandle, std::string>> datagrams_;
+    mutable std::mutex                                                     mutex_;
+    quicsrt::gateway::WtSessionHandle                                      last_handle_;
+    std::string                                                            last_subscribe_name_;
+    std::string                                                            last_publish_name_;
+    int                                                                    session_closed_count_ = 0;
+    std::vector<std::pair<quicsrt::gateway::WtSessionHandle, std::string>> datagrams_;
 
-    websrt::gateway::WtServer server_;
+    quicsrt::gateway::WtServer server_;
 };
 
 // 127.0.0.1:4434 when free, else an ephemeral port (probe-bind :0, close,
 // hand the port to the server; the tiny TOCTOU window is acceptable for a
 // test and 4433/9000 are never touched).
-std::uint16_t ChoosePort(const websrt::gateway::CertProvider& /*cert*/)
+std::uint16_t ChoosePort(const quicsrt::gateway::CertProvider& /*cert*/)
 {
     int         fd = ::socket(AF_INET, SOCK_DGRAM, 0);
     sockaddr_in sa{};
@@ -275,10 +275,10 @@ std::uint16_t ChoosePort(const websrt::gateway::CertProvider& /*cert*/)
 
 int main()
 {
-    using namespace websrt::gateway;
+    using namespace quicsrt::gateway;
     if (std::getenv("WT_TEST_LSQUIC_DEBUG") != nullptr)
     {
-        websrt::SetLsquicLogLevel("debug");
+        quicsrt::SetLsquicLogLevel("debug");
     }
 
     const CertProvider cert;
@@ -286,7 +286,7 @@ int main()
         StreamAclEntry{.name_pattern = "test", .allow_publish = false, .allow_subscribe = true, .token = std::nullopt},
     });
 
-    websrt::EventLoop server_loop;
+    quicsrt::EventLoop server_loop;
     server_loop.Start();
     TestServer          server(server_loop, cert, policy);
     const std::uint16_t port = ChoosePort(cert);

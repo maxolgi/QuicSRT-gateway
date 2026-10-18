@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Decision returned by SessionPolicy::Decide(). The rejection variants map
@@ -206,6 +206,6 @@ private:
     std::vector<StreamAclEntry> m_entries;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_POLICY_H

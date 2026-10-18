@@ -57,7 +57,7 @@
 #include "gateway/gateway.h"
 #include "gateway/ingest/srt_ingest.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -1588,4 +1588,4 @@ std::string WebServer::StatsHtml() const
     return out;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

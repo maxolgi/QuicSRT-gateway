@@ -11,7 +11,7 @@
 //      health_handler): every key the oracle emits must be here, with the
 //      same meaning - a parity diff between the two gateways is meant to
 //      come back empty on the oracle's own keys.
-//   3. /stats and /health against LIVE state: a real libwebsrt publisher
+//   3. /stats and /health against LIVE state: a real libquicsrt publisher
 //      and subscriber through the gateway core, so the stream and session
 //      rows exist and the registry ticker is demonstrably advancing; the
 //      SRT/UDP ingest runs beside it, so its counters appear too.
@@ -62,17 +62,17 @@
 #include <thread>
 #include <vector>
 
-#include "websrt/publisher.hpp"
-#include "websrt/subscriber.hpp"
+#include "quicsrt/publisher.hpp"
+#include "quicsrt/subscriber.hpp"
 
 namespace
 {
 
-using websrt::gateway::CertProvider;
-using websrt::gateway::Gateway;
-using websrt::gateway::GatewayConfig;
-using websrt::gateway::WebServer;
-using websrt::gateway::WebServerConfig;
+using quicsrt::gateway::CertProvider;
+using quicsrt::gateway::Gateway;
+using quicsrt::gateway::GatewayConfig;
+using quicsrt::gateway::WebServer;
+using quicsrt::gateway::WebServerConfig;
 
 namespace fs = std::filesystem;
 
@@ -373,9 +373,9 @@ private:
     SRTSOCKET sock_ = SRT_INVALID_SOCK;
 };
 
-websrt::PublisherConfig PubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
+quicsrt::PublisherConfig PubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
 {
-    websrt::PublisherConfig cfg;
+    quicsrt::PublisherConfig cfg;
     cfg.host            = "127.0.0.1";
     cfg.port            = port;
     cfg.stream_name     = stream;
@@ -383,9 +383,9 @@ websrt::PublisherConfig PubCfg(std::uint16_t port, const std::string& hash, cons
     return cfg;
 }
 
-websrt::SubscriberConfig SubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
+quicsrt::SubscriberConfig SubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
 {
-    websrt::SubscriberConfig cfg;
+    quicsrt::SubscriberConfig cfg;
     cfg.host             = "127.0.0.1";
     cfg.port             = port;
     cfg.stream_name      = stream;
@@ -494,23 +494,23 @@ int main()
     // main.cpp's boot step, in the test: the dynamic /cert-hash.js body.
     const std::string cert_hash_js = cert.BuildCertHashJs(wt_port);
 
-    Gateway gateway(cert, std::make_shared<websrt::gateway::AcceptAll>(), GatewayConfig{.max_viewers = 8});
+    Gateway gateway(cert, std::make_shared<quicsrt::gateway::AcceptAll>(), GatewayConfig{.max_viewers = 8});
     if (!Check(gateway.Start("127.0.0.1", wt_port), "the gateway binds its WebTransport port"))
     {
         return 1;
     }
 
-    websrt::gateway::SrtIngest::Sink sink;
+    quicsrt::gateway::SrtIngest::Sink sink;
     sink.claim   = [&gateway](const std::string& name) { return gateway.ClaimIngestPublish(name); };
     sink.publish = [&gateway](const std::string& name, const void* data, std::size_t len)
     { gateway.PublishMedia(name, data, len); };
     sink.release = [&gateway](const std::string& name) { gateway.ReleaseIngestPublish(name); };
 
-    websrt::gateway::SrtIngestConfig ingest_config;
+    quicsrt::gateway::SrtIngestConfig ingest_config;
     ingest_config.bind = "127.0.0.1";
     ingest_config.port = ingest_port;
-    websrt::gateway::SrtIngest ingest(ingest_config, sink, gateway.Loop());
-    std::string                ingest_error;
+    quicsrt::gateway::SrtIngest ingest(ingest_config, sink, gateway.Loop());
+    std::string                 ingest_error;
     if (!Check(ingest.Start(&ingest_error), "the SRT/UDP ingest binds its port"))
     {
         std::fprintf(stderr, "web_server_test: %s\n", ingest_error.c_str());
@@ -716,11 +716,11 @@ int main()
 
     // ---- 3. live state: a real publisher + subscriber through the core ----
     {
-        websrt::Subscriber sub;
-        Check(sub.Start(SubCfg(wt_port, hash, "g7-live")) == websrt::kStartOk, "3: the subscriber attached");
+        quicsrt::Subscriber sub;
+        Check(sub.Start(SubCfg(wt_port, hash, "g7-live")) == quicsrt::kStartOk, "3: the subscriber attached");
 
-        websrt::Publisher pub;
-        Check(pub.Start(PubCfg(wt_port, hash, "g7-live")) == websrt::kPublishOk, "3: the publisher attached");
+        quicsrt::Publisher pub;
+        Check(pub.Start(PubCfg(wt_port, hash, "g7-live")) == quicsrt::kPublishOk, "3: the publisher attached");
         const std::vector<std::uint8_t> chunk = MakeTsChunk(0);
         bool                            sent  = false;
         for (int i = 0; i < 200 && !sent; ++i)

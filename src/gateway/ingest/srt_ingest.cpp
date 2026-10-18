@@ -10,7 +10,7 @@
 
 #include <arpa/inet.h>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -83,7 +83,7 @@ std::int64_t RecvBufferPackets(std::uint64_t latency_ms) noexcept
     return static_cast<std::int64_t>(std::clamp<std::uint64_t>(pkts, 8'192, 320'000));
 }
 
-SrtIngest::SrtIngest(SrtIngestConfig config, Sink sink, websrt::EventLoop& loop)
+SrtIngest::SrtIngest(SrtIngestConfig config, Sink sink, quicsrt::EventLoop& loop)
     : config_(std::move(config))
     , sink_(std::move(sink))
     , loop_(loop)
@@ -161,7 +161,7 @@ bool SrtIngest::SetupListener(std::string* error)
     do
     {
         // libsrt's runtime is process-global and refcounted; holding a
-        // reference keeps another holder's srt_cleanup() (libwebsrt client
+        // reference keeps another holder's srt_cleanup() (libquicsrt client
         // sessions do exactly that on teardown) from stopping the garbage
         // collector and force-breaking this listener.
         if (srt_startup() < 0)
@@ -211,7 +211,7 @@ bool SrtIngest::SetupListener(std::string* error)
         }
 
         // Encryption. The oracle hands the passphrase to every accept
-        // (srt_listener.rs:40, 96); libwebsrt builds its srt fork with
+        // (srt_listener.rs:40, 96); libquicsrt builds its srt fork with
         // ENABLE_ENCRYPTION=OFF, where the library itself rejects a non-empty
         // SRTO_PASSPHRASE (socketconfig.cpp: "encryption not enabled at
         // compile time"). Fail loudly rather than listen unencrypted behind
@@ -441,7 +441,7 @@ void SrtIngest::AcceptOne()
     // TsStatsHandle at connection setup (main.rs:562-568), replacing any
     // frozen entry a previous publisher on this name left behind.
     stream_cc_[stream] = TsCcStats{};
-    Conn conn{.chunker = websrt::TsChunker{config_.payload_size}};
+    Conn conn{.chunker = quicsrt::TsChunker{config_.payload_size}};
     conn.sock       = ns;
     conn.stream     = stream;
     conn.remote     = remote;
@@ -509,7 +509,7 @@ void SrtIngest::FeedAndChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
     }
     Conn& conn = it->second;
 
-    // TsChunker framing, libwebsrt's publisher rules (parity.md row 35):
+    // TsChunker framing, libquicsrt's publisher rules (parity.md row 35):
     // each message is the largest whole multiple of 188 that fits the
     // payload size, and a sub-188 remainder carries over between
     // messages. Messages must be TS-aligned and <= the payload ceiling
@@ -573,7 +573,7 @@ void SrtIngest::EndConn(SRTSOCKET sock, const std::string& why)
     const std::uint64_t chunks     = it->second.chunks_out;
 
     // A sub-188 tail is not a whole TS packet, but dropping it would lose
-    // bytes: libwebsrt's publisher flushes it on End()
+    // bytes: libquicsrt's publisher flushes it on End()
     // (publisher.cpp:628-635) and so do we, then the viewers get their EOF.
     const std::size_t tail = it->second.chunker.pending();
     if (tail > 0)
@@ -714,4 +714,4 @@ void SrtIngest::ReleaseOnLoop(const std::string& stream)
     done.get_future().wait();
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

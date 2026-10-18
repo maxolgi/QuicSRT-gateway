@@ -51,7 +51,7 @@ using lsquic_engine_t = struct lsquic_engine;
 using lsquic_conn_t   = struct lsquic_conn;
 using lsquic_stream_t = struct lsquic_stream;
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// The decoded CONNECT header set (defined in wt_server.cpp).
@@ -152,16 +152,16 @@ struct WtServerLimits
 /// One WebTransport server: a bound UDP socket, one lsquic HTTP/3 server
 /// engine (WT server support compiled in), and the accept path that runs
 /// the SessionPolicy seam. Mirrors WTClient's proven engine recipe
-/// (libwebsrt src/wt/client.cpp) on the server side.
-class WtServer : private websrt::EngineHost
+/// (libquicsrt src/wt/client.cpp) on the server side.
+class WtServer : private quicsrt::EngineHost
 {
 public:
     /// Largest payload SendDatagram accepts (fits next to the context
     /// prefix in a minimum-MTU datagram frame; SRT's 1128-byte payloads
-    /// do). Aliases libwebsrt's shared protocol constants so the client
+    /// do). Aliases libquicsrt's shared protocol constants so the client
     /// library and the gateway cannot drift apart.
-    static constexpr std::size_t kMaxDatagramSize    = websrt::kMaxDatagramSize;
-    static constexpr std::size_t kMaxQueuedDatagrams = websrt::kMaxQueuedDatagrams;
+    static constexpr std::size_t kMaxDatagramSize    = quicsrt::kMaxDatagramSize;
+    static constexpr std::size_t kMaxQueuedDatagrams = quicsrt::kMaxQueuedDatagrams;
 
     /// ADMISSION CONTROL - consulted AFTER the SessionPolicy accepts and
     /// BEFORE the 200 response is written, with the query already
@@ -187,7 +187,7 @@ public:
     /// admission gate above. Supported teardown: Close() then destroy,
     /// or stop the loop and destroy in any order. Never destroy from inside
     /// a listener callback; never race the destructor with EventLoop::Stop.
-    WtServer(websrt::EventLoop&                   loop,
+    WtServer(quicsrt::EventLoop&                  loop,
              const CertProvider&                  cert,
              std::shared_ptr<const SessionPolicy> policy,
              WtServerListener&                    listener,
@@ -233,7 +233,7 @@ public:
     /// WT connection "which the browser surfaces as wtClosed so its
     /// auto-reconnect can resubscribe" - and it is the close a WT client
     /// observes as a session end: a session-stream FIN alone leaves the
-    /// connection (and a libwebsrt Subscriber's SRT session) running.
+    /// connection (and a libquicsrt Subscriber's SRT session) running.
     /// No-op for an unknown handle or an unknown/closing server.
     void CloseConnection(WtSessionHandle handle, const std::string& reason);
 
@@ -295,7 +295,7 @@ private:
     [[nodiscard]] static bool ParseCapsules(Session& session, const std::uint8_t* data, std::size_t size);
     void                      TerminateSession(Session& session, const std::string& reason);
 
-    websrt::EventLoop&                   loop_;
+    quicsrt::EventLoop&                  loop_;
     const CertProvider&                  cert_;
     std::shared_ptr<const SessionPolicy> policy_;
     WtServerListener&                    listener_;
@@ -335,6 +335,6 @@ private:
     std::promise<void> teardown_done_;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_WT_SERVER_H

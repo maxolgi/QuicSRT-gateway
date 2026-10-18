@@ -77,7 +77,7 @@ void WriteExampleConfigIfAbsent()
     {
         return; // already here - never overwrite
     }
-    const std::string_view body = websrt::gateway::EmbeddedExampleConf();
+    const std::string_view body = quicsrt::gateway::EmbeddedExampleConf();
     std::ofstream          out(kDefaultPath, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out.is_open() || !(out.write(body.data(), static_cast<std::streamsize>(body.size()))))
     {
@@ -99,13 +99,13 @@ void WriteExampleConfigIfAbsent()
 
 int Run(const std::optional<std::string>& config_path, const std::optional<std::string>& log_level)
 {
-    // lsquic's own diagnostic logging, routed to stderr by libwebsrt.
+    // lsquic's own diagnostic logging, routed to stderr by libquicsrt.
     // Must happen before any engine exists: the logger is process-wide
     // and installed once, so this is the first thing Run does. Off
     // (absent flag) leaves lsquic's default level untouched.
     if (log_level.has_value())
     {
-        websrt::SetLsquicLogLevel(log_level->c_str());
+        quicsrt::SetLsquicLogLevel(log_level->c_str());
         std::printf("QuicSRT-gateway: lsquic log level: %s\n", log_level->c_str());
         std::fflush(stdout);
     }
@@ -113,55 +113,55 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     // (the Rust gateway's default). Self mode ALWAYS generates a fresh
     // cert on every boot - nothing is persisted to disk, so the hash
     // changes per restart and viewers must reload the page.
-    std::string                                     cert_mode = "self";
-    std::optional<std::string>                      cert_pem;
-    std::optional<std::string>                      key_pem;
-    std::shared_ptr<websrt::gateway::SessionPolicy> policy;
-    websrt::gateway::GatewayConfig                  gateway_config;
-    std::uint16_t                                   wt_bind_port        = 4433;
-    std::string                                     wt_bind             = "127.0.0.1";
-    std::uint16_t                                   ingest_port         = 0;
-    std::string                                     ingest_bind         = "127.0.0.1";
-    std::uint64_t                                   ingest_latency_ms   = 120;
-    int                                             ingest_max_sessions = 100;
-    std::optional<std::string>                      ingest_passphrase;
-    std::uint16_t                                   health_port = 0;
-    std::string                                     health_bind = "127.0.0.1";
-    std::uint16_t                                   web_port    = 0;
-    std::string                                     web_bind    = "127.0.0.1";
-    std::optional<std::string>                      web_root;
-    bool                                            web_tls                  = true;
-    int                                             request_header_timeout_s = 30;
+    std::string                                      cert_mode = "self";
+    std::optional<std::string>                       cert_pem;
+    std::optional<std::string>                       key_pem;
+    std::shared_ptr<quicsrt::gateway::SessionPolicy> policy;
+    quicsrt::gateway::GatewayConfig                  gateway_config;
+    std::uint16_t                                    wt_bind_port        = 4433;
+    std::string                                      wt_bind             = "127.0.0.1";
+    std::uint16_t                                    ingest_port         = 0;
+    std::string                                      ingest_bind         = "127.0.0.1";
+    std::uint64_t                                    ingest_latency_ms   = 120;
+    int                                              ingest_max_sessions = 100;
+    std::optional<std::string>                       ingest_passphrase;
+    std::uint16_t                                    health_port = 0;
+    std::string                                      health_bind = "127.0.0.1";
+    std::uint16_t                                    web_port    = 0;
+    std::string                                      web_bind    = "127.0.0.1";
+    std::optional<std::string>                       web_root;
+    bool                                             web_tls                  = true;
+    int                                              request_header_timeout_s = 30;
     // The applied config, diff base and fallback of every SIGHUP reload.
-    websrt::gateway::Config live_config;
+    quicsrt::gateway::Config live_config;
 
     if (config_path.has_value())
     {
-        websrt::gateway::Config config;
+        quicsrt::gateway::Config config;
         try
         {
-            config = websrt::gateway::LoadConfig(*config_path);
+            config = quicsrt::gateway::LoadConfig(*config_path);
         }
-        catch (const websrt::gateway::ConfigError& e)
+        catch (const quicsrt::gateway::ConfigError& e)
         {
             std::fprintf(stderr, "QuicSRT-gateway: config error: %s\n", e.what());
             return 1;
         }
-        policy    = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-                                        websrt::gateway::BuildAllowlistPolicy(config));
+        policy    = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+                                         quicsrt::gateway::BuildAllowlistPolicy(config));
         cert_mode = config.server.cert_mode;
         cert_pem  = config.server.cert_pem;
         key_pem   = config.server.key_pem;
-        const websrt::gateway::ServerConfig& s = config.server;
-        gateway_config.max_viewers             = s.max_viewers;
-        gateway_config.broadcast_capacity      = s.broadcast_capacity;
-        gateway_config.broadcast_byte_budget   = s.broadcast_byte_budget;
-        gateway_config.wt.max_sessions_per_ip  = s.max_sessions_per_ip;
-        gateway_config.wt.max_sessions         = s.max_sessions;
-        gateway_config.wt.idle_timeout_s       = s.wt_idle_timeout_s;
-        gateway_config.wt.handshake_timeout_s  = s.wt_handshake_timeout_s;
-        gateway_config.webhooks                = websrt::gateway::WebhookSettings{
-                           .url = config.webhooks.on_event_url, .timeout = std::chrono::milliseconds{config.webhooks.timeout_ms}};
+        const quicsrt::gateway::ServerConfig& s = config.server;
+        gateway_config.max_viewers              = s.max_viewers;
+        gateway_config.broadcast_capacity       = s.broadcast_capacity;
+        gateway_config.broadcast_byte_budget    = s.broadcast_byte_budget;
+        gateway_config.wt.max_sessions_per_ip   = s.max_sessions_per_ip;
+        gateway_config.wt.max_sessions          = s.max_sessions;
+        gateway_config.wt.idle_timeout_s        = s.wt_idle_timeout_s;
+        gateway_config.wt.handshake_timeout_s   = s.wt_handshake_timeout_s;
+        gateway_config.webhooks                 = quicsrt::gateway::WebhookSettings{
+                            .url = config.webhooks.on_event_url, .timeout = std::chrono::milliseconds{config.webhooks.timeout_ms}};
         wt_bind_port             = s.wt_port;
         wt_bind                  = s.wt_bind;
         ingest_port              = s.srt_ingest_port;
@@ -180,7 +180,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         // the CLI flag wins at boot. Still before any engine exists.
         if (!log_level.has_value() && s.log_level.has_value())
         {
-            websrt::SetLsquicLogLevel(s.log_level->c_str());
+            quicsrt::SetLsquicLogLevel(s.log_level->c_str());
             std::printf("QuicSRT-gateway: lsquic log level: %s (config)\n", s.log_level->c_str());
         }
         if (config.streams.empty())
@@ -242,8 +242,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         WriteExampleConfigIfAbsent();
         std::fprintf(stderr,
                      "QuicSRT-gateway: WARNING: open mode: no allowlist configured - any stream name accepted\n");
-        policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-                                        std::make_shared<websrt::gateway::AcceptAll>());
+        policy = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+                                         std::make_shared<quicsrt::gateway::AcceptAll>());
         std::printf("QuicSRT-gateway: config: 0 stream(s), open mode\n");
         // web_port/health_port stay 0 without a config file: no reason to
         // serve the player or expose metrics in open mode. Both are
@@ -252,7 +252,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     }
     std::fflush(stdout);
 
-    websrt::gateway::CertProvider cert;
+    quicsrt::gateway::CertProvider cert;
     try
     {
         if (cert_mode == "mkcert")
@@ -265,16 +265,16 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                     stderr, "QuicSRT-gateway: cert error: cert_mode = \"mkcert\" requires both cert_pem and key_pem\n");
                 return 1;
             }
-            cert = websrt::gateway::CertProvider(*cert_pem, *key_pem);
+            cert = quicsrt::gateway::CertProvider(*cert_pem, *key_pem);
             std::printf("QuicSRT-gateway: mkcert identity loaded; browser uses normal PKI\n");
         }
         else
         {
-            cert = websrt::gateway::CertProvider();
+            cert = quicsrt::gateway::CertProvider();
             std::printf("QuicSRT-gateway: WebTransport cert DER SHA-256: %s\n", cert.Sha256Hex().c_str());
         }
     }
-    catch (const websrt::gateway::CertError& e)
+    catch (const quicsrt::gateway::CertError& e)
     {
         std::fprintf(stderr, "QuicSRT-gateway: cert error: %s\n", e.what());
         return 1;
@@ -285,7 +285,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     // Rust SrtConfig default, srt_sender.rs:58-59): a client couples with
     // the gateway, not with the publisher. [server].latency_ms is the
     // SRT/UDP ingest knob only.
-    websrt::gateway::Gateway gateway(cert, policy, gateway_config);
+    quicsrt::gateway::Gateway gateway(cert, policy, gateway_config);
     if (!gateway.Start(wt_bind, wt_bind_port))
     {
         std::fprintf(stderr, "QuicSRT-gateway: cannot serve WebTransport on %s:%u\n", wt_bind.c_str(), wt_bind_port);
@@ -302,17 +302,17 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     // claims/releases the publisher slot there, so first-wins occupancy is
     // shared with WT publishers. It is owned by a scope that ends BEFORE
     // gateway.Shutdown(): its posts ride that loop.
-    std::optional<websrt::gateway::SrtIngest> ingest;
+    std::optional<quicsrt::gateway::SrtIngest> ingest;
     if (ingest_port != 0)
     {
-        websrt::gateway::SrtIngestConfig ingest_config;
+        quicsrt::gateway::SrtIngestConfig ingest_config;
         ingest_config.bind         = ingest_bind;
         ingest_config.port         = ingest_port;
         ingest_config.latency_ms   = ingest_latency_ms;
         ingest_config.max_sessions = ingest_max_sessions;
         ingest_config.passphrase   = ingest_passphrase;
 
-        websrt::gateway::SrtIngest::Sink sink;
+        quicsrt::gateway::SrtIngest::Sink sink;
         // Publish gate = the policy half of the WT accept path: the gateway
         // consults the CURRENT policy (hot-reloadable, P4.1) through a
         // synthetic ?publish= request - an unconfigured name, publish=false,
@@ -326,7 +326,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         sink.release = [&gateway](const std::string& name) { gateway.ReleaseIngestPublish(name); };
         // P4.3: the ingest's publisher_connect/disconnect ride the SAME
         // dispatcher the WT session lifecycle notifies through.
-        sink.webhook = [&gateway](const websrt::gateway::WebhookEvent& event) { gateway.NotifyWebhook(event); };
+        sink.webhook = [&gateway](const quicsrt::gateway::WebhookEvent& event) { gateway.NotifyWebhook(event); };
 
         ingest.emplace(std::move(ingest_config), std::move(sink), gateway.Loop());
         std::string ingest_error;
@@ -354,25 +354,25 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     // The web server (the player) and the health endpoint. Both borrow the
     // gateway and the ingest, so they are torn down BEFORE gateway.Shutdown():
     // their stats snapshot rides a Post onto the gateway loop.
-    std::optional<websrt::gateway::WebServer> web;
-    std::optional<websrt::gateway::WebServer> health;
-    const websrt::gateway::Gateway*           gateway_ptr = &gateway;
-    const websrt::gateway::SrtIngest*         ingest_ptr  = ingest.has_value() ? &*ingest : nullptr;
+    std::optional<quicsrt::gateway::WebServer> web;
+    std::optional<quicsrt::gateway::WebServer> health;
+    const quicsrt::gateway::Gateway*           gateway_ptr = &gateway;
+    const quicsrt::gateway::SrtIngest*         ingest_ptr  = ingest.has_value() ? &*ingest : nullptr;
 
     if (web_port != 0)
     {
         // web_root is an override; unset serves the embedded player.
         const std::string served_root = web_root.value_or(std::string("<embedded player>"));
-        web.emplace(websrt::gateway::WebServerConfig{.bind             = web_bind,
-                                                     .port             = web_port,
-                                                     .cert             = web_tls ? &cert : nullptr,
-                                                     .web_root         = web_root.value_or(std::string()),
-                                                     .cert_hash_js     = cert_hash_js,
-                                                     .serve_player     = true,
-                                                     .gateway          = gateway_ptr,
-                                                     .ingest           = ingest_ptr,
-                                                     .max_connections  = 16,
-                                                     .header_timeout_s = request_header_timeout_s});
+        web.emplace(quicsrt::gateway::WebServerConfig{.bind             = web_bind,
+                                                      .port             = web_port,
+                                                      .cert             = web_tls ? &cert : nullptr,
+                                                      .web_root         = web_root.value_or(std::string()),
+                                                      .cert_hash_js     = cert_hash_js,
+                                                      .serve_player     = true,
+                                                      .gateway          = gateway_ptr,
+                                                      .ingest           = ingest_ptr,
+                                                      .max_connections  = 16,
+                                                      .header_timeout_s = request_header_timeout_s});
         std::string web_error;
         if (!web->Start(&web_error))
         {
@@ -426,14 +426,14 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                          "network\n",
                          health_bind.c_str());
         }
-        health.emplace(websrt::gateway::WebServerConfig{.bind             = health_bind,
-                                                        .port             = health_port,
-                                                        .cert             = nullptr,
-                                                        .web_root         = {},
-                                                        .gateway          = gateway_ptr,
-                                                        .ingest           = ingest_ptr,
-                                                        .max_connections  = 16,
-                                                        .header_timeout_s = request_header_timeout_s});
+        health.emplace(quicsrt::gateway::WebServerConfig{.bind             = health_bind,
+                                                         .port             = health_port,
+                                                         .cert             = nullptr,
+                                                         .web_root         = {},
+                                                         .gateway          = gateway_ptr,
+                                                         .ingest           = ingest_ptr,
+                                                         .max_connections  = 16,
+                                                         .header_timeout_s = request_header_timeout_s});
         std::string health_error;
         if (!health->Start(&health_error))
         {
@@ -469,7 +469,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                 // and the gateway stays healthy.
                 std::string reload_error;
                 if (const auto reloaded =
-                        websrt::gateway::ReloadConfig(*config_path, gateway, live_config, &reload_error))
+                        quicsrt::gateway::ReloadConfig(*config_path, gateway, live_config, &reload_error))
                 {
                     live_config = std::move(*reloaded);
                 }
@@ -542,7 +542,7 @@ int main(int argc, char** argv)
 
     if (selftest)
     {
-        return websrt::gateway::RunSelftest();
+        return quicsrt::gateway::RunSelftest();
     }
     return Run(config_path, log_level);
 }

@@ -52,7 +52,7 @@
 #include <cstdint>
 #include <map>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// The probe's live counters - the /health ingester values, per stream
@@ -130,6 +130,6 @@ private:
     TsCcStats                             stats_;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_INGEST_TS_CONTINUITY_H

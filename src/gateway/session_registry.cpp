@@ -8,7 +8,7 @@
 
 #include "core/event_loop.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -125,7 +125,7 @@ SessionInfo InfoOf(RegistryEntry& entry)
 
 } // namespace
 
-SessionRegistry::SessionRegistry(websrt::EventLoop& loop, SessionRegistryListener& listener, RegistryConfig config)
+SessionRegistry::SessionRegistry(quicsrt::EventLoop& loop, SessionRegistryListener& listener, RegistryConfig config)
     : loop_(loop)
     , listener_(listener)
     , config_(config)
@@ -560,10 +560,10 @@ int SessionRegistry::ActiveSessionCount() const
 void SessionRegistry::CancelAndDrain()
 {
     shutting_down_ = true;
-    if (timer_id_ != websrt::EventLoop::kInvalidTimerId)
+    if (timer_id_ != quicsrt::EventLoop::kInvalidTimerId)
     {
         loop_.CancelTimer(timer_id_);
-        timer_id_ = websrt::EventLoop::kInvalidTimerId;
+        timer_id_ = quicsrt::EventLoop::kInvalidTimerId;
     }
     const auto entries = Snapshot();
     for (const auto& entry : entries)
@@ -591,4 +591,4 @@ std::vector<std::shared_ptr<struct RegistryEntry>> SessionRegistry::Snapshot() c
     return out;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

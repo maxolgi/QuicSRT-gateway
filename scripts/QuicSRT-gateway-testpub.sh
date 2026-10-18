@@ -13,7 +13,7 @@ set -euo pipefail
 GATEWAY=${GATEWAY:-https://127.0.0.1:8443}   # the C++ gateway's web port
 WT_PORT=${WT_PORT:-4435}                     # its WebTransport port
 STREAM=${STREAM:-browsertest}
-FFMPEG=${FFMPEG:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/libwebsrt/deps/ffmpeg/ffmpeg"}  # libwebsrt-patched (workspace sibling)
+FFMPEG=${FFMPEG:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/libquicsrt/deps/ffmpeg/ffmpeg"}  # libquicsrt-patched (workspace sibling)
 
 HASH_FILE=$(mktemp /tmp/QuicSRT-gateway-cert-hash.XXXXXX.js)
 trap 'rm -f "$HASH_FILE"' EXIT

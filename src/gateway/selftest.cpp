@@ -11,10 +11,10 @@
 #include <cstring>
 #include <thread>
 
-#include "core/event_loop.h" // internal header via websrt::websrt
-#include "lsquic.h"          // via websrt::wt-deps
-#include "srt.h"             // via websrt::websrt -> websrt::srt-deps
-#include "websrt/websrt_c.h" // public API
+#include "core/event_loop.h"   // internal header via quicsrt::quicsrt
+#include "lsquic.h"            // via quicsrt::wt-deps
+#include "srt.h"               // via quicsrt::quicsrt -> quicsrt::srt-deps
+#include "quicsrt/quicsrt_c.h" // public API
 
 namespace
 {
@@ -30,7 +30,7 @@ void check(bool ok, const char* what)
 }
 } // namespace
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 int RunSelftest()
@@ -53,8 +53,8 @@ int RunSelftest()
 
     // The single-threaded loop every engine call and callback will live on.
     {
-        websrt::EventLoop loop;
-        std::atomic<bool> posted{false};
+        quicsrt::EventLoop loop;
+        std::atomic<bool>  posted{false};
         loop.Start();
         // Post's contract under test: true on a live loop (the job is
         // guaranteed to run), false once it has stopped - never a wait.
@@ -68,16 +68,16 @@ int RunSelftest()
         loop.Stop();
     }
 
-    const char* v = websrt_version();
-    check(v != nullptr && v[0] != '\0', "websrt_version()");
+    const char* v = quicsrt_version();
+    check(v != nullptr && v[0] != '\0', "quicsrt_version()");
 
     if (g_failures != 0)
     {
         std::fprintf(stderr, "QuicSRT-gateway: %d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("QuicSRT-gateway skeleton OK (libwebsrt %s)\n", v);
+    std::printf("QuicSRT-gateway skeleton OK (libquicsrt %s)\n", v);
     return 0;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

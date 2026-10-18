@@ -19,7 +19,7 @@
 //
 // Socket options, set BEFORE srt_connect and mirroring SrtConfig defaults
 // (srt_sender.rs:51-63) plus the M0 caller lessons
-// (libwebsrt tests/loopback_srt.cpp):
+// (libquicsrt tests/loopback_srt.cpp):
 //   SRTO_TRANSTYPE      SRTT_LIVE (first - it resets the presets)
 //   SRTO_PAYLOADSIZE    1128 (6 x 188 TS packets; HSv5 negotiates
 //                       min(gateway, peer) - see ConnectionState() for the
@@ -81,7 +81,7 @@
 // The fork's gated API (build with SRT_ENABLE_VIRTUAL_TRANSPORT defined).
 #include "srt.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Initiator-side SRT parameters, mirroring the Rust oracle's SrtConfig
@@ -160,7 +160,7 @@ public:
     /// SRTS_BROKEN / ...); sock_mutex_ serializes the sample against
     /// Teardown's close. The FIRST connected observation reads back the
     /// negotiated payload cap (SRTO_PAYLOADSIZE vs SRTO_MSS - 44 floored
-    /// to whole TS packets, mirroring libwebsrt's publisher session: the
+    /// to whole TS packets, mirroring libquicsrt's publisher session: the
     /// Rust initiator fills the HSv5 MTU field with its payload size
     /// although the field includes UDP/IP headers, which can cap a
     /// fork-to-Rust session below 1128).
@@ -232,6 +232,6 @@ private:
     std::atomic<bool> closed_{false};
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_SRT_INITIATOR_H

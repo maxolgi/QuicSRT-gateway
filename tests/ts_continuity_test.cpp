@@ -1,7 +1,7 @@
 // TS-continuity probe units: the test set ported from the Rust oracle's
 // ingest/continuity.rs (which itself exercises the mpeg2ts fork's
 // CcChecker). Plain checks (not assert) so Release stays meaningful,
-// following libwebsrt's test style.
+// following libquicsrt's test style.
 
 #include "gateway/ingest/ts_continuity.h"
 
@@ -12,7 +12,7 @@
 namespace
 {
 
-using websrt::gateway::TsContinuityChecker;
+using quicsrt::gateway::TsContinuityChecker;
 
 bool g_ok = true;
 

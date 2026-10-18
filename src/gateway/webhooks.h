@@ -39,7 +39,7 @@
 #include <string>
 #include <thread>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Webhook knobs (the [webhooks] table). Empty URL = feature off.
@@ -119,6 +119,6 @@ private:
     std::thread              worker_;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_WEBHOOKS_H

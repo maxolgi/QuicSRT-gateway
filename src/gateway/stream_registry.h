@@ -35,7 +35,7 @@
 #include "gateway/broadcaster.h"
 #include "gateway/policy.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Registry-wide knobs (the oracle's StreamRegistry::new arguments).
@@ -241,6 +241,6 @@ private:
     std::map<std::string, std::unique_ptr<Broadcaster>> streams_;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_STREAM_REGISTRY_H

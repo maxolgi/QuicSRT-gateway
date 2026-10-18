@@ -1,6 +1,6 @@
 // TOML configuration parsing (toml++ v3.4.0, deps/tomlplusplus). Strict by
 // design: unknown keys are errors listing key and table; validation errors
-// carry the table/key context (libwebsrt validate() discipline).
+// carry the table/key context (libquicsrt validate() discipline).
 
 #include "gateway/config.h"
 
@@ -11,7 +11,7 @@
 
 #include <toml++/toml.hpp>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -372,4 +372,4 @@ std::shared_ptr<StreamAllowlistPolicy> BuildAllowlistPolicy(const Config& config
     return std::make_shared<StreamAllowlistPolicy>(std::move(entries));
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

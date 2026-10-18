@@ -1,7 +1,7 @@
 // Config units: strict TOML parsing of [server] + [[stream]] into Config,
 // the StreamAllowlistPolicy built from it, and the error discipline
 // (unknown keys, missing/bogus fields, validation ranges). Plain checks
-// (not assert) so Release stays meaningful, following libwebsrt's style.
+// (not assert) so Release stays meaningful, following libquicsrt's style.
 
 #include "gateway/config.h"
 
@@ -12,12 +12,12 @@
 namespace
 {
 
-using websrt::gateway::BuildAllowlistPolicy;
-using websrt::gateway::Config;
-using websrt::gateway::ConfigError;
-using websrt::gateway::Decision;
-using websrt::gateway::LoadConfig;
-using websrt::gateway::ParseConfig;
+using quicsrt::gateway::BuildAllowlistPolicy;
+using quicsrt::gateway::Config;
+using quicsrt::gateway::ConfigError;
+using quicsrt::gateway::Decision;
+using quicsrt::gateway::LoadConfig;
+using quicsrt::gateway::ParseConfig;
 
 bool g_ok = true;
 
@@ -31,9 +31,9 @@ bool Check(bool cond, const char* what)
     return cond;
 }
 
-websrt::gateway::SessionRequest Req(std::string_view query)
+quicsrt::gateway::SessionRequest Req(std::string_view query)
 {
-    websrt::gateway::SessionRequest req;
+    quicsrt::gateway::SessionRequest req;
     req.path      = "/wt";
     req.query     = query;
     req.authority = "localhost:4433";
@@ -261,8 +261,8 @@ bool TestOpenModeDefault()
     // name. (The full composition matrix lives in policy_test's open-mode
     // section; this pins the config-side default that no file = no
     // allowlist.)
-    const auto open = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-                                             std::make_shared<websrt::gateway::AcceptAll>());
+    const auto open = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+                                              std::make_shared<quicsrt::gateway::AcceptAll>());
     Check(open->Decide(Req("stream=anything")) == Decision::Accept, "open mode accepts any stream name");
     return true;
 }

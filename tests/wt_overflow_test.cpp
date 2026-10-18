@@ -1,7 +1,7 @@
 // Adversarial session-stream framing against the WT server: a client that
 // CONNECTs successfully, then streams a capsule header claiming an
 // enormous length without completing it - the one-client OOM vector the
-// bounded capsule parser (libwebsrt) and the gateway's kill rule close.
+// bounded capsule parser (libquicsrt) and the gateway's kill rule close.
 // Proves:
 //   1. A truncated capsule header alone does NOT kill the session (a
 //      partial tail is legitimate framing; the parser buffers it boundedly).
@@ -13,9 +13,9 @@
 //      well-formed session (real WTClient) still connects and exchanges
 //      an echoed datagram - the server is healthy after the kill.
 //
-// Level: libwebsrt's WTClient only sends protocol-shaped bytes, so the
+// Level: libquicsrt's WTClient only sends protocol-shaped bytes, so the
 // attack rides RawClient below - WTClient's proven engine recipe (deps/
-// libwebsrt src/wt/client.cpp) with one addition, a public raw write on
+// libquicsrt src/wt/client.cpp) with one addition, a public raw write on
 // the session stream. That makes the raw level practical here, so the
 // kill is proven end-to-end over real QUIC, not at a synthetic seam.
 
@@ -122,7 +122,7 @@ bool ParseHashHex(const std::string& hex, std::uint8_t out[32])
 /// protocol layer - the session stream is WRITABLE with arbitrary bytes,
 /// which is exactly what the adversarial flow needs and WTClient cannot
 /// express. Owns its EventLoop (one engine per loop).
-class RawClient : private websrt::EngineHost
+class RawClient : private quicsrt::EngineHost
 {
 public:
     RawClient(std::uint16_t port, std::string path, const std::string& cert_hash_hex)
@@ -485,9 +485,9 @@ private:
 
     static const struct lsquic_stream_if kStreamIf;
 
-    websrt::EventLoop loop_;
-    std::string       path_;
-    std::uint8_t      expected_hash_[SHA256_DIGEST_LENGTH] = {};
+    quicsrt::EventLoop loop_;
+    std::string        path_;
+    std::uint8_t       expected_hash_[SHA256_DIGEST_LENGTH] = {};
 
     lsquic_engine* engine_        = nullptr;
     lsquic_conn*   conn_          = nullptr;
@@ -525,25 +525,25 @@ const struct lsquic_stream_if RawClient::kStreamIf = {
 
 /// The gateway side: one WtServer + recorded listener events; datagrams
 /// are echoed back (wt_server_test's TestServer, trimmed).
-class TestServer : public websrt::gateway::WtServerListener
+class TestServer : public quicsrt::gateway::WtServerListener
 {
 public:
-    TestServer(websrt::EventLoop&                                    loop,
-               const websrt::gateway::CertProvider&                  cert,
-               std::shared_ptr<const websrt::gateway::SessionPolicy> policy)
+    TestServer(quicsrt::EventLoop&                                    loop,
+               const quicsrt::gateway::CertProvider&                  cert,
+               std::shared_ptr<const quicsrt::gateway::SessionPolicy> policy)
         : server_(loop, cert, std::move(policy), *this)
     {
     }
 
     [[nodiscard]] bool Bind(std::uint16_t port) { return server_.Bind("127.0.0.1", port); }
     void               Close() { server_.Close(); }
-    [[nodiscard]] bool SendDatagram(websrt::gateway::WtSessionHandle h, const void* data, std::size_t size)
+    [[nodiscard]] bool SendDatagram(quicsrt::gateway::WtSessionHandle h, const void* data, std::size_t size)
     {
         return server_.SendDatagram(h, data, size);
     }
     [[nodiscard]] int SessionsAccepted() const { return server_.SessionsAccepted(); }
 
-    [[nodiscard]] websrt::gateway::WtSessionHandle LastHandle() const
+    [[nodiscard]] quicsrt::gateway::WtSessionHandle LastHandle() const
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         return last_handle_;
@@ -558,25 +558,26 @@ public:
         const std::lock_guard<std::mutex> lock{mutex_};
         return last_close_reason_;
     }
-    [[nodiscard]] std::vector<std::pair<websrt::gateway::WtSessionHandle, std::string>> Datagrams() const
+    [[nodiscard]] std::vector<std::pair<quicsrt::gateway::WtSessionHandle, std::string>> Datagrams() const
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         return datagrams_;
     }
 
 private:
-    void OnWtSession(websrt::gateway::WtSessionHandle handle, const websrt::gateway::WtSessionStart& /*start*/) override
+    void OnWtSession(quicsrt::gateway::WtSessionHandle handle,
+                     const quicsrt::gateway::WtSessionStart& /*start*/) override
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         last_handle_ = handle;
     }
-    void OnSessionClosed(websrt::gateway::WtSessionHandle /*handle*/, const std::string& reason) override
+    void OnSessionClosed(quicsrt::gateway::WtSessionHandle /*handle*/, const std::string& reason) override
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         ++session_closed_count_;
         last_close_reason_ = reason;
     }
-    void OnDatagram(websrt::gateway::WtSessionHandle handle, const std::uint8_t* data, std::size_t size) override
+    void OnDatagram(quicsrt::gateway::WtSessionHandle handle, const std::uint8_t* data, std::size_t size) override
     {
         {
             const std::lock_guard<std::mutex> lock{mutex_};
@@ -585,18 +586,18 @@ private:
         server_.SendDatagram(handle, data, size); // echo back
     }
 
-    mutable std::mutex                                                    mutex_;
-    websrt::gateway::WtSessionHandle                                      last_handle_;
-    int                                                                   session_closed_count_ = 0;
-    std::string                                                           last_close_reason_;
-    std::vector<std::pair<websrt::gateway::WtSessionHandle, std::string>> datagrams_;
+    mutable std::mutex                                                     mutex_;
+    quicsrt::gateway::WtSessionHandle                                      last_handle_;
+    int                                                                    session_closed_count_ = 0;
+    std::string                                                            last_close_reason_;
+    std::vector<std::pair<quicsrt::gateway::WtSessionHandle, std::string>> datagrams_;
 
-    websrt::gateway::WtServer server_;
+    quicsrt::gateway::WtServer server_;
 };
 
-/// A well-formed session: libwebsrt's WTClient exactly as production
+/// A well-formed session: libquicsrt's WTClient exactly as production
 /// clients behave (wt_server_test's TestClient, trimmed).
-class WellFormedClient : public websrt::WTClientListener
+class WellFormedClient : public quicsrt::WTClientListener
 {
 public:
     WellFormedClient(std::uint16_t port, const std::string& cert_hash)
@@ -642,9 +643,9 @@ private:
     std::atomic<bool>        ready_{false};
     std::atomic<bool>        closed_{false};
 
-    websrt::EventLoop        loop_;
-    websrt::WTClient::Target target_{};
-    websrt::WTClient         client_;
+    quicsrt::EventLoop        loop_;
+    quicsrt::WTClient::Target target_{};
+    quicsrt::WTClient         client_;
 };
 
 // 127.0.0.1:4436 when free, else an ephemeral port (wt_server_test's
@@ -682,10 +683,10 @@ std::uint16_t ChoosePort()
 
 int main()
 {
-    using namespace websrt::gateway;
+    using namespace quicsrt::gateway;
     if (std::getenv("WT_TEST_LSQUIC_DEBUG") != nullptr)
     {
-        websrt::SetLsquicLogLevel("debug");
+        quicsrt::SetLsquicLogLevel("debug");
     }
 
     const CertProvider cert;
@@ -693,7 +694,7 @@ int main()
         StreamAclEntry{.name_pattern = "test", .allow_publish = false, .allow_subscribe = true, .token = std::nullopt},
     });
 
-    websrt::EventLoop server_loop;
+    quicsrt::EventLoop server_loop;
     server_loop.Start();
     TestServer          server(server_loop, cert, policy);
     const std::uint16_t port = ChoosePort();
@@ -721,7 +722,7 @@ int main()
         // >> WtCapsuleParser::kMaxPendingBytes (1 MiB).
         constexpr std::uint64_t kClaim = 64ULL << 20;
         std::uint8_t            len_varint[8];
-        const std::size_t       len_len = websrt::VarintPut(len_varint, kClaim);
+        const std::size_t       len_len = quicsrt::VarintPut(len_varint, kClaim);
 
         // First write: the type byte and the length varint's first byte -
         // an incomplete header, exactly the attacker's streaming shape.

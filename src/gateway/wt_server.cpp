@@ -51,7 +51,7 @@
 #include <optional>
 #include <utility>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -199,16 +199,16 @@ struct WtServer::ConnCtx
 // One extended-CONNECT stream: a session once established.
 struct WtServer::Session
 {
-    WtSessionHandle         handle;
-    std::uint64_t           stream_id = UINT64_MAX;
-    StreamCtx*              sc        = nullptr;
-    ConnCtx*                conn      = nullptr;
-    lsquic_stream_t*        stream    = nullptr;
-    websrt::WtCapsuleParser caps; // partial capsules + sticky CLOSE flag
-    bool                    headers_done = false;
-    bool                    established  = false;
-    bool                    terminal     = false;
-    std::string             peer_ip; // admission key ("" when unknown)
+    WtSessionHandle          handle;
+    std::uint64_t            stream_id = UINT64_MAX;
+    StreamCtx*               sc        = nullptr;
+    ConnCtx*                 conn      = nullptr;
+    lsquic_stream_t*         stream    = nullptr;
+    quicsrt::WtCapsuleParser caps; // partial capsules + sticky CLOSE flag
+    bool                     headers_done = false;
+    bool                     established  = false;
+    bool                     terminal     = false;
+    std::string              peer_ip; // admission key ("" when unknown)
 };
 
 // Per-stream state: the CONNECT/session stream or a WT client substream.
@@ -483,7 +483,7 @@ const struct lsquic_stream_if WtServerCallbacks::kStreamIf = {
     .on_hset_in                 = nullptr,
 };
 
-WtServer::WtServer(websrt::EventLoop&                   loop,
+WtServer::WtServer(quicsrt::EventLoop&                  loop,
                    const CertProvider&                  cert,
                    std::shared_ptr<const SessionPolicy> policy,
                    WtServerListener&                    listener,
@@ -1239,7 +1239,7 @@ void WtServer::HandleSubstreamRead(lsquic_stream_t* stream)
     }
 }
 
-// Capsule consumption via libwebsrt's WtCapsuleParser (RFC 9599): type +
+// Capsule consumption via libquicsrt's WtCapsuleParser (RFC 9599): type +
 // length varints, skip the payload. Two framing faults end the session and
 // are reported (false) rather than acted on so this function never frees
 // the session underneath its caller: a CLOSE capsule (0x2843) and a
@@ -1255,7 +1255,7 @@ bool WtServer::ParseCapsules(Session& session, const std::uint8_t* data, std::si
         Log("capsule framing overflow on stream %" PRIu64
             ": capsule header demanded more than %zu pending bytes; killing the session",
             session.stream_id,
-            websrt::WtCapsuleParser::kMaxPendingBytes);
+            quicsrt::WtCapsuleParser::kMaxPendingBytes);
         return false;
     }
     if (session.caps.closed() && !session.terminal)
@@ -1394,4 +1394,4 @@ void WtServer::HandleServerReadable()
     }
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

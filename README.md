@@ -5,8 +5,8 @@ CLI-parity C++ replacement of the Rust
 WebTransport server bridging browser WT datagram sessions to per-session SRT
 (skip-induction) plus stock-mode SRT/UDP ingest, with broadcaster fanout,
 cert modes, and runtime `cert-hash.js` emission. Built on
-[libwebsrt](https://github.com/maxolgi/libwebsrt), consumed as the
-`deps/libwebsrt` submodule strictly through its exported interface targets.
+[libquicsrt](https://github.com/maxolgi/libquicsrt), consumed as the
+`deps/libquicsrt` submodule strictly through its exported interface targets.
 
 **Status:** feature-complete through P4 (hot reload, HTML stats, webhooks,
 packaging). Behavioral parity vs the Rust gateway is measured row-by-row
@@ -17,7 +17,7 @@ and gate had closed.
 ## Build
 
     ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (websrt-wasm-cpp release), BoringSSL fetch+build, cmake configure
-    ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
+    ./build.sh lib       # build the tree (libquicsrt + srt fork + lsquic)
     ./build.sh gateway   # build the QuicSRT-gateway binary
     ./build.sh test      # run tests (live-oracle tests self-skip without the Rust gateway)
     ./build.sh web-dist  # refresh the embedded player (latest websrt-wasm-cpp release), then re-configure
@@ -48,8 +48,8 @@ newer releases.
 
        build/release/QuicSRT-gateway --config gw.conf
 
-3. **Publish.** Via WebTransport (`websrt://`, needs the libwebsrt-patched
-   ffmpeg — `deps/ffmpeg/ffmpeg` in a libwebsrt checkout; the golden
+3. **Publish.** Via WebTransport (`websrt://`, needs the libquicsrt-patched
+   ffmpeg — `deps/ffmpeg/ffmpeg` in a libquicsrt checkout; the golden
    acceptance commands, host adapted):
 
        ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440 \

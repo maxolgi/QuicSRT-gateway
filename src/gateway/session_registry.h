@@ -68,7 +68,7 @@
 #include "gateway/srt_initiator.h"
 #include "gateway/wt_server.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Ticker + pacing parameters (the Rust numbers - see the file comment).
@@ -152,7 +152,7 @@ public:
 class SessionRegistry final : public WtServerListener
 {
 public:
-    SessionRegistry(websrt::EventLoop&       loop,
+    SessionRegistry(quicsrt::EventLoop&      loop,
                     SessionRegistryListener& listener,
                     RegistryConfig           config = RegistryConfig{});
     ~SessionRegistry() override;
@@ -228,7 +228,7 @@ private:
     [[nodiscard]] std::shared_ptr<struct RegistryEntry>              Find(WtSessionHandle handle) const;
     [[nodiscard]] std::vector<std::shared_ptr<struct RegistryEntry>> Snapshot() const;
 
-    websrt::EventLoop&       loop_;
+    quicsrt::EventLoop&      loop_;
     SessionRegistryListener& listener_;
     RegistryConfig           config_;
     WtServer*                server_        = nullptr; // set by AttachServer, pre-use
@@ -243,8 +243,8 @@ private:
     mutable std::map<std::uint64_t, std::shared_ptr<struct RegistryEntry>> entries_;
     mutable std::mutex                                                     entries_mutex_;
 
-    websrt::EventLoop::TimerId timer_id_    = websrt::EventLoop::kInvalidTimerId;
-    std::size_t                tick_cursor_ = 0; // rotating viewer-service cursor
+    quicsrt::EventLoop::TimerId timer_id_    = quicsrt::EventLoop::kInvalidTimerId;
+    std::size_t                 tick_cursor_ = 0; // rotating viewer-service cursor
 
     // Ticker evidence.
     std::atomic<std::uint64_t> tick_count_{0};
@@ -252,6 +252,6 @@ private:
     std::atomic<std::uint64_t> tick_total_us_{0};
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_SESSION_REGISTRY_H

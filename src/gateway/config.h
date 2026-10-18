@@ -19,7 +19,7 @@
 
 #include "gateway/policy.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Parse/validation failure with context (file, table, key, line when
@@ -147,6 +147,6 @@ struct Config
 /// no [[stream]] entries yields the empty policy, which allows every name.
 [[nodiscard]] std::shared_ptr<StreamAllowlistPolicy> BuildAllowlistPolicy(const Config& config);
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_CONFIG_H

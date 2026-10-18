@@ -1,11 +1,11 @@
 // G8 concurrency gate (P3): 50 concurrent viewers + 1 publisher against one
 // live gateway core, at a realistic ~2.7 Mbps live rate for ~15 s.
 //
-// SHAPE. Every viewer is a real libwebsrt Subscriber on its OWN event loop
+// SHAPE. Every viewer is a real libquicsrt Subscriber on its OWN event loop
 // (G3: one lsquic engine per loop - the Subscriber spawns it internally),
 // started on its own thread so the 50 WT+SRT handshakes land on the accept
 // path in one burst (the Rust oracle's accept-stall defect scenario). The
-// publisher (libwebsrt Publisher) then claims the name and paces a
+// publisher (libquicsrt Publisher) then claims the name and paces a
 // deterministic 188-aligned pattern for ~15 s: 11280 bytes (10 x 1128, the
 // WebSRT payload) every 33 ms = ~2.73 Mbps, 455 ticks = 5,132,400 bytes.
 //
@@ -46,14 +46,14 @@
 #include <thread>
 #include <vector>
 
-#include "websrt/publisher.hpp"
-#include "websrt/subscriber.hpp"
+#include "quicsrt/publisher.hpp"
+#include "quicsrt/subscriber.hpp"
 
 namespace
 {
 
-using websrt::gateway::Gateway;
-using websrt::gateway::GatewayConfig;
+using quicsrt::gateway::Gateway;
+using quicsrt::gateway::GatewayConfig;
 
 constexpr int         kViewers    = 50;
 constexpr int         kMaxPayload = 1128;  // WebSRT constant: 6 x 188-byte TS packets
@@ -218,29 +218,29 @@ std::optional<std::uint64_t> RssKib()
 /// One viewer thread's evidence.
 struct ViewerResult
 {
-    websrt::StartStatus start_status = websrt::kStartInternal;
-    int                 terminal     = websrt::kReadError; // final Read result
-    std::uint64_t       bytes        = 0;
-    std::uint64_t       hash         = 0;
-    std::string         error;
+    quicsrt::StartStatus start_status = quicsrt::kStartInternal;
+    int                  terminal     = quicsrt::kReadError; // final Read result
+    std::uint64_t        bytes        = 0;
+    std::uint64_t        hash         = 0;
+    std::string          error;
 };
 
 } // namespace
 
 int main()
 {
-    const auto                          t0        = std::chrono::steady_clock::now();
-    const std::vector<std::uint8_t>     pat       = PatternBytes(kTotalBytes);
-    const std::uint64_t                 want_hash = Fnv1a(pat.data(), pat.size());
-    const websrt::gateway::CertProvider cert;
-    const std::uint16_t                 port = ChoosePort();
+    const auto                           t0        = std::chrono::steady_clock::now();
+    const std::vector<std::uint8_t>      pat       = PatternBytes(kTotalBytes);
+    const std::uint64_t                  want_hash = Fnv1a(pat.data(), pat.size());
+    const quicsrt::gateway::CertProvider cert;
+    const std::uint16_t                  port = ChoosePort();
 
     // Open mode (no allowlist): PathPolicy + AcceptAll, viewer cap 64.
-    const auto policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-                                               std::make_shared<websrt::gateway::AcceptAll>());
+    const auto policy = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+                                                std::make_shared<quicsrt::gateway::AcceptAll>());
     // 50 viewers from one loopback IP: lift the Rust-default per-IP cap
     // (the oracle's own concurrency test lifts it via the builder too).
-    websrt::gateway::GatewayConfig gw_cfg{.max_viewers = kMaxViewers};
+    quicsrt::gateway::GatewayConfig gw_cfg{.max_viewers = kMaxViewers};
     gw_cfg.wt.max_sessions_per_ip = 0;
     Gateway gateway(cert, policy, gw_cfg);
     if (!Check(gateway.Start("127.0.0.1", port), "gateway binds 127.0.0.1:4436 (or the ephemeral fallback)"))
@@ -257,13 +257,13 @@ int main()
 
     // The publisher object is constructed BEFORE the fd baseline: its
     // EventLoop (epoll + eventfd pair) is created eagerly at construction
-    // (libwebsrt Publisher::Publisher), so it belongs in the harness
+    // (libquicsrt Publisher::Publisher), so it belongs in the harness
     // baseline, not in the run's delta.
-    websrt::Publisher pub;
-    const int         fds_before = CountFds();
-    const auto        fd_base    = FdTargets();
-    const auto        rss_before = RssKib();
-    const auto        t_viewers0 = std::chrono::steady_clock::now();
+    quicsrt::Publisher pub;
+    const int          fds_before = CountFds();
+    const auto         fd_base    = FdTargets();
+    const auto         rss_before = RssKib();
+    const auto         t_viewers0 = std::chrono::steady_clock::now();
 
     // ---- 50 viewers on 50 threads, all landing at once ----
     std::vector<ViewerResult> results(kViewers);
@@ -276,18 +276,18 @@ int main()
         threads.emplace_back(
             [i, port, &hash, &results, &started, &publish_done]
             {
-                websrt::SubscriberConfig cfg;
+                quicsrt::SubscriberConfig cfg;
                 cfg.host             = "127.0.0.1";
                 cfg.port             = port;
                 cfg.stream_name      = "g8-load";
                 cfg.cert_sha256_hex  = hash;
                 cfg.tsbpd_latency_ms = 120;
 
-                websrt::Subscriber sub;
-                ViewerResult&      r = results[static_cast<std::size_t>(i)];
-                r.start_status       = sub.Start(cfg);
+                quicsrt::Subscriber sub;
+                ViewerResult&       r = results[static_cast<std::size_t>(i)];
+                r.start_status        = sub.Start(cfg);
                 ++started;
-                if (r.start_status != websrt::kStartOk)
+                if (r.start_status != quicsrt::kStartOk)
                 {
                     r.error = sub.LastError();
                     return;
@@ -307,12 +307,12 @@ int main()
                         }
                         continue;
                     }
-                    if (n == websrt::kReadTimeout && !publish_done.load())
+                    if (n == quicsrt::kReadTimeout && !publish_done.load())
                     {
                         continue; // still streaming (or waiting for the publisher)
                     }
-                    r.terminal = n < 0 ? n : websrt::kReadEnd;
-                    if (n != websrt::kReadEnd)
+                    r.terminal = n < 0 ? n : quicsrt::kReadEnd;
+                    if (n != quicsrt::kReadEnd)
                     {
                         r.error = sub.LastError();
                     }
@@ -328,14 +328,14 @@ int main()
         int ok = 0;
         for (const ViewerResult& r : results)
         {
-            ok += r.start_status == websrt::kStartOk ? 1 : 0;
+            ok += r.start_status == quicsrt::kStartOk ? 1 : 0;
         }
         Check(ok == kViewers, "no Start failure among the 50");
         if (ok != kViewers)
         {
             for (const ViewerResult& r : results)
             {
-                if (r.start_status != websrt::kStartOk)
+                if (r.start_status != quicsrt::kStartOk)
                 {
                     std::fprintf(stderr,
                                  "concurrency_test: viewer start=%d error='%s'\n",
@@ -349,12 +349,12 @@ int main()
           "the stream holds all 50 waiting viewers before the publisher joins");
 
     // ---- the publisher: ~2.7 Mbps for ~15 s ----
-    websrt::PublisherConfig pcfg;
+    quicsrt::PublisherConfig pcfg;
     pcfg.host            = "127.0.0.1";
     pcfg.port            = port;
     pcfg.stream_name     = "g8-load";
     pcfg.cert_sha256_hex = hash;
-    if (!Check(pub.Start(pcfg) == websrt::kPublishOk, "publisher accepted on the 50-viewer stream"))
+    if (!Check(pub.Start(pcfg) == quicsrt::kPublishOk, "publisher accepted on the 50-viewer stream"))
     {
         publish_done = true;
         for (std::thread& t : threads)
@@ -429,9 +429,9 @@ int main()
         min_bytes = std::min(min_bytes, r.bytes);
         max_bytes = std::max(max_bytes, r.bytes);
         sum_bytes += r.bytes;
-        clean_eof += r.terminal == websrt::kReadEnd ? 1 : 0;
+        clean_eof += r.terminal == quicsrt::kReadEnd ? 1 : 0;
         hash_ok += r.bytes == published && r.hash == want_hash ? 1 : 0;
-        if (r.terminal != websrt::kReadEnd)
+        if (r.terminal != quicsrt::kReadEnd)
         {
             std::fprintf(stderr,
                          "concurrency_test: viewer terminal=%d bytes=%llu error='%s'\n",
@@ -481,7 +481,7 @@ int main()
     const auto rss_after = RssKib();
     // Sole tolerated leftover: ONE anon_inode:[eventfd] - the srt fork's
     // GC-pending virtual-transport wake channel of the last-stopped CLIENT
-    // session (libwebsrt/srt-fork side, not the gateway). Anything else -
+    // session (libquicsrt/srt-fork side, not the gateway). Anything else -
     // sockets, epoll instances, more fds - is a real leak and fails.
     bool extra_ok = true;
     if (fds_after > fds_before)

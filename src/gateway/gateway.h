@@ -19,7 +19,7 @@
 //   - ADMISSION (WtServer::AdmissionCheck, pre-200, loop thread). Consults
 //     the stream registry's live occupancy and viewer cap so a refused
 //     caller sees the status on its CONNECT response - the Rust oracle's
-//     pre-accept check (gateway.rs:343-355) and the contract libwebsrt's
+//     pre-accept check (gateway.rs:343-355) and the contract libquicsrt's
 //     Publisher::Start already asserts (HTTP 403 -> kPublishRejected).
 //     It only CHECKS: two handshakes can interleave between the admission
 //     consult and the claim below.
@@ -60,7 +60,7 @@
 #include "gateway/webhooks.h"
 #include "gateway/wt_server.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 struct GatewayConfig
@@ -185,7 +185,7 @@ public:
     /// The gateway's event loop - the thread every loop-thread-only API
     /// above belongs to. An off-loop source (the SRT/UDP ingest) Posts its
     /// media here to reach PublishMedia.
-    websrt::EventLoop& Loop() { return loop_; }
+    quicsrt::EventLoop& Loop() { return loop_; }
     /// Longest registry tick so far, microseconds (the Rust tick monitor).
     [[nodiscard]] std::uint64_t TickMaxUs() const { return registry_.TickMaxUs(); }
     /// Mean registry tick over the process lifetime, microseconds
@@ -222,16 +222,16 @@ private:
         std::string remote; ///< the session's "ip:port" (webhook payloads)
     };
 
-    websrt::EventLoop loop_;
-    WebhookDispatcher webhooks_; ///< declared early: destroyed LAST of the state - teardown callbacks may still notify
-    StreamRegistry    streams_;
+    quicsrt::EventLoop loop_;
+    WebhookDispatcher  webhooks_; ///< declared early: destroyed LAST of the state - teardown callbacks may still notify
+    StreamRegistry     streams_;
     std::shared_ptr<const SessionPolicy>
                     policy_; ///< consulted on new CONNECTs; swapped by ApplyRuntimeConfig (loop thread)
     SessionRegistry registry_;
     WtServer        server_;
     std::map<std::uint64_t, SessionRec> sessions_;
     std::vector<WtSessionHandle>        pending_prime_; // awaiting drop_backlog
-    websrt::EventLoop::TimerId          housekeeping_timer_ = websrt::EventLoop::kInvalidTimerId;
+    quicsrt::EventLoop::TimerId         housekeeping_timer_ = quicsrt::EventLoop::kInvalidTimerId;
     std::size_t                         fanout_budget_      = 256;
     std::uint64_t                       next_ingest_handle_ = 1;
     std::uint64_t                       media_unclaimed_    = 0;
@@ -239,6 +239,6 @@ private:
     bool                                shut_down_          = false;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_GATEWAY_H

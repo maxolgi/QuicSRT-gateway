@@ -1,10 +1,10 @@
 // G6 tests: the SRT/UDP ingest, end to end against the REAL gateway core.
 //
 //   1. PUBLISH -> VIEWER, byte-for-byte. A stock-libsrt caller (plain
-//      srt_create_socket/srt_connect/srt_sendmsg - no libwebsrt session
+//      srt_create_socket/srt_connect/srt_sendmsg - no libquicsrt session
 //      anywhere; the ingest is the only stock socket in the gateway) dials
 //      the ingest with streamid=NAME and sends the WebSRT fixture; a
-//      libwebsrt Subscriber attached to the same stream gets every byte
+//      libquicsrt Subscriber attached to the same stream gets every byte
 //      back, in order, unmodified. THIS IS THE P3 INGEST GATE.
 //   2. EMPTY STREAMID rejected - a publisher with no streamid never gets a
 //      stream and never delivers a byte.
@@ -59,14 +59,14 @@
 #include <thread>
 #include <vector>
 
-#include "websrt/subscriber.hpp"
+#include "quicsrt/subscriber.hpp"
 
 namespace
 {
 
-using websrt::gateway::Gateway;
-using websrt::gateway::GatewayConfig;
-using websrt::gateway::StreamStats;
+using quicsrt::gateway::Gateway;
+using quicsrt::gateway::GatewayConfig;
+using quicsrt::gateway::StreamStats;
 
 // Vendored fixture (tests/fixtures/test.ts); override with
 // WEBSRT_TEST_FIXTURE if needed.
@@ -120,15 +120,15 @@ StreamStats StreamNamed(const std::vector<StreamStats>& snapshot, const std::str
 /// The allowlist consult src/main.cpp wires into the ingest's publish_gate:
 /// the SRT streamid reuses the WT publish decision verbatim, on a synthetic
 /// ?publish= request.
-bool PublishAllowed(const websrt::gateway::SessionPolicy& policy, const std::string& name)
+bool PublishAllowed(const quicsrt::gateway::SessionPolicy& policy, const std::string& name)
 {
     // Named string: SessionRequest::query is a string_view, so a temporary
     // spliced straight into it would dangle before Decide reads it.
-    const std::string               query = "publish=" + websrt::gateway::PercentEncodeQueryValue(name);
-    websrt::gateway::SessionRequest req;
+    const std::string                query = "publish=" + quicsrt::gateway::PercentEncodeQueryValue(name);
+    quicsrt::gateway::SessionRequest req;
     req.path  = "/wt";
     req.query = query;
-    return policy.Decide(req) == websrt::gateway::Decision::Accept;
+    return policy.Decide(req) == quicsrt::gateway::Decision::Accept;
 }
 
 /// `preferred` when free, else an ephemeral port (probe-bind :0, read the
@@ -264,9 +264,9 @@ struct FakeSink
     }
 };
 
-websrt::gateway::SrtIngest::Sink MakeFakeSink(const std::shared_ptr<FakeSink>& state)
+quicsrt::gateway::SrtIngest::Sink MakeFakeSink(const std::shared_ptr<FakeSink>& state)
 {
-    websrt::gateway::SrtIngest::Sink sink;
+    quicsrt::gateway::SrtIngest::Sink sink;
     sink.publish_gate = [](const std::string&) { return true; };
     sink.claim        = [state](const std::string& stream)
     {
@@ -331,9 +331,9 @@ std::vector<std::uint8_t> LoadPayload()
 
 int main()
 {
-    const auto                          t_total0 = std::chrono::steady_clock::now();
-    const std::vector<std::uint8_t>     payload  = LoadPayload();
-    const websrt::gateway::CertProvider cert;
+    const auto                           t_total0 = std::chrono::steady_clock::now();
+    const std::vector<std::uint8_t>      payload  = LoadPayload();
+    const quicsrt::gateway::CertProvider cert;
 
     const std::uint16_t wt_port     = ChoosePort(4436);
     const std::uint16_t ingest_port = ChoosePort(9100);
@@ -354,19 +354,19 @@ int main()
                                     "[[stream]]\n"
                                     "name = \"g6-firstwins\"\n";
 
-    websrt::gateway::Config config;
+    quicsrt::gateway::Config config;
     try
     {
-        config = websrt::gateway::ParseConfig(config_text, "srt_ingest_test");
+        config = quicsrt::gateway::ParseConfig(config_text, "srt_ingest_test");
     }
-    catch (const websrt::gateway::ConfigError& e)
+    catch (const quicsrt::gateway::ConfigError& e)
     {
         std::fprintf(stderr, "srt_ingest_test: config error: %s\n", e.what());
         return 1;
     }
 
-    const auto policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-                                               websrt::gateway::BuildAllowlistPolicy(config));
+    const auto policy = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+                                                quicsrt::gateway::BuildAllowlistPolicy(config));
     Gateway    gateway(cert,
                     policy,
                     GatewayConfig{.max_viewers        = config.server.max_viewers,
@@ -380,28 +380,28 @@ int main()
     // The real ingest, wired exactly as src/main.cpp wires it - including
     // the P4.3 webhook sink, whose events this test records (the recorder
     // is the "dispatcher" here: enqueue-only, on the ingest thread).
-    websrt::gateway::SrtIngestConfig ingest_config;
+    quicsrt::gateway::SrtIngestConfig ingest_config;
     ingest_config.bind       = "127.0.0.1";
     ingest_config.port       = ingest_port;
     ingest_config.latency_ms = config.server.latency_ms;
 
-    std::mutex                                 wh_mutex;
-    std::vector<websrt::gateway::WebhookEvent> wh_events;
+    std::mutex                                  wh_mutex;
+    std::vector<quicsrt::gateway::WebhookEvent> wh_events;
 
-    websrt::gateway::SrtIngest::Sink sink;
+    quicsrt::gateway::SrtIngest::Sink sink;
     sink.publish_gate = [&policy](const std::string& name) { return PublishAllowed(*policy, name); };
     sink.claim        = [&gateway](const std::string& name) { return gateway.ClaimIngestPublish(name); };
     sink.publish      = [&gateway](const std::string& name, const void* data, std::size_t len)
     { gateway.PublishMedia(name, data, len); };
     sink.release = [&gateway](const std::string& name) { gateway.ReleaseIngestPublish(name); };
-    sink.webhook = [&wh_mutex, &wh_events](const websrt::gateway::WebhookEvent& event)
+    sink.webhook = [&wh_mutex, &wh_events](const quicsrt::gateway::WebhookEvent& event)
     {
         const std::lock_guard<std::mutex> lock(wh_mutex);
         wh_events.push_back(event);
     };
 
-    websrt::gateway::SrtIngest ingest(std::move(ingest_config), std::move(sink), gateway.Loop());
-    std::string                ingest_error;
+    quicsrt::gateway::SrtIngest ingest(std::move(ingest_config), std::move(sink), gateway.Loop());
+    std::string                 ingest_error;
     if (!Check(ingest.Start(&ingest_error), "ingest binds its SRT/UDP port"))
     {
         std::fprintf(stderr, "srt_ingest_test: %s\n", ingest_error.c_str());
@@ -415,7 +415,7 @@ int main()
                  cap_port,
                  config.streams.size());
 
-    websrt::SubscriberConfig sub_cfg;
+    quicsrt::SubscriberConfig sub_cfg;
     sub_cfg.host             = "127.0.0.1";
     sub_cfg.port             = wt_port;
     sub_cfg.cert_sha256_hex  = hash;
@@ -424,8 +424,8 @@ int main()
     // ---- 1. PUBLISH -> VIEWER, byte-for-byte ----
     {
         sub_cfg.stream_name = "g6-happy";
-        websrt::Subscriber sub;
-        Check(sub.Start(sub_cfg) == websrt::kStartOk, "1: subscriber attaches before the publisher");
+        quicsrt::Subscriber sub;
+        Check(sub.Start(sub_cfg) == quicsrt::kStartOk, "1: subscriber attaches before the publisher");
 
         SrtCaller   pub;
         std::string err;
@@ -462,7 +462,7 @@ int main()
             {
                 got.insert(got.end(), buf, buf + n);
             }
-            else if (n == websrt::kReadEnd || n == websrt::kReadClosed)
+            else if (n == quicsrt::kReadEnd || n == quicsrt::kReadClosed)
             {
                 break;
             }
@@ -476,7 +476,7 @@ int main()
                      payload.size(),
                      identical ? 1 : 0);
 
-        const websrt::gateway::SrtIngestStats st = ingest.Stats();
+        const quicsrt::gateway::SrtIngestStats st = ingest.Stats();
         std::fprintf(stderr,
                      "srt_ingest_test: 1: ingest accepted=%llu rejected=%llu msg_in=%llu bytes_in=%llu "
                      "chunks_out=%llu bytes_out=%llu\n",
@@ -499,7 +499,7 @@ int main()
         const auto has_event = [&wh_mutex, &wh_events](const char* event, const char* stream)
         {
             const std::lock_guard<std::mutex> lock(wh_mutex);
-            for (const websrt::gateway::WebhookEvent& ev : wh_events)
+            for (const quicsrt::gateway::WebhookEvent& ev : wh_events)
             {
                 if (ev.event == event && ev.stream == stream)
                 {
@@ -513,7 +513,7 @@ int main()
         Check(WaitUntil([&] { return has_event("publisher_disconnect", "g6-happy"); }, 8000),
               "wh: publisher_disconnect fired when it hung up");
         const std::lock_guard<std::mutex> lock(wh_mutex);
-        for (const websrt::gateway::WebhookEvent& ev : wh_events)
+        for (const quicsrt::gateway::WebhookEvent& ev : wh_events)
         {
             if (ev.stream == "g6-happy")
             {
@@ -526,10 +526,10 @@ int main()
 
     // ---- 2. empty streamid rejected ----
     {
-        const websrt::gateway::SrtIngestStats before = ingest.Stats();
-        SrtCaller                             anon;
-        std::string                           err;
-        const bool                            connected = anon.Connect(ingest_port, "", &err);
+        const quicsrt::gateway::SrtIngestStats before = ingest.Stats();
+        SrtCaller                              anon;
+        std::string                            err;
+        const bool                             connected = anon.Connect(ingest_port, "", &err);
         // Whether the refusal lands during the handshake or immediately
         // after it, the caller must never end up with a usable publisher.
         bool dead = !connected;
@@ -542,7 +542,7 @@ int main()
         Check(WaitUntil([&ingest, before] { return ingest.Stats().rejected_no_streamid > before.rejected_no_streamid; },
                         5000),
               "2: the ingest counted a no-streamid rejection");
-        const websrt::gateway::SrtIngestStats st = ingest.Stats();
+        const quicsrt::gateway::SrtIngestStats st = ingest.Stats();
         Check(st.bytes_in == before.bytes_in, "2: not a single byte came through the anonymous publisher");
         std::fprintf(stderr,
                      "srt_ingest_test: 2: connect=%s rejected_no_streamid=%llu bytes_in=%llu\n",
@@ -595,9 +595,9 @@ int main()
 
     // ---- 4. allowlist: an unconfigured streamid is refused at accept ----
     {
-        const websrt::gateway::SrtIngestStats before = ingest.Stats();
-        SrtCaller                             denied;
-        std::string                           err;
+        const quicsrt::gateway::SrtIngestStats before = ingest.Stats();
+        SrtCaller                              denied;
+        std::string                            err;
         denied.Connect(ingest_port, "g6-denied", &err);
         bool refused = !denied.Connected();
         if (denied.Connected())
@@ -619,15 +619,15 @@ int main()
 
     // ---- 5. chunking: one 64 KB sendmsg -> <= 1128-byte 188-aligned messages ----
     {
-        websrt::EventLoop fake_loop;
+        quicsrt::EventLoop fake_loop;
         fake_loop.Start();
-        auto                             fake = std::make_shared<FakeSink>();
-        websrt::gateway::SrtIngestConfig cfg;
+        auto                              fake = std::make_shared<FakeSink>();
+        quicsrt::gateway::SrtIngestConfig cfg;
         cfg.bind       = "127.0.0.1";
         cfg.port       = fake_port;
         cfg.latency_ms = 120;
-        websrt::gateway::SrtIngest fake_ingest(cfg, MakeFakeSink(fake), fake_loop);
-        std::string                fake_error;
+        quicsrt::gateway::SrtIngest fake_ingest(cfg, MakeFakeSink(fake), fake_loop);
+        std::string                 fake_error;
         if (!Check(fake_ingest.Start(&fake_error), "5: the fake-sink ingest binds"))
         {
             std::fprintf(stderr, "srt_ingest_test: %s\n", fake_error.c_str());
@@ -726,16 +726,16 @@ int main()
 
     // ---- 6. session cap: the third concurrent publisher is refused ----
     {
-        websrt::EventLoop cap_loop;
+        quicsrt::EventLoop cap_loop;
         cap_loop.Start();
-        auto                             fake = std::make_shared<FakeSink>();
-        websrt::gateway::SrtIngestConfig cfg;
+        auto                              fake = std::make_shared<FakeSink>();
+        quicsrt::gateway::SrtIngestConfig cfg;
         cfg.bind         = "127.0.0.1";
         cfg.port         = cap_port;
         cfg.latency_ms   = 120;
         cfg.max_sessions = 2;
-        websrt::gateway::SrtIngest cap_ingest(cfg, MakeFakeSink(fake), cap_loop);
-        std::string                cap_error;
+        quicsrt::gateway::SrtIngest cap_ingest(cfg, MakeFakeSink(fake), cap_loop);
+        std::string                 cap_error;
         if (!Check(cap_ingest.Start(&cap_error), "6: the capped ingest binds"))
         {
             std::fprintf(stderr, "srt_ingest_test: %s\n", cap_error.c_str());

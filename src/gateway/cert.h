@@ -35,7 +35,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Cert generation/loading failure with context (mode, path, reason).
@@ -124,6 +124,6 @@ private:
 /// and the provider keeps owning the certificate and key.
 [[nodiscard]] SSL_CTX* NewServerSslCtx(const CertProvider& cert);
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_CERT_H

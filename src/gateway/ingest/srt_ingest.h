@@ -33,7 +33,7 @@
 // ingester hands srt's messages straight to the broadcaster, but this
 // gateway's viewers negotiate <= 1128-byte SRT payloads and DROP anything
 // larger (Broadcaster::Pump, never truncate, never retry). So the ingest
-// frames the received byte stream itself with libwebsrt's TsChunker rules
+// frames the received byte stream itself with libquicsrt's TsChunker rules
 // (publisher.h:106-141): every message is a whole number of 188-byte TS
 // packets and at most `payload_size` long, with a sub-188 remainder carried
 // over between messages. Byte order is preserved exactly.
@@ -57,7 +57,7 @@
 // THE PROCESS-GLOBAL srt RUNTIME. libsrt's startup is refcounted
 // (srt_startup/srt_cleanup) and its teardown is GLOBAL: when the last holder
 // calls srt_cleanup() the garbage collector stops and force-breaks EVERY
-// socket in the process. libwebsrt's Subscriber/Publisher each hold a
+// socket in the process. libquicsrt's Subscriber/Publisher each hold a
 // reference, so in the gateway the ingest MUST hold one too - otherwise the
 // end of any browser session would yank the ingest listener out from under
 // the next OBS connection. SetupListener takes the reference, CloseAllSockets
@@ -85,7 +85,7 @@
 #include "srt.h"
 #include "srt_session/publisher.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Receiver buffer depth in SRT PACKETS, sized from the TSBPD latency. The
@@ -186,7 +186,7 @@ public:
 
     /// `sink` must outlive the ingest; `loop` must outlive it too and must be
     /// running before Start(). Not started yet - see Start().
-    SrtIngest(SrtIngestConfig config, Sink sink, websrt::EventLoop& loop);
+    SrtIngest(SrtIngestConfig config, Sink sink, quicsrt::EventLoop& loop);
     ~SrtIngest();
 
     SrtIngest(const SrtIngest&)            = delete;
@@ -195,7 +195,7 @@ public:
     /// Creates the listener socket, binds it and starts the ingest thread.
     /// Returns false with *error set (the object stays inert) on a bind or
     /// socket-option failure, or when a passphrase was configured but the
-    /// linked srt build has no encryption support - libwebsrt builds its srt
+    /// linked srt build has no encryption support - libquicsrt builds its srt
     /// fork with ENABLE_ENCRYPTION=OFF ("no built-in crypto: WebTransport's
     /// TLS provides it"), where a non-empty SRTO_PASSPHRASE is rejected by
     /// the library itself. We surface that as a startup failure rather than
@@ -219,7 +219,7 @@ private:
         std::string         remote;
         std::uint64_t       session_id = 0; ///< webhook identity (ingest-minted, nothing else consumes it)
         std::vector<char>   recv_buf;
-        websrt::TsChunker   chunker; ///< 188-aligned framing (libwebsrt's TsChunker rules)
+        quicsrt::TsChunker  chunker; ///< 188-aligned framing (libquicsrt's TsChunker rules)
         std::uint64_t       bytes_in    = 0;
         std::uint64_t       messages_in = 0;
         std::uint64_t       chunks_out  = 0;
@@ -245,9 +245,9 @@ private:
     [[nodiscard]] bool ClaimOnLoop(const std::string& stream);
     void               ReleaseOnLoop(const std::string& stream);
 
-    SrtIngestConfig    config_;
-    Sink               sink_;
-    websrt::EventLoop& loop_;
+    SrtIngestConfig     config_;
+    Sink                sink_;
+    quicsrt::EventLoop& loop_;
 
     SRTSOCKET                 listener_ = SRT_INVALID_SOCK;
     int                       epoll_    = SRT_ERROR;
@@ -285,6 +285,6 @@ private:
     std::map<std::string, TsCcStats> stream_cc_snapshot_; ///< mirror of stream_cc_ (Stats())
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_INGEST_SRT_INGEST_H

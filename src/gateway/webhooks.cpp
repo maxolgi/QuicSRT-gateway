@@ -15,7 +15,7 @@
 #include <cstdio>
 #include <utility>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -289,4 +289,4 @@ bool WebhookDispatcher::PostOnce(const WebhookSettings& settings, const std::str
     return ok;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

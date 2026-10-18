@@ -80,7 +80,7 @@
 
 #include "gateway/cert.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 class Gateway;
@@ -224,6 +224,6 @@ private:
     std::vector<Worker> workers_;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_WEB_SERVER_H

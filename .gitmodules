@@ -1,6 +1,6 @@
-[submodule "deps/libwebsrt"]
-	path = deps/libwebsrt
-	url = https://github.com/maxolgi/libwebsrt.git
+[submodule "deps/libquicsrt"]
+	path = deps/libquicsrt
+	url = https://github.com/maxolgi/libquicsrt.git
 [submodule "deps/tomlplusplus"]
 	path = deps/tomlplusplus
 	url = https://github.com/marzer/tomlplusplus.git

@@ -1,5 +1,5 @@
 // G4 loopback: the per-session SRT initiator + session registry ticker,
-// end-to-end over WT loopback against libwebsrt's own Subscriber (viewer
+// end-to-end over WT loopback against libquicsrt's own Subscriber (viewer
 // direction) and Publisher (publisher direction) - full C++ on both sides,
 // no Rust gateway. Gate criteria:
 //   1. Viewer: session accepted -> initiator connects (caller,
@@ -26,7 +26,7 @@
 //      teardown sees monotonic counters and sane values (the read side
 //      of the registry's threading contract).
 //
-// Client side: the public websrt::Subscriber and websrt::Publisher each
+// Client side: the public quicsrt::Subscriber and quicsrt::Publisher each
 // own their EventLoop internally (G3: one engine per loop), so the two
 // client engines run on two separate loops. Ports: 127.0.0.1:4435 with
 // an ephemeral fallback; 4433/9000 (the Rust gateway) are never touched.
@@ -54,13 +54,13 @@
 #include <thread>
 #include <vector>
 
-#include "websrt/publisher.hpp"
-#include "websrt/subscriber.hpp"
+#include "quicsrt/publisher.hpp"
+#include "quicsrt/subscriber.hpp"
 
 namespace
 {
 
-using websrt::gateway::WtSessionHandle;
+using quicsrt::gateway::WtSessionHandle;
 
 constexpr int         kPayloadSize = 1128; // WebSRT constant: 6 x 188-byte TS packets
 constexpr int         kViewerMsgs  = 1000; // > 4 x the 256/tick credit budget
@@ -142,7 +142,7 @@ int CountSocketFds()
 
 /// Registry listener: records starts/ends and collects publisher media
 /// (the G5 ring stand-in). Callbacks fire on the server loop thread.
-class RigListener final : public websrt::gateway::SessionRegistryListener
+class RigListener final : public quicsrt::gateway::SessionRegistryListener
 {
 public:
     void OnMedia(const std::string& stream_name, const std::uint8_t* data, std::size_t len) override
@@ -151,7 +151,7 @@ public:
         media_[stream_name].insert(media_[stream_name].end(), data, data + len);
     }
 
-    void OnSessionStart(WtSessionHandle handle, const websrt::gateway::WtSessionStart& start) override
+    void OnSessionStart(WtSessionHandle handle, const quicsrt::gateway::WtSessionStart& start) override
     {
         const std::lock_guard<std::mutex> lock{mutex_};
         last_handle_     = handle;
@@ -202,7 +202,7 @@ private:
     mutable std::mutex                               mutex_;
     std::map<std::string, std::vector<std::uint8_t>> media_;
     WtSessionHandle                                  last_handle_;
-    websrt::gateway::WtSessionStart                  last_start_;
+    quicsrt::gateway::WtSessionStart                 last_start_;
     std::string                                      last_end_reason_;
     int                                              ended_count_ = 0;
     std::atomic<bool>                                session_started_{false};
@@ -218,7 +218,7 @@ struct ScrapeMonotonic
     std::uint64_t last_overflow_drops = 0;
     int           violations          = 0;
 
-    void Observe(const websrt::gateway::SessionInfo& info)
+    void Observe(const quicsrt::gateway::SessionInfo& info)
     {
         // Monotonic counters (never reset while the session lives) and
         // sane values: backlog bounded by the 4096 drop-oldest cap,
@@ -270,13 +270,13 @@ std::uint16_t ChoosePort()
 
 int main()
 {
-    using namespace websrt::gateway;
-    using websrt::gateway::SessionInfo;
+    using namespace quicsrt::gateway;
+    using quicsrt::gateway::SessionInfo;
 
     const auto         t_total0 = std::chrono::steady_clock::now();
     const CertProvider cert;
 
-    websrt::EventLoop server_loop;
+    quicsrt::EventLoop server_loop;
     server_loop.Start();
 
     RigListener     rig_listener;
@@ -300,16 +300,16 @@ int main()
     // ---- 1+2+4+5. Viewer direction, RTT seed, drop_backlog, credit -----
     WtSessionHandle viewer_handle;
     {
-        websrt::SubscriberConfig cfg;
+        quicsrt::SubscriberConfig cfg;
         cfg.host             = "127.0.0.1";
         cfg.port             = port;
         cfg.stream_name      = "g4view";
         cfg.cert_sha256_hex  = cert.Sha256Hex();
         cfg.tsbpd_latency_ms = 120;
 
-        websrt::Subscriber sub;
-        const auto         connect_t0 = std::chrono::steady_clock::now();
-        Check(sub.Start(cfg) == websrt::kStartOk, "viewer: Subscriber Start returns connected (initiator handshake)");
+        quicsrt::Subscriber sub;
+        const auto          connect_t0 = std::chrono::steady_clock::now();
+        Check(sub.Start(cfg) == quicsrt::kStartOk, "viewer: Subscriber Start returns connected (initiator handshake)");
         const double connect_ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - connect_t0).count();
         Check(rig_listener.WaitForStart(2000), "viewer: OnSessionStart fired");
@@ -400,7 +400,7 @@ int main()
                 ++i;
                 continue;
             }
-            if (n == websrt::kReadEnd || n == websrt::kReadClosed)
+            if (n == quicsrt::kReadEnd || n == quicsrt::kReadClosed)
             {
                 Check(false, "viewer: session ended before all messages arrived");
                 break;
@@ -448,14 +448,14 @@ int main()
     // ---- 3. Publisher direction ----------------------------------------
     WtSessionHandle publisher_handle;
     {
-        websrt::PublisherConfig cfg;
+        quicsrt::PublisherConfig cfg;
         cfg.host            = "127.0.0.1";
         cfg.port            = port;
         cfg.stream_name     = "g4pub";
         cfg.cert_sha256_hex = cert.Sha256Hex();
 
-        websrt::Publisher pub;
-        Check(pub.Start(cfg) == websrt::kPublishOk, "publisher: Publisher Start returns connected");
+        quicsrt::Publisher pub;
+        Check(pub.Start(cfg) == quicsrt::kPublishOk, "publisher: Publisher Start returns connected");
         Check(rig_listener.WaitForStart(2000), "publisher: OnSessionStart fired");
         publisher_handle = rig_listener.LastHandle();
         Check(WaitUntil([&registry, publisher_handle] { return registry.IsConnected(publisher_handle); }, 2000),
@@ -514,8 +514,8 @@ int main()
         // not unACKed data (retx/nak counters stay zero).
         const bool pub_end_ok = pub.End(15000);
         {
-            websrt::PublisherStats st;
-            if (pub.Stats(&st) == websrt::kStatsOk)
+            quicsrt::PublisherStats st;
+            if (pub.Stats(&st) == quicsrt::kStatsOk)
             {
                 std::fprintf(stderr,
                              "srt_initiator_test: pub stats: buffered=%d bytes_buffered=%d sent=%lld retx=%lld "
@@ -542,14 +542,14 @@ int main()
         const int fds_clean = CountSocketFds();
         Check(fds_clean >= 0, "fds: countable");
 
-        websrt::SubscriberConfig cfg;
+        quicsrt::SubscriberConfig cfg;
         cfg.host            = "127.0.0.1";
         cfg.port            = port;
         cfg.stream_name     = "g4view2";
         cfg.cert_sha256_hex = cert.Sha256Hex();
 
-        websrt::Subscriber sub2;
-        Check(sub2.Start(cfg) == websrt::kStartOk, "second: Subscriber Start after the first session closed");
+        quicsrt::Subscriber sub2;
+        Check(sub2.Start(cfg) == quicsrt::kStartOk, "second: Subscriber Start after the first session closed");
         Check(rig_listener.WaitForStart(2000), "second: OnSessionStart fired");
         const WtSessionHandle second_handle = rig_listener.LastHandle();
         Check(WaitUntil([&registry, second_handle] { return registry.PopBacklogDrop(second_handle); }, 2000),

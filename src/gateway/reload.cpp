@@ -12,7 +12,7 @@
 
 #include "wt/client.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -101,7 +101,7 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
 void SetLogLevelOnLoop(Gateway& gateway, const std::string& level)
 {
     auto&      loop = gateway.Loop();
-    const auto set  = [&level] { websrt::SetLsquicLogLevel(level.c_str()); };
+    const auto set  = [&level] { quicsrt::SetLsquicLogLevel(level.c_str()); };
     if (loop.OnLoopThread())
     {
         set();
@@ -183,4 +183,4 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
     return next;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

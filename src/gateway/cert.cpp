@@ -17,7 +17,7 @@
 #include <openssl/pem.h>
 #include <openssl/sha2.h>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -370,4 +370,4 @@ SSL_CTX* NewServerSslCtx(const CertProvider& cert)
     return ctx;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

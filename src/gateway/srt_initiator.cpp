@@ -5,19 +5,19 @@
 #include <cstring>
 #include <utility>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
 {
 
 // SRTO_SNDBUF/SRTO_RCVBUF are in BYTES; srt converts with MSS - UDP header
-// (1500 - 28 = 1472) - see the M0 loopback harness and libwebsrt's
+// (1500 - 28 = 1472) - see the M0 loopback harness and libquicsrt's
 // sessions (the bytes-vs-packets trap).
 constexpr int kBytesPerPacket = 1500 - 28;
 
 // The fake peer network the per-session labels live in (M0's harness
-// addressing; the libwebsrt listener side binds 10.213.255.254 as its
+// addressing; the libquicsrt listener side binds 10.213.255.254 as its
 // label). Distinct ports keep concurrent session pairs apart.
 constexpr const char*   kPeerLabelIp       = "10.213.255.254";
 constexpr std::uint16_t kPeerLabelPortBase = 20000;
@@ -40,7 +40,7 @@ SrtInitiator::SrtInitiator(WtServer&                 server,
 {
     // SRTO_INITIAL_RTT bounds are 1..30000 ms; 0 = disabled (unmeasured
     // RTT leaves srt's default estimator). A measured-but-sub-millisecond
-    // RTT (loopback) clamps up to 1 ms - the same clamp as libwebsrt's
+    // RTT (loopback) clamps up to 1 ms - the same clamp as libquicsrt's
     // listener sessions.
     const long long rtt_us = initial_rtt.count();
     if (rtt_us > 0)
@@ -244,7 +244,7 @@ SRT_SOCKSTATUS SrtInitiator::ConnectionState()
     }
 
     // First connected observation: read back the negotiated payload cap
-    // via libwebsrt's NegotiatePayload (the same readback the publisher
+    // via libquicsrt's NegotiatePayload (the same readback the publisher
     // session performs; srt_session/negotiate.h carries the full MSS - 44
     // / Rust MTU-field-quirk story). The value is stored before the flag
     // (release/acquire), so an observed set flag implies the negotiated
@@ -343,4 +343,4 @@ int SrtInitiator::VtSend(const char* data, int len)
     return server_.SendDatagram(handle_, data, static_cast<std::size_t>(len)) ? len : -1;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

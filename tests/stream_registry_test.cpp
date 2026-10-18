@@ -26,11 +26,11 @@
 namespace
 {
 
-using websrt::gateway::Broadcaster;
-using websrt::gateway::Decision;
-using websrt::gateway::StreamRegistry;
-using websrt::gateway::StreamRegistryConfig;
-using websrt::gateway::WtSessionHandle;
+using quicsrt::gateway::Broadcaster;
+using quicsrt::gateway::Decision;
+using quicsrt::gateway::StreamRegistry;
+using quicsrt::gateway::StreamRegistryConfig;
+using quicsrt::gateway::WtSessionHandle;
 
 bool g_ok = true;
 

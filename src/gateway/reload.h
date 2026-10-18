@@ -17,7 +17,7 @@
 #include "gateway/config.h"
 #include "gateway/gateway.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Re-parse `path` and hot-apply what a running gateway can take at
@@ -36,6 +36,6 @@ namespace websrt::gateway
 [[nodiscard]] std::optional<Config>
 ReloadConfig(const std::string& path, Gateway& gateway, const Config& current, std::string* error);
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_RELOAD_H

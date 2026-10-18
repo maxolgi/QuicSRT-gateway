@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// One embedded file: web-root-relative POSIX path ("/index.html") and
@@ -26,6 +26,6 @@ struct EmbeddedAsset
 /// Every embedded player file, path-sorted ascending. Never empty.
 const std::vector<EmbeddedAsset>& EmbeddedPlayerFiles();
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_EMBEDDED_PLAYER_H

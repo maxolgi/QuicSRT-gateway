@@ -51,7 +51,7 @@
 
 #include "gateway/wt_server.h"
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 /// Per-stream broadcaster knobs.
@@ -315,6 +315,6 @@ private:
     std::uint64_t oversize_drops_ = 0;
 };
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway
 
 #endif // WEBSRT_GATEWAY_BROADCASTER_H

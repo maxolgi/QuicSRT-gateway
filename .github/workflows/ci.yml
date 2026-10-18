@@ -30,7 +30,7 @@ jobs:
       - name: Install prerequisites
         # Derived from build.sh + CMakePresets.json: ninja (preset
         # generator), go + nasm (BoringSSL fetch/build), zlib1g-dev
-        # (libwebsrt's find_package(ZLIB)). gcc 13 and cmake >= 3.24
+        # (libquicsrt's find_package(ZLIB)). gcc 13 and cmake >= 3.24
         # ship with ubuntu-24.04.
         run: |
           sudo apt-get update
@@ -43,7 +43,7 @@ jobs:
           ./build.sh gateway
       - name: Test
         # Live-oracle tests (wt_echo, subscriber_test, publisher_test,
-        # c_api_test from deps/libwebsrt) self-skip via SKIP_RETURN_CODE
+        # c_api_test from deps/libquicsrt) self-skip via SKIP_RETURN_CODE
         # 77 on runners without the Rust gateway. The tail lands in the
         # step summary (publicly viewable) because raw logs need auth.
         run: |
@@ -81,19 +81,19 @@ jobs:
           if-no-files-found: error
 
   # TSan coverage of the gateway's concurrency surfaces, same approach as
-  # libwebsrt's ci (it builds the identical dependency tree). Scope, set
+  # libquicsrt's ci (it builds the identical dependency tree). Scope, set
   # via the tsan preset in CMakePresets.json: everything compiled from
   # source is instrumented (-fsanitize=thread on both C and CXX flags) -
-  # first-party gateway + tests, libwebsrt, the srt fork and lsquic;
+  # first-party gateway + tests, libquicsrt, the srt fork and lsquic;
   # BoringSSL stays uninstrumented (fetched + prebuilt Release by
   # ./build.sh setup, consumed unmodified). halt_on_error=1 makes any
   # race fail the job; cmake/tsan.supp carries the three known
   # dep-internal ones: the srt fork's CUDT::startup registered-flag guard
-  # (same entry and reasoning as libwebsrt's tsan.supp),
+  # (same entry and reasoning as libquicsrt's tsan.supp),
   # lsquic_global_init - lsquic globals are
   # init-once with no internal guard, and the in-process server+client
   # tests can init while the engine runs (never triggered by
-  # libwebsrt's own suite; production has one engine per process), and
+  # libquicsrt's own suite; production has one engine per process), and
   # lsquic_set_log_level - the production race (reload setting the
   # level from the SIGHUP thread while the engine loop ran) was fixed,
   # not suppressed: reload.cpp's SetLogLevelOnLoop now rides the
@@ -134,7 +134,7 @@ jobs:
         run: ./build.sh setup
       - name: Build (TSan)
         run: |
-          cmake --preset tsan -DWEBSRT_ENABLE_WT=ON
+          cmake --preset tsan -DQUICSRT_ENABLE_WT=ON
           cmake --build --preset tsan -j "$(nproc)"
       - name: Test (TSan)
         run: ctest --preset tsan

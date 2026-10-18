@@ -24,10 +24,10 @@
 namespace
 {
 
-using websrt::gateway::Broadcaster;
-using websrt::gateway::BroadcasterConfig;
-using websrt::gateway::StreamStats;
-using websrt::gateway::WtSessionHandle;
+using quicsrt::gateway::Broadcaster;
+using quicsrt::gateway::BroadcasterConfig;
+using quicsrt::gateway::StreamStats;
+using quicsrt::gateway::WtSessionHandle;
 
 bool g_ok = true;
 

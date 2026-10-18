@@ -1,6 +1,6 @@
 // G5 end-to-end: the full gateway loop - accept, admission, per-session SRT
 // initiators, the broadcaster ring and first-wins occupancy - driven by
-// libwebsrt's public Subscriber/Publisher clients over WT loopback. C++ on
+// libquicsrt's public Subscriber/Publisher clients over WT loopback. C++ on
 // both sides, no Rust gateway. The gateway under test is a real Gateway
 // configured from a real TOML config (config -> StreamAllowlistPolicy ->
 // Gateway), so the allowlist path is exercised too, not just the open mode.
@@ -22,7 +22,7 @@
 //   6. ALLOWLIST. An unconfigured publish name -> 403 at admission, an
 //      unconfigured subscribe name -> 404, against this config-loaded
 //      gateway.
-//   7. TOKEN - NOT COVERED HERE (see the note at the bottom): libwebsrt's
+//   7. TOKEN - NOT COVERED HERE (see the note at the bottom): libquicsrt's
 //      client configs have no ?token= field, so a client cannot present a
 //      token at all. The per-stream token decision is covered by
 //      tests/policy_test.cpp against the very policy the gateway is built
@@ -54,15 +54,15 @@
 #include <thread>
 #include <vector>
 
-#include "websrt/publisher.hpp"
-#include "websrt/subscriber.hpp"
+#include "quicsrt/publisher.hpp"
+#include "quicsrt/subscriber.hpp"
 
 namespace
 {
 
-using websrt::gateway::Gateway;
-using websrt::gateway::GatewayConfig;
-using websrt::gateway::StreamStats;
+using quicsrt::gateway::Gateway;
+using quicsrt::gateway::GatewayConfig;
+using quicsrt::gateway::StreamStats;
 
 // Vendored fixture (tests/fixtures/test.ts); override with
 // WEBSRT_TEST_FIXTURE if needed.
@@ -114,9 +114,9 @@ StreamStats StreamNamed(const std::vector<StreamStats>& snapshot, const std::str
     return StreamStats{};
 }
 
-websrt::SubscriberConfig SubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
+quicsrt::SubscriberConfig SubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
 {
-    websrt::SubscriberConfig cfg;
+    quicsrt::SubscriberConfig cfg;
     cfg.host             = "127.0.0.1";
     cfg.port             = port;
     cfg.stream_name      = stream;
@@ -125,9 +125,9 @@ websrt::SubscriberConfig SubCfg(std::uint16_t port, const std::string& hash, con
     return cfg;
 }
 
-websrt::PublisherConfig PubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
+quicsrt::PublisherConfig PubCfg(std::uint16_t port, const std::string& hash, const std::string& stream)
 {
-    websrt::PublisherConfig cfg;
+    quicsrt::PublisherConfig cfg;
     cfg.host            = "127.0.0.1";
     cfg.port            = port;
     cfg.stream_name     = stream;
@@ -141,7 +141,7 @@ bool ErrorMentions(const std::string& haystack, const char* needle)
 }
 
 /// Push `bytes` through the publisher, resuming on partial accepts.
-bool WriteAll(websrt::Publisher& pub, const std::vector<std::uint8_t>& bytes)
+bool WriteAll(quicsrt::Publisher& pub, const std::vector<std::uint8_t>& bytes)
 {
     std::size_t off = 0;
     while (off < bytes.size())
@@ -159,7 +159,7 @@ bool WriteAll(websrt::Publisher& pub, const std::vector<std::uint8_t>& bytes)
 }
 
 /// Read until `want` bytes have arrived or the deadline passes.
-std::vector<std::uint8_t> ReadBytes(websrt::Subscriber& sub, std::size_t want, int timeout_ms)
+std::vector<std::uint8_t> ReadBytes(quicsrt::Subscriber& sub, std::size_t want, int timeout_ms)
 {
     std::vector<std::uint8_t> received;
     received.reserve(want);
@@ -177,7 +177,7 @@ std::vector<std::uint8_t> ReadBytes(websrt::Subscriber& sub, std::size_t want, i
             received.insert(received.end(), buf, buf + n);
             continue;
         }
-        if (n == websrt::kReadEnd || n == websrt::kReadClosed)
+        if (n == quicsrt::kReadEnd || n == quicsrt::kReadClosed)
         {
             std::fprintf(stderr, "gateway_e2e_test: stream ended after %zu/%zu bytes\n", received.size(), want);
             break;
@@ -232,7 +232,7 @@ std::vector<std::uint8_t> LoadPayload()
         }
     }
     // 58 x 1128: 188-aligned AND payload-sized. The TsChunker framing
-    // (ingest FRAMING note, libwebsrt publisher.h) carries a sub-188
+    // (ingest FRAMING note, libquicsrt publisher.h) carries a sub-188
     // remainder until end-of-stream, so a fallback with a sub-188 tail
     // (64 KiB leaves 112 bytes) can never arrive mid-stream.
     constexpr std::size_t     kPatternBytes = std::size_t{58} * 1128;
@@ -256,9 +256,9 @@ std::vector<std::uint8_t> LoadPayload()
 
 int main()
 {
-    const auto                          t_total0 = std::chrono::steady_clock::now();
-    const std::vector<std::uint8_t>     payload  = LoadPayload();
-    const websrt::gateway::CertProvider cert;
+    const auto                           t_total0 = std::chrono::steady_clock::now();
+    const std::vector<std::uint8_t>      payload  = LoadPayload();
+    const quicsrt::gateway::CertProvider cert;
 
     const std::uint16_t port = ChoosePort();
 
@@ -288,20 +288,20 @@ int main()
                                                 "name = \"g5-token\"\n"
                                                 "token = \"letmein\"\n"};
 
-    websrt::gateway::Config config;
+    quicsrt::gateway::Config config;
     try
     {
-        config = websrt::gateway::ParseConfig(config_text, "gateway_e2e_test");
+        config = quicsrt::gateway::ParseConfig(config_text, "gateway_e2e_test");
     }
-    catch (const websrt::gateway::ConfigError& e)
+    catch (const quicsrt::gateway::ConfigError& e)
     {
         std::fprintf(stderr, "gateway_e2e_test: config error: %s\n", e.what());
         return 1;
     }
     config.server.wt_port = port; // the CLI overrides file scalars
 
-    const auto policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
-                                               websrt::gateway::BuildAllowlistPolicy(config));
+    const auto policy = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
+                                                quicsrt::gateway::BuildAllowlistPolicy(config));
 
     Gateway gateway(cert,
                     policy,
@@ -320,17 +320,18 @@ int main()
 
     // ---- 1. happy path, byte-for-byte (subscriber first) ----
     {
-        websrt::Subscriber sub;
-        const auto         sub_status = sub.Start(SubCfg(port, hash, "g5-happy"));
-        const bool sub_ok = Check(sub_status == websrt::kStartOk, "1: waiting Subscriber accepted (kStartOk, not 404)");
+        quicsrt::Subscriber sub;
+        const auto          sub_status = sub.Start(SubCfg(port, hash, "g5-happy"));
+        const bool          sub_ok =
+            Check(sub_status == quicsrt::kStartOk, "1: waiting Subscriber accepted (kStartOk, not 404)");
         std::fprintf(stderr,
                      "gateway_e2e_test: 1: subscriber status=%d ('%s')\n",
                      static_cast<int>(sub_status),
                      sub.LastError().c_str());
 
-        websrt::Publisher pub;
-        const auto        pub_status = pub.Start(PubCfg(port, hash, "g5-happy"));
-        const bool        pub_ok     = Check(pub_status == websrt::kPublishOk, "1: Publisher accepted");
+        quicsrt::Publisher pub;
+        const auto         pub_status = pub.Start(PubCfg(port, hash, "g5-happy"));
+        const bool         pub_ok     = Check(pub_status == quicsrt::kPublishOk, "1: Publisher accepted");
         std::fprintf(stderr,
                      "gateway_e2e_test: 1: publisher status=%d ('%s')\n",
                      static_cast<int>(pub_status),
@@ -362,8 +363,8 @@ int main()
 
     // ---- 2. waiting viewer on an idle stream ----
     {
-        websrt::Subscriber sub;
-        Check(sub.Start(SubCfg(port, hash, "g5-wait")) == websrt::kStartOk,
+        quicsrt::Subscriber sub;
+        Check(sub.Start(SubCfg(port, hash, "g5-wait")) == quicsrt::kStartOk,
               "2: subscriber of an unpublished stream accepted (waiting, not 404)");
 
         // The stream exists as an idle waiting stream with this viewer.
@@ -378,10 +379,10 @@ int main()
 
         // It receives nothing while waiting.
         char buf[kMaxPayload];
-        Check(sub.Read(buf, sizeof buf, 300) == websrt::kReadTimeout, "2: the waiting viewer receives nothing yet");
+        Check(sub.Read(buf, sizeof buf, 300) == quicsrt::kReadTimeout, "2: the waiting viewer receives nothing yet");
 
-        websrt::Publisher pub;
-        Check(pub.Start(PubCfg(port, hash, "g5-wait")) == websrt::kPublishOk,
+        quicsrt::Publisher pub;
+        Check(pub.Start(PubCfg(port, hash, "g5-wait")) == quicsrt::kPublishOk,
               "2: publisher attaches to the idle stream");
         const std::size_t want = std::min<std::size_t>(payload.size(), std::size_t{16} * kMaxPayload);
         Check(WriteAll(pub, std::vector<std::uint8_t>(payload.begin(), payload.begin() + static_cast<long>(want))),
@@ -401,13 +402,13 @@ int main()
 
     // ---- 3. first-wins occupancy: 403 at admission ----
     {
-        websrt::Publisher first;
-        Check(first.Start(PubCfg(port, hash, "g5-firstwins")) == websrt::kPublishOk,
+        quicsrt::Publisher first;
+        Check(first.Start(PubCfg(port, hash, "g5-firstwins")) == quicsrt::kPublishOk,
               "3: the first publisher wins the name");
 
-        websrt::Publisher second;
-        const auto        status = second.Start(PubCfg(port, hash, "g5-firstwins"));
-        Check(status == websrt::kPublishRejected, "3: the challenger is refused (kPublishRejected)");
+        quicsrt::Publisher second;
+        const auto         status = second.Start(PubCfg(port, hash, "g5-firstwins"));
+        Check(status == quicsrt::kPublishRejected, "3: the challenger is refused (kPublishRejected)");
         Check(ErrorMentions(second.LastError(), "403"), "3: the refusal carries HTTP 403");
         std::fprintf(stderr,
                      "gateway_e2e_test: 3: challenger status=%d last_error='%s'\n",
@@ -419,21 +420,21 @@ int main()
         Check(WaitUntil([&gateway] { return !StreamNamed(gateway.SnapshotStreams(), "g5-firstwins").publisher_live; },
                         5000),
               "3: the name is released when the publisher goes away");
-        websrt::Publisher third;
-        Check(third.Start(PubCfg(port, hash, "g5-firstwins")) == websrt::kPublishOk,
+        quicsrt::Publisher third;
+        Check(third.Start(PubCfg(port, hash, "g5-firstwins")) == quicsrt::kPublishOk,
               "3: a later publisher reclaims the name");
     }
 
     // ---- 4. per-stream viewer cap: 429 ----
     {
-        websrt::Subscriber v1;
-        websrt::Subscriber v2;
-        websrt::Subscriber v3;
-        Check(v1.Start(SubCfg(port, hash, "g5-cap")) == websrt::kStartOk, "4: viewer 1 accepted");
-        Check(v2.Start(SubCfg(port, hash, "g5-cap")) == websrt::kStartOk, "4: viewer 2 accepted (at the cap)");
+        quicsrt::Subscriber v1;
+        quicsrt::Subscriber v2;
+        quicsrt::Subscriber v3;
+        Check(v1.Start(SubCfg(port, hash, "g5-cap")) == quicsrt::kStartOk, "4: viewer 1 accepted");
+        Check(v2.Start(SubCfg(port, hash, "g5-cap")) == quicsrt::kStartOk, "4: viewer 2 accepted (at the cap)");
 
         const auto status = v3.Start(SubCfg(port, hash, "g5-cap"));
-        Check(status == websrt::kStartRejected, "4: viewer 3 refused (kStartRejected)");
+        Check(status == quicsrt::kStartRejected, "4: viewer 3 refused (kStartRejected)");
         Check(ErrorMentions(v3.LastError(), "429"), "4: the refusal carries HTTP 429");
         std::fprintf(stderr,
                      "gateway_e2e_test: 4: third viewer status=%d last_error='%s'\n",
@@ -447,8 +448,8 @@ int main()
         v2.Stop();
         Check(WaitUntil([&gateway] { return StreamNamed(gateway.SnapshotStreams(), "g5-cap").viewers == 1; }, 5000),
               "4: the closed viewer's slot is released");
-        websrt::Subscriber v4;
-        Check(v4.Start(SubCfg(port, hash, "g5-cap")) == websrt::kStartOk, "4: a new viewer takes the freed slot");
+        quicsrt::Subscriber v4;
+        Check(v4.Start(SubCfg(port, hash, "g5-cap")) == quicsrt::kStartOk, "4: a new viewer takes the freed slot");
         Check(StreamNamed(gateway.SnapshotStreams(), "g5-cap").viewers == kMaxViewers, "4: the cap holds again");
         v1.Stop();
         v4.Stop();
@@ -456,11 +457,11 @@ int main()
 
     // ---- 5. publisher end closes the viewers (clean EOF) ----
     {
-        websrt::Subscriber sub;
-        Check(sub.Start(SubCfg(port, hash, "g5-end")) == websrt::kStartOk, "5: viewer attached before the publisher");
+        quicsrt::Subscriber sub;
+        Check(sub.Start(SubCfg(port, hash, "g5-end")) == quicsrt::kStartOk, "5: viewer attached before the publisher");
 
-        websrt::Publisher pub;
-        Check(pub.Start(PubCfg(port, hash, "g5-end")) == websrt::kPublishOk, "5: publisher attached");
+        quicsrt::Publisher pub;
+        Check(pub.Start(PubCfg(port, hash, "g5-end")) == quicsrt::kPublishOk, "5: publisher attached");
         const std::size_t want = std::min<std::size_t>(payload.size(), std::size_t{8} * kMaxPayload);
         Check(WriteAll(pub, std::vector<std::uint8_t>(payload.begin(), payload.begin() + static_cast<long>(want))),
               "5: published a prefix");
@@ -469,7 +470,7 @@ int main()
               "5: the viewer received the prefix byte-for-byte");
 
         Check(pub.End(15000), "5: the publisher ended the stream gracefully");
-        // The gateway closes every viewer of the stream; the browser/libwebsrt
+        // The gateway closes every viewer of the stream; the browser/libquicsrt
         // client observes that as a clean end-of-stream.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
         int        eof      = 0;
@@ -479,7 +480,7 @@ int main()
             const int n = sub.Read(buf, sizeof buf, 500);
             if (n == 0)
             {
-                eof = websrt::kReadEnd;
+                eof = quicsrt::kReadEnd;
                 break;
             }
             if (n < 0)
@@ -488,11 +489,11 @@ int main()
                 break;
             }
         }
-        Check(eof == websrt::kReadEnd, "5: the viewer's Read returns a clean EOF (0)");
+        Check(eof == quicsrt::kReadEnd, "5: the viewer's Read returns a clean EOF (0)");
         std::fprintf(stderr,
                      "gateway_e2e_test: 5: viewer Read terminal=%d (kReadEnd=%d) last_error='%s'\n",
                      eof,
-                     static_cast<int>(websrt::kReadEnd),
+                     static_cast<int>(quicsrt::kReadEnd),
                      sub.LastError().c_str());
         Check(WaitUntil(
                   [&gateway]
@@ -506,14 +507,14 @@ int main()
 
     // ---- 6. allowlist: 403 publish, 404 subscribe ----
     {
-        websrt::Publisher pub;
-        const auto        pub_status = pub.Start(PubCfg(port, hash, "g5-denied"));
-        Check(pub_status == websrt::kPublishRejected, "6: an unconfigured publish name is refused");
+        quicsrt::Publisher pub;
+        const auto         pub_status = pub.Start(PubCfg(port, hash, "g5-denied"));
+        Check(pub_status == quicsrt::kPublishRejected, "6: an unconfigured publish name is refused");
         Check(ErrorMentions(pub.LastError(), "403"), "6: the publish refusal carries HTTP 403");
 
-        websrt::Subscriber sub;
-        const auto         sub_status = sub.Start(SubCfg(port, hash, "g5-denied"));
-        Check(sub_status == websrt::kStartRejected, "6: an unconfigured subscribe name is refused");
+        quicsrt::Subscriber sub;
+        const auto          sub_status = sub.Start(SubCfg(port, hash, "g5-denied"));
+        Check(sub_status == quicsrt::kStartRejected, "6: an unconfigured subscribe name is refused");
         Check(ErrorMentions(sub.LastError(), "404"), "6: the subscribe refusal carries HTTP 404");
         std::fprintf(stderr,
                      "gateway_e2e_test: 6: publish=%d ('%s') subscribe=%d ('%s')\n",
@@ -523,13 +524,13 @@ int main()
                      sub.LastError().c_str());
 
         // ---- 7. per-stream token: the CLIENT cannot present one ----
-        // libwebsrt's SubscriberConfig/PublisherConfig have no token field,
-        // so no libwebsrt client can send ?token=. Sending one would be
+        // libquicsrt's SubscriberConfig/PublisherConfig have no token field,
+        // so no libquicsrt client can send ?token=. Sending one would be
         // refused for the wrong reason (a missing token), so the accept
         // half is asserted here and the DECISION half is covered by
         // tests/policy_test.cpp (same StreamAllowlistPolicy instance type).
-        websrt::Subscriber tokened;
-        Check(tokened.Start(SubCfg(port, hash, "g5-token")) == websrt::kStartRejected,
+        quicsrt::Subscriber tokened;
+        Check(tokened.Start(SubCfg(port, hash, "g5-token")) == quicsrt::kStartRejected,
               "7: a token-protected stream refuses a client with no token");
         Check(ErrorMentions(tokened.LastError(), "403"), "7: the token refusal carries HTTP 403");
         std::fprintf(

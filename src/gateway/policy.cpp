@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace websrt::gateway
+namespace quicsrt::gateway
 {
 
 namespace
@@ -453,4 +453,4 @@ Decision StreamAllowlistPolicy::Decide(const SessionRequest& req) const
     return Decision::Accept;
 }
 
-} // namespace websrt::gateway
+} // namespace quicsrt::gateway

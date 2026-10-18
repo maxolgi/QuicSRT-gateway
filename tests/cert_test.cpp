@@ -3,7 +3,7 @@
 // SHA-256, regenerated per instance), mkcert round-trips through PEM
 // files and rejects mismatched pairs, and cert-hash.js matches the Rust
 // gateway's byte format. Plain checks (not assert) so Release stays
-// meaningful, following libwebsrt's style.
+// meaningful, following libquicsrt's style.
 
 #include "gateway/cert.h"
 
@@ -84,8 +84,8 @@ bool IsLowercaseHex64(const std::string& s)
 
 void TestSelfMode()
 {
-    const websrt::gateway::CertProvider p;
-    Check(p.Mode() == websrt::gateway::CertMode::Self, "self: mode is Self");
+    const quicsrt::gateway::CertProvider p;
+    Check(p.Mode() == quicsrt::gateway::CertMode::Self, "self: mode is Self");
     Check(p.PinnedHash(), "self: hash is pinned");
 
     // Parses back through the DER decoder.
@@ -153,8 +153,8 @@ void TestSelfMode()
 
 void TestSelfModeRegenerates()
 {
-    const websrt::gateway::CertProvider a;
-    const websrt::gateway::CertProvider b;
+    const quicsrt::gateway::CertProvider a;
+    const quicsrt::gateway::CertProvider b;
     Check(a.Sha256Hex() != b.Sha256Hex(), "self: two instances produce different hashes");
 }
 
@@ -166,15 +166,15 @@ void TestMkcertRoundTrip()
 
     try
     {
-        const websrt::gateway::CertProvider self_provider;
-        const websrt::gateway::CertProvider other_provider;
+        const quicsrt::gateway::CertProvider self_provider;
+        const quicsrt::gateway::CertProvider other_provider;
         WriteFileOrThrow(cert_path, self_provider.CertPem());
         WriteFileOrThrow(key_path, self_provider.KeyPem());
         WriteFileOrThrow(other_key_path, other_provider.KeyPem());
 
         // Round-trip: same cert DER, same hash, mkcert mode flags.
-        const websrt::gateway::CertProvider mk(cert_path, key_path);
-        Check(mk.Mode() == websrt::gateway::CertMode::Mkcert, "mkcert: mode is Mkcert");
+        const quicsrt::gateway::CertProvider mk(cert_path, key_path);
+        Check(mk.Mode() == quicsrt::gateway::CertMode::Mkcert, "mkcert: mode is Mkcert");
         Check(!mk.PinnedHash(), "mkcert: hash not pinned");
         Check(mk.Sha256Hex() == self_provider.Sha256Hex(), "mkcert: hash round-trips");
 
@@ -182,10 +182,10 @@ void TestMkcertRoundTrip()
         bool threw = false;
         try
         {
-            const websrt::gateway::CertProvider bad(cert_path, other_key_path);
+            const quicsrt::gateway::CertProvider bad(cert_path, other_key_path);
             (void)bad;
         }
-        catch (const websrt::gateway::CertError& e)
+        catch (const quicsrt::gateway::CertError& e)
         {
             threw = true;
             Check(std::string(e.what()).find("does not match") != std::string::npos, "mkcert: mismatch error is clear");
@@ -196,10 +196,10 @@ void TestMkcertRoundTrip()
         threw = false;
         try
         {
-            const websrt::gateway::CertProvider missing("/tmp/QuicSRTgw_cert_test_does_not_exist.pem", key_path);
+            const quicsrt::gateway::CertProvider missing("/tmp/QuicSRTgw_cert_test_does_not_exist.pem", key_path);
             (void)missing;
         }
-        catch (const websrt::gateway::CertError& e)
+        catch (const quicsrt::gateway::CertError& e)
         {
             threw = true;
             Check(std::string(e.what()).find("cannot open") != std::string::npos,
@@ -223,8 +223,8 @@ void TestCertHashJs()
 {
     // Self mode: hash form, exact Rust byte format (no trailing newline).
     {
-        const websrt::gateway::CertProvider p;
-        const std::string                   js = p.BuildCertHashJs(4433);
+        const quicsrt::gateway::CertProvider p;
+        const std::string                    js = p.BuildCertHashJs(4433);
         Check(js == "window.CERT_HASH = \"" + p.Sha256Hex() + "\";\nwindow.WT_PORT = 4433;",
               "cert-hash.js: self form matches Rust format byte-for-byte");
         Check(js.starts_with("window.CERT_HASH = "), "cert-hash.js: starts with window.CERT_HASH assignment");
@@ -232,14 +232,14 @@ void TestCertHashJs()
 
     // Mkcert mode: null form.
     {
-        const websrt::gateway::CertProvider self_provider;
-        const std::string                   cert_path = TempPath(".cert.pem");
-        const std::string                   key_path  = TempPath(".key.pem");
+        const quicsrt::gateway::CertProvider self_provider;
+        const std::string                    cert_path = TempPath(".cert.pem");
+        const std::string                    key_path  = TempPath(".key.pem");
         WriteFileOrThrow(cert_path, self_provider.CertPem());
         WriteFileOrThrow(key_path, self_provider.KeyPem());
 
-        const websrt::gateway::CertProvider mk(cert_path, key_path);
-        const std::string                   js = mk.BuildCertHashJs(8443);
+        const quicsrt::gateway::CertProvider mk(cert_path, key_path);
+        const std::string                    js = mk.BuildCertHashJs(8443);
         Check(js == "window.CERT_HASH = null;\nwindow.WT_PORT = 8443;", "cert-hash.js: mkcert form is the null form");
 
         std::remove(cert_path.c_str());

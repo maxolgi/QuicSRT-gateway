@@ -20,7 +20,7 @@
 namespace
 {
 
-using websrt::gateway::ViewerChunkSize;
+using quicsrt::gateway::ViewerChunkSize;
 
 bool g_ok = true;
 

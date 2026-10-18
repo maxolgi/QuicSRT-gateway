@@ -1,7 +1,7 @@
 // Policy seam units: the hooks.rs test matrix ported from the Rust oracle
 // (crates/websrt/src/hooks.rs) plus the glob matcher, the StreamAllowlist
 // role/token matrix and chain short-circuiting. Plain checks (not assert)
-// so Release stays meaningful, following libwebsrt's test style.
+// so Release stays meaningful, following libquicsrt's test style.
 
 #include "gateway/policy.h"
 
@@ -14,17 +14,17 @@
 namespace
 {
 
-using websrt::gateway::AcceptAll;
-using websrt::gateway::AuthTokenPolicy;
-using websrt::gateway::Chain;
-using websrt::gateway::Decision;
-using websrt::gateway::OriginAllowlistPolicy;
-using websrt::gateway::ParseQueryParam;
-using websrt::gateway::PathPolicy;
-using websrt::gateway::SessionPolicy;
-using websrt::gateway::SessionRequest;
-using websrt::gateway::StreamAclEntry;
-using websrt::gateway::StreamAllowlistPolicy;
+using quicsrt::gateway::AcceptAll;
+using quicsrt::gateway::AuthTokenPolicy;
+using quicsrt::gateway::Chain;
+using quicsrt::gateway::Decision;
+using quicsrt::gateway::OriginAllowlistPolicy;
+using quicsrt::gateway::ParseQueryParam;
+using quicsrt::gateway::PathPolicy;
+using quicsrt::gateway::SessionPolicy;
+using quicsrt::gateway::SessionRequest;
+using quicsrt::gateway::StreamAclEntry;
+using quicsrt::gateway::StreamAllowlistPolicy;
 
 bool g_ok = true;
 
@@ -96,23 +96,23 @@ bool TestParseQueryParam()
 
 bool TestGlobMatch()
 {
-    Check(websrt::gateway::GlobMatch("test", "test"), "glob exact match");
-    Check(!websrt::gateway::GlobMatch("test", "Test"), "glob is case-sensitive");
-    Check(websrt::gateway::GlobMatch("test-*", "test-abc"), "glob '*' tail");
-    Check(websrt::gateway::GlobMatch("test-*", "test-"), "glob '*' matches empty");
-    Check(websrt::gateway::GlobMatch("*", ""), "glob lone '*' matches empty name");
-    Check(websrt::gateway::GlobMatch("*", "anything"), "glob lone '*' matches anything");
-    Check(websrt::gateway::GlobMatch("a*c", "ac"), "glob '*' interior empty");
-    Check(websrt::gateway::GlobMatch("a*c", "abbbc"), "glob '*' interior");
-    Check(websrt::gateway::GlobMatch("a**b", "axb"), "glob consecutive stars");
-    Check(websrt::gateway::GlobMatch("*x*y*", "axbyc"), "glob multiple stars");
-    Check(websrt::gateway::GlobMatch("a?c", "abc"), "glob '?' single char");
-    Check(!websrt::gateway::GlobMatch("a?c", "ac"), "glob '?' needs a char");
-    Check(!websrt::gateway::GlobMatch("a?c", "abbc"), "glob '?' is exactly one char");
-    Check(!websrt::gateway::GlobMatch("a?c", "a?c/x"), "glob '?' is not a path separator");
-    Check(!websrt::gateway::GlobMatch("abcd", "abc"), "glob pattern longer than name");
-    Check(!websrt::gateway::GlobMatch("abc", "abcd"), "glob name longer than pattern");
-    Check(websrt::gateway::GlobMatch("foo bar", "foo bar"), "glob literal space (decoded name)");
+    Check(quicsrt::gateway::GlobMatch("test", "test"), "glob exact match");
+    Check(!quicsrt::gateway::GlobMatch("test", "Test"), "glob is case-sensitive");
+    Check(quicsrt::gateway::GlobMatch("test-*", "test-abc"), "glob '*' tail");
+    Check(quicsrt::gateway::GlobMatch("test-*", "test-"), "glob '*' matches empty");
+    Check(quicsrt::gateway::GlobMatch("*", ""), "glob lone '*' matches empty name");
+    Check(quicsrt::gateway::GlobMatch("*", "anything"), "glob lone '*' matches anything");
+    Check(quicsrt::gateway::GlobMatch("a*c", "ac"), "glob '*' interior empty");
+    Check(quicsrt::gateway::GlobMatch("a*c", "abbbc"), "glob '*' interior");
+    Check(quicsrt::gateway::GlobMatch("a**b", "axb"), "glob consecutive stars");
+    Check(quicsrt::gateway::GlobMatch("*x*y*", "axbyc"), "glob multiple stars");
+    Check(quicsrt::gateway::GlobMatch("a?c", "abc"), "glob '?' single char");
+    Check(!quicsrt::gateway::GlobMatch("a?c", "ac"), "glob '?' needs a char");
+    Check(!quicsrt::gateway::GlobMatch("a?c", "abbc"), "glob '?' is exactly one char");
+    Check(!quicsrt::gateway::GlobMatch("a?c", "a?c/x"), "glob '?' is not a path separator");
+    Check(!quicsrt::gateway::GlobMatch("abcd", "abc"), "glob pattern longer than name");
+    Check(!quicsrt::gateway::GlobMatch("abc", "abcd"), "glob name longer than pattern");
+    Check(quicsrt::gateway::GlobMatch("foo bar", "foo bar"), "glob literal space (decoded name)");
     return true;
 }
 
@@ -122,13 +122,13 @@ bool TestGlobMatch()
 
 bool TestConstantTimeEquals()
 {
-    Check(websrt::gateway::ConstantTimeEquals("s3cret", "s3cret"), "ct equals");
-    Check(!websrt::gateway::ConstantTimeEquals("s3cret", "s3creu"), "ct differs in last byte");
-    Check(!websrt::gateway::ConstantTimeEquals("s3cret", "s3cre"), "ct shorter");
-    Check(!websrt::gateway::ConstantTimeEquals("s3cre", "s3cret"), "ct longer");
-    Check(!websrt::gateway::ConstantTimeEquals("", "x"), "ct empty vs non-empty");
-    Check(websrt::gateway::ConstantTimeEquals("", ""), "ct empty vs empty");
-    Check(!websrt::gateway::ConstantTimeEquals("s3cret pass", "s3cret pasS"), "ct with space");
+    Check(quicsrt::gateway::ConstantTimeEquals("s3cret", "s3cret"), "ct equals");
+    Check(!quicsrt::gateway::ConstantTimeEquals("s3cret", "s3creu"), "ct differs in last byte");
+    Check(!quicsrt::gateway::ConstantTimeEquals("s3cret", "s3cre"), "ct shorter");
+    Check(!quicsrt::gateway::ConstantTimeEquals("s3cre", "s3cret"), "ct longer");
+    Check(!quicsrt::gateway::ConstantTimeEquals("", "x"), "ct empty vs non-empty");
+    Check(quicsrt::gateway::ConstantTimeEquals("", ""), "ct empty vs empty");
+    Check(!quicsrt::gateway::ConstantTimeEquals("s3cret pass", "s3cret pasS"), "ct with space");
     return true;
 }
 
