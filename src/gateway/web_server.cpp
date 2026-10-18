@@ -1402,13 +1402,13 @@ std::string WebServer::StatsHtml() const
     std::string out = "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n"
                       // The page is its own dashboard; the refresh keeps the tables live.
                       "<meta http-equiv=\"refresh\" content=\"5\">\n"
-                      "<title>websrt-gateway stats</title>\n"
+                      "<title>QuicSRT-gateway stats</title>\n"
                       "<style>\n"
                       "body{font-family:sans-serif;margin:1em}\n"
                       "table{border-collapse:collapse;margin:0 0 1em}\n"
                       "th,td{border:1px solid #999;padding:2px 8px;text-align:left}\n"
                       "caption{caption-side:top;text-align:left;font-weight:bold;padding:4px 0}\n"
-                      "</style>\n</head>\n<body>\n<h1>websrt-gateway stats</h1>\n";
+                      "</style>\n</head>\n<body>\n<h1>QuicSRT-gateway stats</h1>\n";
 
     // A label/value row of a two-column table (summary, ticker, server,
     // ingest) - the HTML counterpart of the JSON's flat number keys.

@@ -14,7 +14,7 @@ needs a row there. Companion repos (siblings under the WebSRT-cpp workspace root
 
     ./build.sh setup     # one-time: submodules --recursive, player dist fetch, BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
-    ./build.sh gateway   # build only the websrt-gateway binary
+    ./build.sh gateway   # build only the QuicSRT-gateway binary
     ./build.sh test      # ctest --preset release --parallel
     ./build.sh web-dist  # refresh the embedded player (latest websrt-wasm-cpp release) + re-configure
 
@@ -50,9 +50,9 @@ include paths or link anything the targets don't export.
 ## Layout
 
 - `src/main.cpp` — CLI entry (config wiring, SIGHUP); `src/gateway/` — the
-  embeddable core (`websrtgw` lib: wt_server, srt_initiator, registries,
+  embeddable core (`QuicSRTgw` lib: wt_server, srt_initiator, registries,
   broadcaster, policy, webhooks, cert, web_server, ingest/); `config.cpp` +
-  `reload.cpp` live in `websrtgw_config` (TOML stays out of the core lib).
+  `reload.cpp` live in `QuicSRTgw_config` (TOML stays out of the core lib).
 - `scripts/` — `gateway.example.conf` (embedded into the binary), supervisord conf.
 - `tests/` — one plain-check test per area; wired in `CMakeLists.txt`.
 - `build/release/embedded_*.cpp` — CMake-generated; never edit.
@@ -77,12 +77,12 @@ include paths or link anything the targets don't export.
 
 ## Live gateway (supervisord)
 
-The host's gateway runs under supervisord — program `websrt-cpp`, straight
+The host's gateway runs under supervisord — program `QuicSRT-gateway`, straight
 from this repo's build tree, open mode (every stream name accepted) —
-alongside the always-on publisher `websrt-cpp-testpub` (stream
+alongside the always-on publisher `QuicSRT-gateway-testpub` (stream
 `browsertest`). All live testing (golden commands, parity measurements,
 `/health` and `/stats` curls, the player page) goes through these services;
-never launch ad-hoc `websrt-gateway` processes (bare runs, `/tmp` dev
+never launch ad-hoc `QuicSRT-gateway` processes (bare runs, `/tmp` dev
 configs).
 
 - Ports as deployed: WT `0.0.0.0:4435`, SRT ingest `0.0.0.0:9102`, player
@@ -90,13 +90,13 @@ configs).
   — health (plain HTTP, loopback) `127.0.0.1:9292` — e.g.
   `curl http://127.0.0.1:9292/health`. The Rust oracle runs side-by-side on
   4433/9000/9091 — don't mix them up.
-- Logs: `/var/log/websrt-cpp/` — `gateway.err.log` is the gateway's main
+- Logs: `/var/log/QuicSRT-gateway/` — `gateway.err.log` is the gateway's main
   output (level `notice`), `testpub.err.log` the publisher's.
 - Deploy a code change: `./build.sh gateway && sudo supervisorctl restart
-  websrt-cpp` (a rebuild alone does nothing until the restart; agents may
+  QuicSRT-gateway` (a rebuild alone does nothing until the restart; agents may
   restart freely). Config edit touching hot-reloadable keys only:
-  `sudo kill -HUP $(pidof websrt-gateway)`.
-- Test stream: `sudo supervisorctl restart websrt-cpp-testpub` — never run
+  `sudo kill -HUP $(pidof QuicSRT-gateway)`.
+- Test stream: `sudo supervisorctl restart QuicSRT-gateway-testpub` — never run
   the publisher script by hand.
 - ctest suites are the exception: they run in-process gateway cores with
   ephemeral-port fallback and never touch the supervised services.

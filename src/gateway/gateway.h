@@ -1,7 +1,7 @@
 // The gateway core: the composition root that wires the WebTransport server,
 // the per-session SRT initiator registry and the broadcaster ring together
 // (P3 step 4). This is the embeddable unit of refinement item 1 - an
-// application links websrtgw, constructs a Gateway with its own
+// application links QuicSRTgw, constructs a Gateway with its own
 // SessionPolicy and cert, calls Start() and feeds TS bytes in through the
 // SessionRegistryListener sink the Gateway itself exposes; the CLI binary
 // (src/main.cpp) only adds config parsing and signal handling on top.

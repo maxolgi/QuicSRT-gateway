@@ -8,7 +8,7 @@ Usage: ./build.sh <command>
 Commands:
     setup      One-time: submodule init (recursive), player dist fetch, BoringSSL fetch+build, CMake configure (release)
     lib        Build the tree (libwebsrt + srt fork + lsquic)
-    gateway    Build the websrt-gateway binary
+    gateway    Build the QuicSRT-gateway binary
     test       Run tests via ctest (release)
     web-dist   Fetch the player dist (latest websrt-wasm-cpp release) into web/dist, then re-run cmake configure
 EOF
@@ -87,7 +87,7 @@ case "${1:-}" in
         cmake --build --preset release
         ;;
     gateway)
-        cmake --build --preset release --target websrt-gateway
+        cmake --build --preset release --target QuicSRT-gateway
         ;;
     test)
         # --parallel with no count = one job per core. Tests that share a

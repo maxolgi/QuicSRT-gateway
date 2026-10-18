@@ -1,4 +1,4 @@
-# CI for websrt-gateway-cpp. Real file, not a symlink: GitHub Actions
+# CI for QuicSRT-gateway. Real file, not a symlink: GitHub Actions
 # does not follow symlinks under .github/workflows (a symlinked workflow
 # yields a 0-job failed run).
 #
@@ -70,14 +70,14 @@ jobs:
           PY
           exit $rc
       - name: Strip binary
-        run: strip build/release/websrt-gateway
+        run: strip build/release/QuicSRT-gateway
       - name: Upload gateway binary
         # The binary is self-contained: BoringSSL, lsquic and the srt
         # fork are linked statically - only system libs remain (ldd).
         uses: actions/upload-artifact@v7
         with:
-          name: websrt-gateway-cpp-linux-x64
-          path: build/release/websrt-gateway
+          name: QuicSRT-gateway-linux-x64
+          path: build/release/QuicSRT-gateway
           if-no-files-found: error
 
   # TSan coverage of the gateway's concurrency surfaces, same approach as
@@ -155,13 +155,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
-          name: websrt-gateway-cpp-linux-x64
-          path: artifacts/websrt-gateway-cpp-linux-x64
+          name: QuicSRT-gateway-linux-x64
+          path: artifacts/QuicSRT-gateway-linux-x64
       - name: Stage release assets
         run: |
           mkdir -p release
-          cp artifacts/websrt-gateway-cpp-linux-x64/websrt-gateway release/websrt-gateway-cpp-linux
-          chmod +x release/websrt-gateway-cpp-linux
+          cp artifacts/QuicSRT-gateway-linux-x64/QuicSRT-gateway release/QuicSRT-gateway-linux
+          chmod +x release/QuicSRT-gateway-linux
       - name: Set release metadata
         id: meta
         env:

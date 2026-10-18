@@ -67,7 +67,7 @@ std::string ReadFileOrEmpty(const std::string& path)
 std::string TempPath(const char* suffix)
 {
     static int counter = 0;
-    return "/tmp/websrtgw_cert_test_" + std::to_string(::getpid()) + "_" + std::to_string(counter++) + suffix;
+    return "/tmp/QuicSRTgw_cert_test_" + std::to_string(::getpid()) + "_" + std::to_string(counter++) + suffix;
 }
 
 void WriteFileOrThrow(const std::string& path, const std::string& content)
@@ -196,7 +196,7 @@ void TestMkcertRoundTrip()
         threw = false;
         try
         {
-            const websrt::gateway::CertProvider missing("/tmp/websrtgw_cert_test_does_not_exist.pem", key_path);
+            const websrt::gateway::CertProvider missing("/tmp/QuicSRTgw_cert_test_does_not_exist.pem", key_path);
             (void)missing;
         }
         catch (const websrt::gateway::CertError& e)

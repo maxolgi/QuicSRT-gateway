@@ -24,7 +24,7 @@ void check(bool ok, const char* what)
 {
     if (!ok)
     {
-        std::fprintf(stderr, "websrt-gateway: FAIL: %s\n", what);
+        std::fprintf(stderr, "QuicSRT-gateway: FAIL: %s\n", what);
         ++g_failures;
     }
 }
@@ -73,10 +73,10 @@ int RunSelftest()
 
     if (g_failures != 0)
     {
-        std::fprintf(stderr, "websrt-gateway: %d failure(s)\n", g_failures);
+        std::fprintf(stderr, "QuicSRT-gateway: %d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("websrt-gateway skeleton OK (libwebsrt %s)\n", v);
+    std::printf("QuicSRT-gateway skeleton OK (libwebsrt %s)\n", v);
     return 0;
 }
 

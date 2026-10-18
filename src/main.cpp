@@ -1,5 +1,5 @@
-// websrt-gateway: CLI-parity C++ replacement of the Rust WebSRT gateway.
-// Thin CLI over the websrtgw core library (refinement item 1): argument
+// QuicSRT-gateway: CLI-parity C++ replacement of the Rust WebSRT gateway.
+// Thin CLI over the QuicSRTgw core library (refinement item 1): argument
 // wiring, TOML config, signal handling and the run-until-signalled loop live
 // here; the accept loop, per-session SRT initiators and the broadcaster
 // ring live in src/gateway/. --selftest is the ctest smoke entry (the
@@ -81,17 +81,17 @@ void WriteExampleConfigIfAbsent()
     std::ofstream          out(kDefaultPath, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out.is_open() || !(out.write(body.data(), static_cast<std::streamsize>(body.size()))))
     {
-        std::fprintf(stderr, "websrt-gateway: note: cannot write the example config to %s\n", kDefaultPath);
+        std::fprintf(stderr, "QuicSRT-gateway: note: cannot write the example config to %s\n", kDefaultPath);
         return;
     }
     out.close();
     if (!out)
     {
         std::remove(kDefaultPath);
-        std::fprintf(stderr, "websrt-gateway: note: cannot write the example config to %s\n", kDefaultPath);
+        std::fprintf(stderr, "QuicSRT-gateway: note: cannot write the example config to %s\n", kDefaultPath);
         return;
     }
-    std::printf("websrt-gateway: wrote %s (a fully commented example configuration; edit and run with --config %s)\n",
+    std::printf("QuicSRT-gateway: wrote %s (a fully commented example configuration; edit and run with --config %s)\n",
                 kDefaultPath,
                 kDefaultPath);
     std::fflush(stdout);
@@ -106,7 +106,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     if (log_level.has_value())
     {
         websrt::SetLsquicLogLevel(log_level->c_str());
-        std::printf("websrt-gateway: lsquic log level: %s\n", log_level->c_str());
+        std::printf("QuicSRT-gateway: lsquic log level: %s\n", log_level->c_str());
         std::fflush(stdout);
     }
     // Cert mode comes from the config when present, self mode otherwise
@@ -144,7 +144,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         }
         catch (const websrt::gateway::ConfigError& e)
         {
-            std::fprintf(stderr, "websrt-gateway: config error: %s\n", e.what());
+            std::fprintf(stderr, "QuicSRT-gateway: config error: %s\n", e.what());
             return 1;
         }
         policy    = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
@@ -181,13 +181,13 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         if (!log_level.has_value() && s.log_level.has_value())
         {
             websrt::SetLsquicLogLevel(s.log_level->c_str());
-            std::printf("websrt-gateway: lsquic log level: %s (config)\n", s.log_level->c_str());
+            std::printf("QuicSRT-gateway: lsquic log level: %s (config)\n", s.log_level->c_str());
         }
         if (config.streams.empty())
         {
             // Same exposure as a bare run's open mode - say so loudly.
             std::fprintf(stderr,
-                         "websrt-gateway: WARNING: no [[stream]] entries in %s - any stream name accepted\n",
+                         "QuicSRT-gateway: WARNING: no [[stream]] entries in %s - any stream name accepted\n",
                          config_path->c_str());
         }
         // Public-bind warnings: an open-mode WT listener or a passphrase-less
@@ -196,7 +196,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         if (!IsLoopbackBind(s.wt_bind) && config.streams.empty())
         {
             std::fprintf(stderr,
-                         "websrt-gateway: WARNING: open-mode WebTransport on non-loopback %s:%u - "
+                         "QuicSRT-gateway: WARNING: open-mode WebTransport on non-loopback %s:%u - "
                          "any network client may publish or view any stream name\n",
                          s.wt_bind.c_str(),
                          s.wt_port);
@@ -204,12 +204,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         if (!IsLoopbackBind(s.srt_ingest_bind) && !s.srt_passphrase.has_value())
         {
             std::fprintf(stderr,
-                         "websrt-gateway: WARNING: SRT ingest on non-loopback %s:%u with no passphrase - "
+                         "QuicSRT-gateway: WARNING: SRT ingest on non-loopback %s:%u with no passphrase - "
                          "any network client may publish\n",
                          s.srt_ingest_bind.c_str(),
                          s.srt_ingest_port);
         }
-        std::printf("websrt-gateway: config: %zu stream(s), %s "
+        std::printf("QuicSRT-gateway: config: %zu stream(s), %s "
                     "(wt %s:%u, srt ingest %s:%u, health %s:%u, web %s:%u, max_viewers %u, "
                     "broadcast_capacity %u, broadcast_byte_budget %llu, request_header_timeout %d s)\n",
                     config.streams.size(),
@@ -228,7 +228,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
                     s.request_header_timeout_s);
         if (!config.webhooks.on_event_url.empty())
         {
-            std::printf("websrt-gateway: webhooks on: POST session events to %s (timeout %llu ms)\n",
+            std::printf("QuicSRT-gateway: webhooks on: POST session events to %s (timeout %llu ms)\n",
                         config.webhooks.on_event_url.c_str(),
                         static_cast<unsigned long long>(config.webhooks.timeout_ms));
         }
@@ -241,10 +241,10 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         // path is enforced. First run also drops ./gateway.conf.
         WriteExampleConfigIfAbsent();
         std::fprintf(stderr,
-                     "websrt-gateway: WARNING: open mode: no allowlist configured - any stream name accepted\n");
+                     "QuicSRT-gateway: WARNING: open mode: no allowlist configured - any stream name accepted\n");
         policy = websrt::gateway::Chain(std::make_shared<websrt::gateway::PathPolicy>("/wt"),
                                         std::make_shared<websrt::gateway::AcceptAll>());
-        std::printf("websrt-gateway: config: 0 stream(s), open mode\n");
+        std::printf("QuicSRT-gateway: config: 0 stream(s), open mode\n");
         // web_port/health_port stay 0 without a config file: no reason to
         // serve the player or expose metrics in open mode. Both are
         // [server] keys (defaults 5173 / 0; with a config, web_port alone
@@ -261,22 +261,22 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             // guard keeps the deref honest for any other caller of Run().
             if (!cert_pem.has_value() || !key_pem.has_value())
             {
-                std::fprintf(stderr,
-                             "websrt-gateway: cert error: cert_mode = \"mkcert\" requires both cert_pem and key_pem\n");
+                std::fprintf(
+                    stderr, "QuicSRT-gateway: cert error: cert_mode = \"mkcert\" requires both cert_pem and key_pem\n");
                 return 1;
             }
             cert = websrt::gateway::CertProvider(*cert_pem, *key_pem);
-            std::printf("websrt-gateway: mkcert identity loaded; browser uses normal PKI\n");
+            std::printf("QuicSRT-gateway: mkcert identity loaded; browser uses normal PKI\n");
         }
         else
         {
             cert = websrt::gateway::CertProvider();
-            std::printf("websrt-gateway: WebTransport cert DER SHA-256: %s\n", cert.Sha256Hex().c_str());
+            std::printf("QuicSRT-gateway: WebTransport cert DER SHA-256: %s\n", cert.Sha256Hex().c_str());
         }
     }
     catch (const websrt::gateway::CertError& e)
     {
-        std::fprintf(stderr, "websrt-gateway: cert error: %s\n", e.what());
+        std::fprintf(stderr, "QuicSRT-gateway: cert error: %s\n", e.what());
         return 1;
     }
     std::fflush(stdout);
@@ -288,12 +288,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     websrt::gateway::Gateway gateway(cert, policy, gateway_config);
     if (!gateway.Start(wt_bind, wt_bind_port))
     {
-        std::fprintf(stderr, "websrt-gateway: cannot serve WebTransport on %s:%u\n", wt_bind.c_str(), wt_bind_port);
+        std::fprintf(stderr, "QuicSRT-gateway: cannot serve WebTransport on %s:%u\n", wt_bind.c_str(), wt_bind_port);
         return 1;
     }
     // One line per bound service at boot, so a startup log answers "what
     // is this process actually listening on?" without reading the config.
-    std::printf("websrt-gateway: WebTransport on %s:%u\n", wt_bind.c_str(), wt_bind_port);
+    std::printf("QuicSRT-gateway: WebTransport on %s:%u\n", wt_bind.c_str(), wt_bind_port);
     std::fflush(stdout);
 
     // SRT/UDP ingest (P3 step 5). The ingest owns an ordinary stock libsrt
@@ -332,11 +332,11 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         std::string ingest_error;
         if (!ingest->Start(&ingest_error))
         {
-            std::fprintf(stderr, "websrt-gateway: SRT ingest error: %s\n", ingest_error.c_str());
+            std::fprintf(stderr, "QuicSRT-gateway: SRT ingest error: %s\n", ingest_error.c_str());
             gateway.Shutdown();
             return 1;
         }
-        std::printf("websrt-gateway: SRT/UDP ingest on %s:%u (passphrase: %s, latency %llu ms, max sessions %d)\n",
+        std::printf("QuicSRT-gateway: SRT/UDP ingest on %s:%u (passphrase: %s, latency %llu ms, max sessions %d)\n",
                     ingest_bind.c_str(),
                     ingest_port,
                     ingest_passphrase.has_value() ? "set" : "none",
@@ -376,7 +376,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         std::string web_error;
         if (!web->Start(&web_error))
         {
-            std::fprintf(stderr, "websrt-gateway: web server error: %s\n", web_error.c_str());
+            std::fprintf(stderr, "QuicSRT-gateway: web server error: %s\n", web_error.c_str());
             if (ingest.has_value())
             {
                 ingest->Stop();
@@ -384,11 +384,11 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             gateway.Shutdown();
             return 1;
         }
-        std::printf("websrt-gateway: cert-hash.js served at /cert-hash.js (%s)\n",
+        std::printf("QuicSRT-gateway: cert-hash.js served at /cert-hash.js (%s)\n",
                     cert.PinnedHash() ? "pinned hash" : "null (PKI)");
         if (web_tls)
         {
-            std::printf("websrt-gateway: web server (HTTPS) on %s:%u, root %s\n",
+            std::printf("QuicSRT-gateway: web server (HTTPS) on %s:%u, root %s\n",
                         web_bind.c_str(),
                         web->Port(),
                         served_root.c_str());
@@ -399,7 +399,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             // browser treats http://127.0.0.1 and LAN pages as secure
             // contexts). Only the page port is affected - the WebTransport
             // listener above is still TLS, pinned via cert-hash.js.
-            std::printf("websrt-gateway: web server (HTTP, closed-network) on %s:%u, root %s\n",
+            std::printf("QuicSRT-gateway: web server (HTTP, closed-network) on %s:%u, root %s\n",
                         web_bind.c_str(),
                         web->Port(),
                         served_root.c_str());
@@ -411,7 +411,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     {
         // Said explicitly so the boot log answers "is the player being
         // served?" without cross-referencing the config.
-        std::printf("websrt-gateway: web server off (no [server].web_root; the C++ gateway builds no player)\n");
+        std::printf("QuicSRT-gateway: web server off (no [server].web_root; the C++ gateway builds no player)\n");
         std::fflush(stdout);
     }
 
@@ -422,7 +422,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         if (health_bind != "127.0.0.1" && health_bind != "localhost" && health_bind != "::1")
         {
             std::fprintf(stderr,
-                         "websrt-gateway: WARNING: health server bound to %s; metrics will be visible on the "
+                         "QuicSRT-gateway: WARNING: health server bound to %s; metrics will be visible on the "
                          "network\n",
                          health_bind.c_str());
         }
@@ -437,7 +437,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         std::string health_error;
         if (!health->Start(&health_error))
         {
-            std::fprintf(stderr, "websrt-gateway: health server error: %s\n", health_error.c_str());
+            std::fprintf(stderr, "QuicSRT-gateway: health server error: %s\n", health_error.c_str());
             if (web.has_value())
             {
                 web->Stop();
@@ -450,7 +450,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             return 1;
         }
         std::printf(
-            "websrt-gateway: health/stats (HTTP) on %s:%u (/health, /stats)\n", health_bind.c_str(), health->Port());
+            "QuicSRT-gateway: health/stats (HTTP) on %s:%u (/health, /stats)\n", health_bind.c_str(), health->Port());
         std::fflush(stdout);
     }
 
@@ -476,12 +476,12 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
             }
             else
             {
-                std::fprintf(stderr, "websrt-gateway: SIGHUP ignored: no config file (open mode)\n");
+                std::fprintf(stderr, "QuicSRT-gateway: SIGHUP ignored: no config file (open mode)\n");
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{100});
     }
-    std::fprintf(stderr, "websrt-gateway: signal received, draining\n");
+    std::fprintf(stderr, "QuicSRT-gateway: signal received, draining\n");
     if (ingest.has_value())
     {
         ingest->Stop(); // closes the publishers, releases their claims
@@ -506,7 +506,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
 void Usage()
 {
     std::fprintf(stderr,
-                 "usage: websrt-gateway [--selftest] [--config FILE] [--log-level LEVEL]\n"
+                 "usage: QuicSRT-gateway [--selftest] [--config FILE] [--log-level LEVEL]\n"
                  "\n"
                  "  --log-level LEVEL  lsquic diagnostic logging on stderr (e.g. debug, info,\n"
                  "                     warn, error, none). Off when omitted.\n");

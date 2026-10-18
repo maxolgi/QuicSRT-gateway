@@ -28,7 +28,7 @@ void LogRestartRequired(const ServerConfig& old_s, const ServerConfig& new_s)
         if (was != now)
         {
             std::fprintf(stderr,
-                         "websrt-gateway: reload: [server].%s changed %s -> %s; requires restart\n",
+                         "QuicSRT-gateway: reload: [server].%s changed %s -> %s; requires restart\n",
                          key,
                          was.c_str(),
                          now.c_str());
@@ -141,7 +141,7 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
         {
             *error = e.what();
         }
-        std::fprintf(stderr, "websrt-gateway: reload failed, keeping the current config: %s\n", e.what());
+        std::fprintf(stderr, "QuicSRT-gateway: reload failed, keeping the current config: %s\n", e.what());
         return std::nullopt;
     }
 
@@ -155,7 +155,7 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
     if (next.webhooks.on_event_url != current.webhooks.on_event_url)
     {
         std::fprintf(stderr,
-                     "websrt-gateway: reload: webhooks -> %s\n",
+                     "QuicSRT-gateway: reload: webhooks -> %s\n",
                      next.webhooks.on_event_url.empty() ? "off" : next.webhooks.on_event_url.c_str());
     }
     if (next.server.log_level != current.server.log_level)
@@ -163,20 +163,20 @@ std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, co
         if (next.server.log_level.has_value())
         {
             SetLogLevelOnLoop(gateway, *next.server.log_level);
-            std::fprintf(stderr, "websrt-gateway: reload: log level -> %s\n", next.server.log_level->c_str());
+            std::fprintf(stderr, "QuicSRT-gateway: reload: log level -> %s\n", next.server.log_level->c_str());
         }
         else
         {
             // No queryable "boot default" exists to revert to; the current
             // level stays until the next boot.
             std::fprintf(stderr,
-                         "websrt-gateway: reload: log_level removed; keeping the current level "
+                         "QuicSRT-gateway: reload: log_level removed; keeping the current level "
                          "(restart to revert to the boot default)\n");
         }
     }
     LogRestartRequired(current.server, next.server);
     std::fprintf(stderr,
-                 "websrt-gateway: config reloaded: %zu stream(s) (%s), max_viewers %u\n",
+                 "QuicSRT-gateway: config reloaded: %zu stream(s) (%s), max_viewers %u\n",
                  next.streams.size(),
                  next.streams.empty() ? "open mode, any name accepted" : "allowlist mode",
                  next.server.max_viewers);

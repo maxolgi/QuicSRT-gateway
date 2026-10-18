@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(websrt-gateway
+project(QuicSRT-gateway
     VERSION 0.1.0
     DESCRIPTION "CLI-parity C++ replacement of the Rust WebSRT gateway"
     LANGUAGES CXX C)
@@ -28,7 +28,7 @@ endfunction()
 add_subdirectory(deps/libwebsrt)
 
 if(NOT WEBSRT_ENABLE_WT)
-    message(FATAL_ERROR "websrt-gateway requires WEBSRT_ENABLE_WT=ON")
+    message(FATAL_ERROR "QuicSRT-gateway requires WEBSRT_ENABLE_WT=ON")
 endif()
 
 find_package(Threads REQUIRED)
@@ -93,7 +93,7 @@ file(WRITE ${EMBEDDED_EXAMPLE_SRC}
 # gateway owns - accept loop machinery, session policy seam, registry - so a
 # C++ app can link the gateway in-process. The CLI binary only wires
 # CLI/config/ingest. Include dir exposes "gateway/..." headers.
-add_library(websrtgw STATIC
+add_library(QuicSRTgw STATIC
     ${EMBEDDED_EXAMPLE_SRC}
     ${EMBEDDED_PLAYER_SRC}
     src/gateway/cert.cpp
@@ -106,39 +106,39 @@ add_library(websrtgw STATIC
     src/gateway/web_server.cpp
     src/gateway/webhooks.cpp
     src/gateway/wt_server.cpp)
-target_compile_features(websrtgw PUBLIC cxx_std_20)
-set_target_properties(websrtgw PROPERTIES CXX_EXTENSIONS OFF)
-target_include_directories(websrtgw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(websrtgw PUBLIC gateway_warnings Threads::Threads websrt::websrt websrt::wt-deps)
+target_compile_features(QuicSRTgw PUBLIC cxx_std_20)
+set_target_properties(QuicSRTgw PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(QuicSRTgw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(QuicSRTgw PUBLIC gateway_warnings Threads::Threads websrt::websrt websrt::wt-deps)
 
 # Thin CLI binary over the core library.
 #
 # toml++ (header-only, deps/tomlplusplus) is a gateway-binary-side
 # dependency by design (refinement item 2): config parsing lives in
-# websrtgw_config, never in the embeddable websrtgw core.
+# QuicSRTgw_config, never in the embeddable QuicSRTgw core.
 add_library(tomlplusplus INTERFACE)
 target_include_directories(tomlplusplus INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/tomlplusplus/include)
 
-add_library(websrtgw_config STATIC
+add_library(QuicSRTgw_config STATIC
     src/gateway/config.cpp
     src/gateway/reload.cpp)
-target_compile_features(websrtgw_config PUBLIC cxx_std_20)
-set_target_properties(websrtgw_config PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(websrtgw_config PUBLIC gateway_warnings websrtgw tomlplusplus)
+target_compile_features(QuicSRTgw_config PUBLIC cxx_std_20)
+set_target_properties(QuicSRTgw_config PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(QuicSRTgw_config PUBLIC gateway_warnings QuicSRTgw tomlplusplus)
 
-add_executable(websrt-gateway src/main.cpp)
-target_link_libraries(websrt-gateway PRIVATE websrtgw_config)
+add_executable(QuicSRT-gateway src/main.cpp)
+target_link_libraries(QuicSRT-gateway PRIVATE QuicSRTgw_config)
 
 # P4.4: cmake --install ships the binary, the example config and the
 # supervisord conf (GNUInstallDirs destinations; no CPack, no components).
 # With the default prefix (/usr/local) the binary lands exactly where
-# scripts/websrt-cpp.conf's command= expects it; the conf files land under
+# scripts/QuicSRT-gateway.conf's command= expects it; the conf files land under
 # <prefix>/etc and are copied to their runtime homes at deployment (README,
 # "Deployment"). _install IS the install builtin - see the shadow above.
 include(GNUInstallDirs)
-_install(TARGETS websrt-gateway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-_install(FILES scripts/gateway.example.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/websrt-cpp)
-_install(FILES scripts/websrt-cpp.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/supervisor/conf.d)
+_install(TARGETS QuicSRT-gateway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+_install(FILES scripts/gateway.example.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/QuicSRT-gateway)
+_install(FILES scripts/QuicSRT-gateway.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/supervisor/conf.d)
 
 enable_testing()
 
@@ -146,7 +146,7 @@ enable_testing()
 add_executable(policy_test tests/policy_test.cpp)
 target_compile_features(policy_test PRIVATE cxx_std_20)
 set_target_properties(policy_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(policy_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(policy_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME policy_test COMMAND policy_test)
 set_tests_properties(policy_test PROPERTIES TIMEOUT 30)
 
@@ -155,21 +155,21 @@ set_tests_properties(policy_test PROPERTIES TIMEOUT 30)
 add_executable(ts_continuity_test tests/ts_continuity_test.cpp)
 target_compile_features(ts_continuity_test PRIVATE cxx_std_20)
 set_target_properties(ts_continuity_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(ts_continuity_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(ts_continuity_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME ts_continuity_test COMMAND ts_continuity_test)
 set_tests_properties(ts_continuity_test PROPERTIES TIMEOUT 30)
 
 add_executable(config_test tests/config_test.cpp)
 target_compile_features(config_test PRIVATE cxx_std_20)
 set_target_properties(config_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(config_test PRIVATE gateway_warnings websrtgw_config)
+target_link_libraries(config_test PRIVATE gateway_warnings QuicSRTgw_config)
 add_test(NAME config_test COMMAND config_test)
 set_tests_properties(config_test PROPERTIES TIMEOUT 30)
 
 add_executable(cert_test tests/cert_test.cpp)
 target_compile_features(cert_test PRIVATE cxx_std_20)
 set_target_properties(cert_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(cert_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(cert_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME cert_test COMMAND cert_test)
 set_tests_properties(cert_test PROPERTIES TIMEOUT 30)
 
@@ -178,7 +178,7 @@ set_tests_properties(cert_test PROPERTIES TIMEOUT 30)
 add_executable(stream_registry_test tests/stream_registry_test.cpp)
 target_compile_features(stream_registry_test PRIVATE cxx_std_20)
 set_target_properties(stream_registry_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(stream_registry_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(stream_registry_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME stream_registry_test COMMAND stream_registry_test)
 set_tests_properties(stream_registry_test PROPERTIES TIMEOUT 30)
 
@@ -188,7 +188,7 @@ set_tests_properties(stream_registry_test PROPERTIES TIMEOUT 30)
 add_executable(broadcaster_test tests/broadcaster_test.cpp)
 target_compile_features(broadcaster_test PRIVATE cxx_std_20)
 set_target_properties(broadcaster_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(broadcaster_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(broadcaster_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME broadcaster_test COMMAND broadcaster_test)
 set_tests_properties(broadcaster_test PROPERTIES TIMEOUT 30)
 
@@ -198,7 +198,7 @@ set_tests_properties(broadcaster_test PROPERTIES TIMEOUT 30)
 add_executable(session_registry_test tests/session_registry_test.cpp)
 target_compile_features(session_registry_test PRIVATE cxx_std_20)
 set_target_properties(session_registry_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(session_registry_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(session_registry_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME session_registry_test COMMAND session_registry_test)
 set_tests_properties(session_registry_test PROPERTIES TIMEOUT 30)
 
@@ -207,7 +207,7 @@ set_tests_properties(session_registry_test PROPERTIES TIMEOUT 30)
 add_executable(wt_server_test tests/wt_server_test.cpp)
 target_compile_features(wt_server_test PRIVATE cxx_std_20)
 set_target_properties(wt_server_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(wt_server_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(wt_server_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME wt_server_test COMMAND wt_server_test)
 set_tests_properties(wt_server_test PROPERTIES TIMEOUT 60)
 
@@ -218,7 +218,7 @@ set_tests_properties(wt_server_test PROPERTIES TIMEOUT 60)
 add_executable(wt_overflow_test tests/wt_overflow_test.cpp)
 target_compile_features(wt_overflow_test PRIVATE cxx_std_20)
 set_target_properties(wt_overflow_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(wt_overflow_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(wt_overflow_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME wt_overflow_test COMMAND wt_overflow_test)
 set_tests_properties(wt_overflow_test PROPERTIES TIMEOUT 60)
 
@@ -228,7 +228,7 @@ set_tests_properties(wt_overflow_test PROPERTIES TIMEOUT 60)
 add_executable(srt_initiator_test tests/srt_initiator_test.cpp)
 target_compile_features(srt_initiator_test PRIVATE cxx_std_20)
 set_target_properties(srt_initiator_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(srt_initiator_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(srt_initiator_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME srt_initiator_test COMMAND srt_initiator_test)
 set_tests_properties(srt_initiator_test PROPERTIES TIMEOUT 60)
 
@@ -238,7 +238,7 @@ set_tests_properties(srt_initiator_test PROPERTIES TIMEOUT 60)
 add_executable(gateway_e2e_test tests/gateway_e2e_test.cpp)
 target_compile_features(gateway_e2e_test PRIVATE cxx_std_20)
 set_target_properties(gateway_e2e_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(gateway_e2e_test PRIVATE gateway_warnings websrtgw_config)
+target_link_libraries(gateway_e2e_test PRIVATE gateway_warnings QuicSRTgw_config)
 target_compile_definitions(gateway_e2e_test PRIVATE
     WEBSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
 add_test(NAME gateway_e2e_test COMMAND gateway_e2e_test)
@@ -250,7 +250,7 @@ set_tests_properties(gateway_e2e_test PROPERTIES TIMEOUT 180)
 add_executable(srt_ingest_test tests/srt_ingest_test.cpp)
 target_compile_features(srt_ingest_test PRIVATE cxx_std_20)
 set_target_properties(srt_ingest_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(srt_ingest_test PRIVATE gateway_warnings websrtgw_config)
+target_link_libraries(srt_ingest_test PRIVATE gateway_warnings QuicSRTgw_config)
 target_compile_definitions(srt_ingest_test PRIVATE
     WEBSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
 add_test(NAME srt_ingest_test COMMAND srt_ingest_test)
@@ -263,7 +263,7 @@ set_tests_properties(srt_ingest_test PROPERTIES TIMEOUT 180)
 add_executable(web_server_test tests/web_server_test.cpp)
 target_compile_features(web_server_test PRIVATE cxx_std_20)
 set_target_properties(web_server_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(web_server_test PRIVATE gateway_warnings websrtgw_config)
+target_link_libraries(web_server_test PRIVATE gateway_warnings QuicSRTgw_config)
 add_test(NAME web_server_test COMMAND web_server_test)
 set_tests_properties(web_server_test PROPERTIES TIMEOUT 120)
 
@@ -273,7 +273,7 @@ set_tests_properties(web_server_test PROPERTIES TIMEOUT 120)
 add_executable(concurrency_test tests/concurrency_test.cpp)
 target_compile_features(concurrency_test PRIVATE cxx_std_20)
 set_target_properties(concurrency_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(concurrency_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(concurrency_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME concurrency_test COMMAND concurrency_test)
 # RUN_SERIAL: this gate's budgets (50 viewers, zero-lag spread) are
 # CPU-tight and fail when other tests contend for the cores - seen on a
@@ -287,7 +287,7 @@ set_tests_properties(concurrency_test PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE)
 add_executable(reload_test tests/reload_test.cpp)
 target_compile_features(reload_test PRIVATE cxx_std_20)
 set_target_properties(reload_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(reload_test PRIVATE gateway_warnings websrtgw_config)
+target_link_libraries(reload_test PRIVATE gateway_warnings QuicSRTgw_config)
 add_test(NAME reload_test COMMAND reload_test)
 set_tests_properties(reload_test PROPERTIES TIMEOUT 120)
 
@@ -299,11 +299,11 @@ set_tests_properties(reload_test PROPERTIES TIMEOUT 120)
 add_executable(webhook_test tests/webhook_test.cpp)
 target_compile_features(webhook_test PRIVATE cxx_std_20)
 set_target_properties(webhook_test PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(webhook_test PRIVATE gateway_warnings websrtgw)
+target_link_libraries(webhook_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME webhook_test COMMAND webhook_test)
 set_tests_properties(webhook_test PROPERTIES TIMEOUT 120)
 
 # Smoke registration: the binary's --selftest runs the consumer gate
 # (libwebsrt exports, srt fork gate, lsquic init, EventLoop).
-add_test(NAME gateway_selftest COMMAND websrt-gateway --selftest)
+add_test(NAME gateway_selftest COMMAND QuicSRT-gateway --selftest)
 set_tests_properties(gateway_selftest PROPERTIES TIMEOUT 30)

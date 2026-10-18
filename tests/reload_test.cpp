@@ -49,7 +49,7 @@
 namespace
 {
 
-constexpr const char* kConfigPath = "/tmp/websrt-gateway-reload-test.conf";
+constexpr const char* kConfigPath = "/tmp/QuicSRT-gateway-reload-test.conf";
 constexpr int         kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
 
 bool g_ok = true;

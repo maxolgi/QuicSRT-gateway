@@ -1,4 +1,4 @@
-# websrt-gateway-cpp
+# QuicSRT-gateway
 
 CLI-parity C++ replacement of the Rust
 [WebSRT](https://github.com/maxolgi/WebSRT) gateway: an lsquic
@@ -18,7 +18,7 @@ and gate had closed.
 
     ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (websrt-wasm-cpp release), BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
-    ./build.sh gateway   # build the websrt-gateway binary
+    ./build.sh gateway   # build the QuicSRT-gateway binary
     ./build.sh test      # run tests (live-oracle tests self-skip without the Rust gateway)
     ./build.sh web-dist  # refresh the embedded player (latest websrt-wasm-cpp release), then re-configure
 
@@ -40,13 +40,13 @@ newer releases.
    `--config` is given). Edit it and enable the endpoints (the player is
    already inside the binary — no `web_root` needed):
 
-        ./websrt-gateway                 # writes ./gateway.conf, runs in open mode
+        ./QuicSRT-gateway                 # writes ./gateway.conf, runs in open mode
         # edit gateway.conf: set health_port = 9091, web_port = 5173
-        ./websrt-gateway --config gateway.conf
+        ./QuicSRT-gateway --config gateway.conf
 
 2. **Run.**
 
-       build/release/websrt-gateway --config gw.conf
+       build/release/QuicSRT-gateway --config gw.conf
 
 3. **Publish.** Via WebTransport (`websrt://`, needs the libwebsrt-patched
    ffmpeg — `deps/ffmpeg/ffmpeg` in a libwebsrt checkout; the golden
@@ -80,23 +80,23 @@ newer releases.
 
 `cmake --install build/release` (default prefix `/usr/local`) installs:
 
-- `/usr/local/bin/websrt-gateway` — the binary (`scripts/websrt-cpp.conf`'s
+- `/usr/local/bin/QuicSRT-gateway` — the binary (`scripts/QuicSRT-gateway.conf`'s
   `command=` expects exactly this path)
-- `/usr/local/etc/websrt-cpp/gateway.example.conf` — the example config
-- `/usr/local/etc/supervisor/conf.d/websrt-cpp.conf` — the supervisord conf
+- `/usr/local/etc/QuicSRT-gateway/gateway.example.conf` — the example config
+- `/usr/local/etc/supervisor/conf.d/QuicSRT-gateway.conf` — the supervisord conf
 
 Production setup mirrors the Rust gateway's pattern (no player directory
 to deploy — it is embedded in the binary):
 
-    sudo cp /usr/local/etc/supervisor/conf.d/websrt-cpp.conf /etc/supervisor/conf.d/
-    sudo mkdir -p /etc/websrt-cpp /var/log/websrt-cpp && sudo chown www-data:www-data /var/log/websrt-cpp
-    sudo cp /usr/local/etc/websrt-cpp/gateway.example.conf /etc/websrt-cpp/gateway.conf
-    # edit /etc/websrt-cpp/gateway.conf (binds, ports, cert mode; see the
+    sudo cp /usr/local/etc/supervisor/conf.d/QuicSRT-gateway.conf /etc/supervisor/conf.d/
+    sudo mkdir -p /etc/QuicSRT-gateway /var/log/QuicSRT-gateway && sudo chown www-data:www-data /var/log/QuicSRT-gateway
+    sudo cp /usr/local/etc/QuicSRT-gateway/gateway.example.conf /etc/QuicSRT-gateway/gateway.conf
+    # edit /etc/QuicSRT-gateway/gateway.conf (binds, ports, cert mode; see the
     # example's production block)
-    sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl restart websrt-cpp
+    sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl restart QuicSRT-gateway
 
-After a rebuild or a config edit: `sudo supervisorctl restart websrt-cpp`;
+After a rebuild or a config edit: `sudo supervisorctl restart QuicSRT-gateway`;
 a config edit alone can also be applied live with
-`sudo kill -HUP $(pidof websrt-gateway)` (hot-reloadable settings only:
+`sudo kill -HUP $(pidof QuicSRT-gateway)` (hot-reloadable settings only:
 the stream allowlist, viewer cap, log level, webhook settings — the rest
 is restart-required and logged as such).

@@ -1,9 +1,9 @@
-# Parity matrix — websrt-gateway-cpp vs the Rust WebSRT gateway
+# Parity matrix — QuicSRT-gateway vs the Rust WebSRT gateway
 
 Measured 2026-10-12 against the running local gateways (measurement and
 documentation only; no gateway behavior was changed for parity):
 
-- **C++**: dev instance, `websrt-gateway --config /tmp/opencode/gw.conf`
+- **C++**: dev instance, `QuicSRT-gateway --config /tmp/opencode/gw.conf`
   — WT 127.0.0.1:4434, SRT ingest 9100, health 9291 (HTTP), web 8080,
   self-signed cert (pinned hash via runtime cert-hash.js).
 - **Rust**: supervisord `websrt` service — WT 0.0.0.0:4433, SRT ingest
