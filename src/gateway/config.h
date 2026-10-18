@@ -6,8 +6,8 @@
 // --config live only in the CLI; embedded consumers of the QuicSRTgw core
 // library supply a SessionPolicy in code and never link toml++.
 
-#ifndef WEBSRT_GATEWAY_CONFIG_H
-#define WEBSRT_GATEWAY_CONFIG_H
+#ifndef QUICSRT_GATEWAY_CONFIG_H
+#define QUICSRT_GATEWAY_CONFIG_H
 
 #include <cstdint>
 #include <memory>
@@ -145,4 +145,4 @@ struct Config
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_CONFIG_H
+#endif // QUICSRT_GATEWAY_CONFIG_H

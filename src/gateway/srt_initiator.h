@@ -60,8 +60,8 @@
 // ConnectionState() for the CONNECTED transition (first observation also
 // reads back the negotiated payload cap).
 
-#ifndef WEBSRT_GATEWAY_SRT_INITIATOR_H
-#define WEBSRT_GATEWAY_SRT_INITIATOR_H
+#ifndef QUICSRT_GATEWAY_SRT_INITIATOR_H
+#define QUICSRT_GATEWAY_SRT_INITIATOR_H
 
 #include <arpa/inet.h>
 
@@ -82,7 +82,7 @@ namespace quicsrt::gateway
 /// Initiator-side SRT parameters. Latency is the gateway-side TSBPD floor.
 struct InitiatorConfig
 {
-    int payload_size       = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
+    int payload_size       = 1128; // quicsrt:// protocol constant: 6 x 188-byte TS packets
     int latency_ms         = 10;   // gateway floor; TSBPD = max(sender, receiver)
     int send_buffer_pkts   = 65536;
     int recv_buffer_pkts   = 8192;
@@ -227,4 +227,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_SRT_INITIATOR_H
+#endif // QUICSRT_GATEWAY_SRT_INITIATOR_H

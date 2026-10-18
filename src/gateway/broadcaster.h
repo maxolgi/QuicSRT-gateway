@@ -38,8 +38,8 @@
 // THREADING: loop-thread only (the gateway owns the ring and appends from
 // SessionRegistryListener::OnMedia). Snapshots/counters are plain reads.
 
-#ifndef WEBSRT_GATEWAY_BROADCASTER_H
-#define WEBSRT_GATEWAY_BROADCASTER_H
+#ifndef QUICSRT_GATEWAY_BROADCASTER_H
+#define QUICSRT_GATEWAY_BROADCASTER_H
 
 #include <cstddef>
 #include <cstdint>
@@ -56,7 +56,7 @@ namespace quicsrt::gateway
 /// Per-stream broadcaster knobs.
 struct BroadcasterConfig
 {
-    /// Ring depth in messages. At the 1128-byte websrt://
+    /// Ring depth in messages. At the 1128-byte quicsrt://
     /// payload the default is ~37 MiB of buffering per live stream, which absorbs
     /// long viewer-side stalls (drop-oldest, never backpressure). At LARGE
     /// messages (whole multi-packet SRT frames, ~0.3 MB GOP keyframes; the
@@ -313,4 +313,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_BROADCASTER_H
+#endif // QUICSRT_GATEWAY_BROADCASTER_H

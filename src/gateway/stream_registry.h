@@ -19,8 +19,8 @@
 // SessionRegistryListener callbacks; the admission consult happens inline in
 // the accept path, on the same thread.
 
-#ifndef WEBSRT_GATEWAY_STREAM_REGISTRY_H
-#define WEBSRT_GATEWAY_STREAM_REGISTRY_H
+#ifndef QUICSRT_GATEWAY_STREAM_REGISTRY_H
+#define QUICSRT_GATEWAY_STREAM_REGISTRY_H
 
 #include <cstddef>
 #include <map>
@@ -237,4 +237,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_STREAM_REGISTRY_H
+#endif // QUICSRT_GATEWAY_STREAM_REGISTRY_H

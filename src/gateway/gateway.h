@@ -40,8 +40,8 @@
 // registry's credit-paced ticker paces the actual sends. A non-SRT source
 // (the SRT/UDP ingest of G6) feeds the same OnMedia sink.
 
-#ifndef WEBSRT_GATEWAY_GATEWAY_H
-#define WEBSRT_GATEWAY_GATEWAY_H
+#ifndef QUICSRT_GATEWAY_GATEWAY_H
+#define QUICSRT_GATEWAY_GATEWAY_H
 
 #include <cstddef>
 #include <cstdint>
@@ -238,4 +238,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_GATEWAY_H
+#endif // QUICSRT_GATEWAY_GATEWAY_H

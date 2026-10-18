@@ -6,8 +6,8 @@
 // builds the player. A configure without web/dist is a fatal error, so a
 // built binary always carries the player.
 
-#ifndef WEBSRT_GATEWAY_EMBEDDED_PLAYER_H
-#define WEBSRT_GATEWAY_EMBEDDED_PLAYER_H
+#ifndef QUICSRT_GATEWAY_EMBEDDED_PLAYER_H
+#define QUICSRT_GATEWAY_EMBEDDED_PLAYER_H
 
 #include <string_view>
 #include <vector>
@@ -28,4 +28,4 @@ const std::vector<EmbeddedAsset>& EmbeddedPlayerFiles();
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_EMBEDDED_PLAYER_H
+#endif // QUICSRT_GATEWAY_EMBEDDED_PLAYER_H

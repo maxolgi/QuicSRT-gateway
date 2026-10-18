@@ -21,8 +21,8 @@
 // engine - same constraint WTClient has; run client engines on their own
 // loops).
 
-#ifndef WEBSRT_GATEWAY_WT_SERVER_H
-#define WEBSRT_GATEWAY_WT_SERVER_H
+#ifndef QUICSRT_GATEWAY_WT_SERVER_H
+#define QUICSRT_GATEWAY_WT_SERVER_H
 
 #include <atomic>
 #include <chrono>
@@ -131,7 +131,7 @@ public:
 
     /// Raw bytes arrived on a WT client-initiated bidirectional substream
     /// (stream type 0x41) of this session. Surfaced uninterpreted for later
-    /// capsule work (G4/G5); websrt:// data rides datagrams, not substreams.
+    /// capsule work (G4/G5); quicsrt:// data rides datagrams, not substreams.
     virtual void OnSessionStreamData(WtSessionHandle /*handle*/, const std::uint8_t* /*data*/, std::size_t /*size*/) {}
 };
 
@@ -333,4 +333,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_WT_SERVER_H
+#endif // QUICSRT_GATEWAY_WT_SERVER_H

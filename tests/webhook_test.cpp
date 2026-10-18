@@ -56,7 +56,7 @@ using quicsrt::gateway::WebhookEvent;
 using quicsrt::gateway::WebhookSettings;
 using quicsrt::gateway::WebhookSnapshot;
 
-constexpr int kMaxPayload = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
+constexpr int kMaxPayload = 1128; // quicsrt:// protocol constant: 6 x 188-byte TS packets
 
 bool g_ok = true;
 

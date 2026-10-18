@@ -50,8 +50,8 @@
 // run before the WtServer binds; Start arms the timer (loop thread or
 // while the loop is not running - it posts when the loop already runs).
 
-#ifndef WEBSRT_GATEWAY_SESSION_REGISTRY_H
-#define WEBSRT_GATEWAY_SESSION_REGISTRY_H
+#ifndef QUICSRT_GATEWAY_SESSION_REGISTRY_H
+#define QUICSRT_GATEWAY_SESSION_REGISTRY_H
 
 #include <atomic>
 #include <chrono>
@@ -251,4 +251,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_SESSION_REGISTRY_H
+#endif // QUICSRT_GATEWAY_SESSION_REGISTRY_H

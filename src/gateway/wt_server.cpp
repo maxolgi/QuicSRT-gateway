@@ -1188,7 +1188,7 @@ void WtServer::HandleSessionStreamRead(StreamCtx& sc)
 }
 
 // WT client-initiated substreams (stream type 0x41): raw session payload,
-// surfaced uninterpreted for G4/G5 capsule work. websrt:// data rides
+// surfaced uninterpreted for G4/G5 capsule work. quicsrt:// data rides
 // datagrams; nothing here is interpreted today. The varint lsquic parses
 // after 0x41 identifies the owning session - WT-over-HTTP/3 calls it the
 // Session Id (the CONNECT stream id divided by 4), so both that reading

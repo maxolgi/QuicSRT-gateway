@@ -8,8 +8,8 @@
 // embedded consumer drives its own reload through
 // Gateway::ApplyRuntimeConfig directly.
 
-#ifndef WEBSRT_GATEWAY_RELOAD_H
-#define WEBSRT_GATEWAY_RELOAD_H
+#ifndef QUICSRT_GATEWAY_RELOAD_H
+#define QUICSRT_GATEWAY_RELOAD_H
 
 #include <optional>
 #include <string>
@@ -38,4 +38,4 @@ ReloadConfig(const std::string& path, Gateway& gateway, const Config& current, s
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_RELOAD_H
+#endif // QUICSRT_GATEWAY_RELOAD_H

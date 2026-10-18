@@ -42,8 +42,8 @@
 // THREADING: owned by the ingest connection (one probe per publisher
 // connection, state never shared); single-threaded by construction.
 
-#ifndef WEBSRT_GATEWAY_INGEST_TS_CONTINUITY_H
-#define WEBSRT_GATEWAY_INGEST_TS_CONTINUITY_H
+#ifndef QUICSRT_GATEWAY_INGEST_TS_CONTINUITY_H
+#define QUICSRT_GATEWAY_INGEST_TS_CONTINUITY_H
 
 #include <cstddef>
 #include <cstdint>
@@ -129,4 +129,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_INGEST_TS_CONTINUITY_H
+#endif // QUICSRT_GATEWAY_INGEST_TS_CONTINUITY_H

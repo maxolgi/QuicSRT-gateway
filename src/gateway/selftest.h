@@ -3,8 +3,8 @@
 // libquicsrt. Lives in the gateway library so embedded consumers can run the
 // same gate; the CLI exposes it via --selftest (the ctest smoke entry).
 
-#ifndef WEBSRT_GATEWAY_SELFTEST_H
-#define WEBSRT_GATEWAY_SELFTEST_H
+#ifndef QUICSRT_GATEWAY_SELFTEST_H
+#define QUICSRT_GATEWAY_SELFTEST_H
 
 namespace quicsrt::gateway
 {
@@ -16,4 +16,4 @@ int RunSelftest();
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_SELFTEST_H
+#endif // QUICSRT_GATEWAY_SELFTEST_H

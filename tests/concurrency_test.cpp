@@ -7,7 +7,7 @@
 // path in one burst. The
 // publisher (libquicsrt Publisher) then claims the name and paces a
 // deterministic 188-aligned pattern for ~15 s: 11280 bytes (10 x 1128, the
-// websrt:// payload) every 33 ms = ~2.73 Mbps, 455 ticks = 5,132,400 bytes.
+// quicsrt:// payload) every 33 ms = ~2.73 Mbps, 455 ticks = 5,132,400 bytes.
 //
 // GATE: zero viewer lag - every viewer receives the stream,
 // byte counts within a sane window of each other; ticker avg < 5 ms; no
@@ -56,7 +56,7 @@ using quicsrt::gateway::Gateway;
 using quicsrt::gateway::GatewayConfig;
 
 constexpr int         kViewers    = 50;
-constexpr int         kMaxPayload = 1128;  // websrt:// protocol constant: 6 x 188-byte TS packets
+constexpr int         kMaxPayload = 1128;  // quicsrt:// protocol constant: 6 x 188-byte TS packets
 constexpr std::size_t kTickBytes  = 11280; // 10 messages per 33 ms frame cadence
 constexpr int         kTickMs     = 33;
 constexpr int         kTicks      = 455; // ~15 s

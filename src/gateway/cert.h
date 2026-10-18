@@ -21,8 +21,8 @@
 // which is what lets one pinned hash (cert-hash.js) cover the page AND
 // the WebTransport handshake.
 
-#ifndef WEBSRT_GATEWAY_CERT_H
-#define WEBSRT_GATEWAY_CERT_H
+#ifndef QUICSRT_GATEWAY_CERT_H
+#define QUICSRT_GATEWAY_CERT_H
 
 #include <cstdint>
 #include <stdexcept>
@@ -122,4 +122,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_CERT_H
+#endif // QUICSRT_GATEWAY_CERT_H

@@ -239,7 +239,7 @@ target_compile_features(gateway_e2e_test PRIVATE cxx_std_20)
 set_target_properties(gateway_e2e_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(gateway_e2e_test PRIVATE gateway_warnings QuicSRTgw_config)
 target_compile_definitions(gateway_e2e_test PRIVATE
-    WEBSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
+    QUICSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
 add_test(NAME gateway_e2e_test COMMAND gateway_e2e_test)
 set_tests_properties(gateway_e2e_test PROPERTIES TIMEOUT 180)
 
@@ -251,7 +251,7 @@ target_compile_features(srt_ingest_test PRIVATE cxx_std_20)
 set_target_properties(srt_ingest_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(srt_ingest_test PRIVATE gateway_warnings QuicSRTgw_config)
 target_compile_definitions(srt_ingest_test PRIVATE
-    WEBSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
+    QUICSRT_TEST_FIXTURE_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/test.ts")
 add_test(NAME srt_ingest_test COMMAND srt_ingest_test)
 set_tests_properties(srt_ingest_test PROPERTIES TIMEOUT 180)
 

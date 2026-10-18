@@ -65,14 +65,14 @@ using quicsrt::gateway::GatewayConfig;
 using quicsrt::gateway::StreamStats;
 
 // Vendored fixture (tests/fixtures/test.ts); override with
-// WEBSRT_TEST_FIXTURE if needed.
+// QUICSRT_TEST_FIXTURE if needed.
 std::string FixturePath()
 {
-    if (const char* env = std::getenv("WEBSRT_TEST_FIXTURE"))
+    if (const char* env = std::getenv("QUICSRT_TEST_FIXTURE"))
         return env;
-    return WEBSRT_TEST_FIXTURE_DEFAULT;
+    return QUICSRT_TEST_FIXTURE_DEFAULT;
 }
-constexpr int         kMaxPayload = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
+constexpr int         kMaxPayload = 1128; // quicsrt:// protocol constant: 6 x 188-byte TS packets
 constexpr std::size_t kMaxViewers = 2;
 
 bool g_ok = true;

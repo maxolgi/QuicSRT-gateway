@@ -27,8 +27,8 @@
 // design. An empty URL is "off": Notify enqueues nothing, and events
 // still queued when the URL turns empty are dropped (counted).
 
-#ifndef WEBSRT_GATEWAY_WEBHOOKS_H
-#define WEBSRT_GATEWAY_WEBHOOKS_H
+#ifndef QUICSRT_GATEWAY_WEBHOOKS_H
+#define QUICSRT_GATEWAY_WEBHOOKS_H
 
 #include <chrono>
 #include <condition_variable>
@@ -121,4 +121,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_WEBHOOKS_H
+#endif // QUICSRT_GATEWAY_WEBHOOKS_H

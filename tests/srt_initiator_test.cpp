@@ -62,7 +62,7 @@ namespace
 
 using quicsrt::gateway::WtSessionHandle;
 
-constexpr int         kPayloadSize = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
+constexpr int         kPayloadSize = 1128; // quicsrt:// protocol constant: 6 x 188-byte TS packets
 constexpr int         kViewerMsgs  = 1000; // > 4 x the 256/tick credit budget
 constexpr int         kPubMsgs     = 2000;
 constexpr std::size_t kViewerBytes = std::size_t{kViewerMsgs} * kPayloadSize;

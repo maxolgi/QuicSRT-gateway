@@ -60,8 +60,8 @@
 // the next OBS connection. SetupListener takes the reference, CloseAllSockets
 // releases it (after every socket is closed).
 
-#ifndef WEBSRT_GATEWAY_INGEST_SRT_INGEST_H
-#define WEBSRT_GATEWAY_INGEST_SRT_INGEST_H
+#ifndef QUICSRT_GATEWAY_INGEST_SRT_INGEST_H
+#define QUICSRT_GATEWAY_INGEST_SRT_INGEST_H
 
 #include <atomic>
 #include <cstddef>
@@ -101,7 +101,7 @@ struct SrtIngestConfig
     std::string   bind         = "127.0.0.1"; ///< IPv4 literal
     std::uint16_t port         = 9000;
     std::uint64_t latency_ms   = 120;  ///< TSBPD latency (floor 10 ms)
-    int           payload_size = 1128; ///< websrt:// protocol constant: 6 x 188 TS packets
+    int           payload_size = 1128; ///< quicsrt:// protocol constant: 6 x 188 TS packets
     /// Concurrent publisher connections, 0 = unlimited. Past the cap a new
     /// connection is refused at accept, before any per-connection resource
     /// or loop round-trip is spent.
@@ -283,4 +283,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_INGEST_SRT_INGEST_H
+#endif // QUICSRT_GATEWAY_INGEST_SRT_INGEST_H

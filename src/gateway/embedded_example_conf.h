@@ -7,8 +7,8 @@
 // given: an explicit path is the operator's decision, and a missing file
 // there stays an error.
 
-#ifndef WEBSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H
-#define WEBSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H
+#ifndef QUICSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H
+#define QUICSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H
 
 #include <string_view>
 
@@ -20,4 +20,4 @@ namespace quicsrt::gateway
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H
+#endif // QUICSRT_GATEWAY_EMBEDDED_EXAMPLE_CONF_H

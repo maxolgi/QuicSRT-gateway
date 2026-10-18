@@ -53,8 +53,8 @@
 // gateway.Shutdown(), because the stats snapshot rides a Post onto that
 // loop).
 
-#ifndef WEBSRT_GATEWAY_WEB_SERVER_H
-#define WEBSRT_GATEWAY_WEB_SERVER_H
+#ifndef QUICSRT_GATEWAY_WEB_SERVER_H
+#define QUICSRT_GATEWAY_WEB_SERVER_H
 
 #include <atomic>
 #include <chrono>
@@ -216,4 +216,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_WEB_SERVER_H
+#endif // QUICSRT_GATEWAY_WEB_SERVER_H

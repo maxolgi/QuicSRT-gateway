@@ -10,8 +10,8 @@
 // construction - built once at startup and consulted from the accept loop.
 // Implementations must not block.
 
-#ifndef WEBSRT_GATEWAY_POLICY_H
-#define WEBSRT_GATEWAY_POLICY_H
+#ifndef QUICSRT_GATEWAY_POLICY_H
+#define QUICSRT_GATEWAY_POLICY_H
 
 #include <cstdint>
 #include <map>
@@ -205,4 +205,4 @@ private:
 
 } // namespace quicsrt::gateway
 
-#endif // WEBSRT_GATEWAY_POLICY_H
+#endif // QUICSRT_GATEWAY_POLICY_H

@@ -461,7 +461,7 @@ std::vector<std::uint8_t> MakeTsChunk(std::uint8_t start_cc)
 int main()
 {
     // ---- the web root: a small stand-in for web/dist ----
-    char        root_template[] = "/tmp/websrt-web-test-XXXXXX";
+    char        root_template[] = "/tmp/quicsrt-web-test-XXXXXX";
     const char* root_dir        = ::mkdtemp(root_template);
     if (root_dir == nullptr)
     {
