@@ -10,7 +10,7 @@ Commands:
     lib        Build the tree (libquicsrt + srt fork + lsquic)
     gateway    Build the QuicSRT-gateway binary
     test       Run tests via ctest (release)
-    web-dist   Fetch the player dist (latest websrt-wasm-cpp release) into web/dist, then re-run cmake configure
+    web-dist   Fetch the player dist (latest QuicSRT-wasm release) into web/dist, then re-run cmake configure
 EOF
 }
 
@@ -20,13 +20,13 @@ BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 
 # The player (web/dist) is EMBEDDED into the binary at compile time.
 # The dist is never built here: it is fetched from the latest
-# websrt-wasm-cpp release artifact — the C++/emscripten player (its ci
+# QuicSRT-wasm release artifact — the C++/emscripten player (its ci
 # publishes every master push as dev-<sha> marked latest, v* tags as
 # stable cuts), engineered in the same zip shape. One source of truth
 # for the player, matching what the deployed gateway serves via
 # web_root.
-WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/websrt-wasm-cpp/releases/latest
-WEB_DIST_ASSET=websrt-wasm-dist.zip
+WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/QuicSRT-wasm/releases/latest
+WEB_DIST_ASSET=quicsrt-wasm-dist.zip
 
 # Fetch the player dist into web/dist (gitignored). Requires curl + unzip.
 fetch_web_dist() {
@@ -40,10 +40,10 @@ fetch_web_dist() {
     # serves that redirect freely. The || true matters: with pipefail a
     # failed curl would abort the script before the friendly error below.
     tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' "${WEB_DIST_LATEST_RELEASE}" | sed -n 's|.*/tag/||p' || true)
-    [ -n "${tag}" ] || { echo "build.sh: cannot resolve the latest websrt-wasm-cpp release" >&2; exit 1; }
+    [ -n "${tag}" ] || { echo "build.sh: cannot resolve the latest QuicSRT-wasm release" >&2; exit 1; }
     local tmp
     tmp=$(mktemp -d)
-    if ! curl -fsSL "https://github.com/maxolgi/websrt-wasm-cpp/releases/download/${tag}/${WEB_DIST_ASSET}" -o "${tmp}/dist.zip"; then
+    if ! curl -fsSL "https://github.com/maxolgi/QuicSRT-wasm/releases/download/${tag}/${WEB_DIST_ASSET}" -o "${tmp}/dist.zip"; then
         rm -rf "${tmp}"
         echo "build.sh: cannot download ${WEB_DIST_ASSET} from ${tag}" >&2
         exit 1

@@ -12,18 +12,18 @@ packaging).
 
 ## Build
 
-    ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (websrt-wasm-cpp release), BoringSSL fetch+build, cmake configure
+    ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (QuicSRT-wasm release), BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libquicsrt + srt fork + lsquic)
     ./build.sh gateway   # build the QuicSRT-gateway binary
     ./build.sh test      # run tests (the 4 Rust-gateway probes from libquicsrt self-skip)
-    ./build.sh web-dist  # refresh the embedded player (latest websrt-wasm-cpp release), then re-configure
+    ./build.sh web-dist  # refresh the embedded player (latest QuicSRT-wasm release), then re-configure
 
 Requires gcc 13+, CMake 3.24+, ninja, nasm, curl + unzip.
 
 The player (the browser web app) is **embedded in the binary** at compile
 time: `./build.sh setup`
-fetches the latest `websrt-wasm-dist.zip` from
-[websrt-wasm-cpp releases](https://github.com/maxolgi/websrt-wasm-cpp/releases)
+fetches the latest `quicsrt-wasm-dist.zip` from
+[QuicSRT-wasm releases](https://github.com/maxolgi/QuicSRT-wasm/releases)
 into `web/dist` (gitignored), and CMake bakes it into the gateway. The
 dist is the C++/emscripten player — the same artifact the deployed
 gateway serves via `web_root`; re-running setup (or web-dist) picks up
