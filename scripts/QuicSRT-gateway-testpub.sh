@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Always-on websrt:// test publisher for the C++ gateway (the
+# Always-on quicsrt:// test publisher for the C++ gateway (the
 # WebTransport publish path, not the SRT ingest). Deployed as the
 # supervisord program QuicSRT-gateway-testpub (see QuicSRT-gateway-testpub.conf)
 # with command= pointing HERE - run from the checkout, never installed.
@@ -22,7 +22,7 @@ for _ in $(seq 1 30); do
             -f lavfi -i testsrc2=size=640x360:rate=30 \
             -f lavfi -i sine=frequency=440 \
             -c:v libx264 -preset veryfast -c:a aac -f mpegts \
-            "websrt://127.0.0.1:${WT_PORT}?stream=${STREAM}&cert_hash_file=${HASH_FILE}"
+            "quicsrt://127.0.0.1:${WT_PORT}?stream=${STREAM}&cert_hash_file=${HASH_FILE}"
     fi
     sleep 2
 done
