@@ -44,12 +44,12 @@ newer releases.
 
        build/release/QuicSRT-gateway --config gw.conf
 
-3. **Publish.** Via WebTransport (`websrt://`, needs the libquicsrt-patched
+3. **Publish.** Via WebTransport (`quicsrt://`, needs the libquicsrt-patched
    ffmpeg — `deps/ffmpeg/ffmpeg` in a libquicsrt checkout; the golden
    acceptance commands, host adapted):
 
        ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440 \
-              -c:v libx264 -preset veryfast -c:a aac -f mpegts websrt://127.0.0.1:4433?stream=test
+              -c:v libx264 -preset veryfast -c:a aac -f mpegts quicsrt://127.0.0.1:4433?stream=test
 
    or via plain SRT ingest (`srt://`, any ffmpeg with libsrt — same
    command the example config documents):
@@ -63,9 +63,10 @@ newer releases.
 
        https://127.0.0.1:5173/?stream=test
 
-   or record a copy (golden viewer command):
+   or record a copy (golden viewer command; pin the self-signed cert like
+   the player does — fetch cert-hash.js from the web port first):
 
-       ffmpeg -f mpegts -i websrt://127.0.0.1:4433?stream=test -c copy out.ts
+       ffmpeg -f mpegts -i "quicsrt://127.0.0.1:4433?stream=test&cert_hash_file=cert-hash.js" -c copy out.ts
 
 5. **Health check.**
 

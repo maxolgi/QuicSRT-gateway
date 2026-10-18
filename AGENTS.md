@@ -68,9 +68,11 @@ include paths or link anything the targets don't export.
 - The tsan preset excludes `srt_initiator_test` (TSan slowdown alone blows its
   10 s internal deadline).
 - Golden acceptance commands against the supervised gateway (via the
-  libquicsrt-patched ffmpeg, `../libquicsrt/deps/ffmpeg/ffmpeg`):
-  `ffmpeg -f lavfi -i testsrc2 … -f mpegts websrt://gw:443?stream=test` and
-  `ffmpeg -f mpegts -i websrt://gw:443?stream=test -c copy out.ts`.
+  libquicsrt-patched ffmpeg, `../libquicsrt/deps/ffmpeg/ffmpeg`; the
+  self-signed gateway needs a pin — fetch `cert-hash.js` from the web port
+  and pass `cert_hash_file=`, see `../libquicsrt/examples/ffmpeg/README.md`):
+  `ffmpeg -f lavfi -i testsrc2 … -f mpegts quicsrt://gw:4435?stream=test` and
+  `ffmpeg -f mpegts -i quicsrt://gw:4435?stream=test&cert_hash_file=… -c copy out.ts`.
 
 ## Live gateway (supervisord)
 
