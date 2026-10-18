@@ -16,20 +16,22 @@ and gate had closed.
 
 ## Build
 
-    ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (WebSRT release), BoringSSL fetch+build, cmake configure
+    ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (websrt-wasm-cpp release), BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build the websrt-gateway binary
     ./build.sh test      # run tests (live-oracle tests self-skip without the Rust gateway)
-    ./build.sh web-dist  # refresh the embedded player (latest WebSRT release), then re-configure
+    ./build.sh web-dist  # refresh the embedded player (pinned websrt-wasm-cpp release), then re-configure
 
 Requires gcc 13+, CMake 3.24+, ninja, nasm, curl + unzip.
 
 The player (the browser web app) is **embedded in the binary** at compile
 time, exactly like the Rust gateway's rust-embed: `./build.sh setup`
-fetches the latest `websrt-web-dist.zip` from
-[WebSRT releases](https://github.com/maxolgi/WebSRT/releases) into
-`web/dist` (gitignored), and CMake bakes it into the gateway. The resolved
-release tag is logged at configure time.
+fetches a pinned `websrt-wasm-dist.zip` from
+[websrt-wasm-cpp releases](https://github.com/maxolgi/websrt-wasm-cpp/releases)
+into `web/dist` (gitignored), and CMake bakes it into the gateway. The
+dist is the C++/emscripten player — the same artifact the deployed
+gateway serves via `web_root`; bump the pin in `build.sh` to pick up a
+newer player.
 
 ## Quickstart
 

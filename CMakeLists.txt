@@ -34,7 +34,8 @@ endif()
 find_package(Threads REQUIRED)
 
 # ---- The embedded player (rust-embed parity) ----
-# web/dist is fetched from the latest WebSRT release (./build.sh setup or
+# web/dist is fetched from a pinned websrt-wasm-cpp release (./build.sh
+# setup or
 # ./build.sh web-dist) and baked into the binary: a generated table in
 # CMAKE_CURRENT_BINARY_DIR. Generation runs at CONFIGURE time; the glob is
 # CONFIGURE_DEPENDS, so refreshing web/dist + re-running the configure
@@ -43,7 +44,7 @@ set(WEB_DIST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/web/dist)
 if(NOT EXISTS ${WEB_DIST_DIR}/index.html)
     message(FATAL_ERROR
         "web/dist is missing (the embedded player): run ./build.sh setup "
-        "or ./build.sh web-dist to fetch it from the WebSRT release")
+        "or ./build.sh web-dist to fetch it from the websrt-wasm-cpp release")
 endif()
 file(GLOB_RECURSE WEB_DIST_FILES LIST_DIRECTORIES false RELATIVE ${WEB_DIST_DIR}
      CONFIGURE_DEPENDS ${WEB_DIST_DIR}/*)

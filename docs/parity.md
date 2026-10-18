@@ -33,6 +33,13 @@ the in-progress emcc/pthreads wasm rewrite needs SharedArrayBuffer,
 which the browser grants only cross-origin-isolated documents. Oracle
 side verified against the WebSRT source (Content-Type only). Row below.
 
+2026-10-18: the embedded player dist switched from the Rust WebSRT
+release artifact to a pinned websrt-wasm-cpp release (`websrt-wasm-dist.zip`,
+fetched by build.sh) — the emcc/pthreads C++ player, the same artifact
+the deployed gateway serves via web_root. One source of truth for the
+player; the Rust player stops being the embedded parity reference. The
+serving mechanism is unchanged (row below).
+
 Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 `websrt-dump`, plus the WebSRT oracle bins (`wt_hs_probe`, `mock_obs`).
 
@@ -71,7 +78,7 @@ Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 | Ingest connection cap | none: the accept loop admits every streamid-carrying connection — the only refusals are no-streamid and name-occupied (srt_listener.rs:81-110) | `[server].max_ingest_sessions` (default 100, 0 = unlimited): past the cap the connection is refused at accept, before any streamid/gate/claim work, counted `rejected_session_cap` in `/stats` | **C++ improvement** (the ingest analogue of the WT `max_sessions` cap; each accepted publisher holds latency-scaled srt buffers) |
 | TLS / SNI | wtransport serves one identity; accepts IP-literal (no-SNI) clients | one SSL_CTX via `ea_get_ssl_ctx` only — SNI ignored, no-SNI clients (IP literals) complete; mkcert/PEM mode + cert-hash.js contract identical | **Parity** (browser gate passed on both; wt_hs_probe on 127.0.0.1) |
 | cert-hash.js contract | `CERT_HASH` (self) / `null` (mkcert) + `WT_PORT` | same runtime emission (cert.h) | **Parity** |
-| Player serving | web/dist embedded at compile time (rust-embed), cert-hash.js served dynamically | web/dist embedded at compile time (CMake-generated table from the WebSRT release dist), cert-hash.js served dynamically; optional `web_root` disk override (the oracle's own `--web-root`) | **Parity** |
+| Player serving | web/dist embedded at compile time (rust-embed), cert-hash.js served dynamically | web/dist embedded at compile time (CMake-generated table from a pinned websrt-wasm-cpp release dist — the emcc/pthreads C++ player, not the oracle's Rust player), cert-hash.js served dynamically; optional `web_root` disk override (the oracle's own `--web-root`) | **Deliberate divergence** (mechanism identical; the embedded build is the wasm-cpp artifact, matching the deployed web_root — swapped 2026-10-18, was the WebSRT release dist) |
 | Player COOP/COEP | none — axum serves the rust-embed table and cert-hash.js with Content-Type only (web_server.rs:96-122) | every player response (disk override and embedded table, 304s included) carries `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` (`PlayerHeaders`, web_server.cpp) | **C++ additive** (the emcc pthreads wasm rewrite needs a cross-origin-isolated document for SharedArrayBuffer; all player subresources are same-origin, so require-corp excludes nothing the current dist loads) |
 
 ## /health shape diff (key-by-key, equivalent live `browsertest` stream + one WT viewer on each)

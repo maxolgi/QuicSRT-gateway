@@ -10,7 +10,7 @@ Commands:
     lib        Build the tree (libwebsrt + srt fork + lsquic)
     gateway    Build the websrt-gateway binary
     test       Run tests via ctest (release)
-    web-dist   Fetch the player dist (latest WebSRT release) into web/dist, then re-run cmake configure
+    web-dist   Fetch the player dist (pinned websrt-wasm-cpp release) into web/dist, then re-run cmake configure
 EOF
 }
 
@@ -20,29 +20,27 @@ BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 
 # The player (web/dist) is EMBEDDED into the binary at compile time
 # (rust-embed parity with the Rust gateway). The dist is never built here:
-# it is fetched from the latest WebSRT release artifact. The resolved tag
-# is logged; re-running setup (or web-dist) picks up newer releases.
-WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/WebSRT/releases/latest
-WEB_DIST_ASSET=websrt-web-dist.zip
+# it is fetched from a PINNED websrt-wasm-cpp release artifact — the
+# C++/emscripten player (its ci publishes dev-<sha> tags off master, v*
+# tags as stable cuts), engineered in the same zip shape. This replaces
+# the Rust WebSRT dist deliberately: one source of truth for the player,
+# matching what the deployed gateway serves via web_root. Bump the pin
+# by hand; the tag resolution the Rust-era fetch needed is gone (a
+# pinned /releases/download/ URL needs no API call and cannot 403).
+# Divergence recorded in docs/parity.md ("Player serving").
+WEB_DIST_URL=https://github.com/maxolgi/websrt-wasm-cpp/releases/download/dev-f26d29d/websrt-wasm-dist.zip
 
 # Fetch the player dist into web/dist (gitignored). Requires curl + unzip.
 fetch_web_dist() {
     command -v curl >/dev/null 2>&1 || { echo "build.sh: curl is required to fetch the player dist" >&2; exit 1; }
     command -v unzip >/dev/null 2>&1 || { echo "build.sh: unzip is required to unpack the player dist" >&2; exit 1; }
-    local tag
-    # Resolve the tag WITHOUT the REST API: api.github.com is rate-limited
-    # per IP (60/h unauthenticated; shared CI runner IPs exhaust it - seen
-    # as a curl 22 / HTTP 403 killing ./build.sh setup in tsan runs).
-    # /releases/latest redirects to /releases/tag/<tag> and github.com
-    # serves that redirect freely. The || true matters: with pipefail a
-    # failed curl would abort the script before the friendly error below.
-    tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' "${WEB_DIST_LATEST_RELEASE}" | sed -n 's|.*/tag/||p' || true)
-    [ -n "${tag}" ] || { echo "build.sh: cannot resolve the latest WebSRT release" >&2; exit 1; }
+    local tag=${WEB_DIST_URL#*/download/}
+    tag=${tag%%/*}
     local tmp
     tmp=$(mktemp -d)
-    if ! curl -fsSL "https://github.com/maxolgi/WebSRT/releases/download/${tag}/${WEB_DIST_ASSET}" -o "${tmp}/dist.zip"; then
+    if ! curl -fsSL "${WEB_DIST_URL}" -o "${tmp}/dist.zip"; then
         rm -rf "${tmp}"
-        echo "build.sh: cannot download ${WEB_DIST_ASSET} from ${tag}" >&2
+        echo "build.sh: cannot download the player dist from ${WEB_DIST_URL}" >&2
         exit 1
     fi
     rm -rf web/dist
