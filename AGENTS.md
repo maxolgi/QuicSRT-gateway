@@ -16,7 +16,7 @@ needs a row there. Companion repos (siblings in `~/maxolgi/WebSRT-cpp/`):
     ./build.sh lib       # build the tree (libwebsrt + srt fork + lsquic)
     ./build.sh gateway   # build only the websrt-gateway binary
     ./build.sh test      # ctest --preset release --parallel
-    ./build.sh web-dist  # refresh the embedded player (pinned websrt-wasm-cpp release) + re-configure
+    ./build.sh web-dist  # refresh the embedded player (latest websrt-wasm-cpp release) + re-configure
 
 Toolchain: gcc 13+, CMake ≥ 3.24, ninja, nasm, curl + unzip, **Go + zlib1g-dev**
 (BoringSSL build needs Go — README omits it; CI installs it). `WEBSRT_ENABLE_WT=ON`
