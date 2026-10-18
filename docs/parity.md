@@ -28,6 +28,11 @@ recorded. Oracle behavior for every new row was re-verified against
 the WebSRT source, including the wtransport 0.7.1 and hyper 1.11
 dependency paths the capsule and header-deadline rows turn on.
 
+2026-10-17 (later): COOP/COEP headers added to every player response —
+the in-progress emcc/pthreads wasm rewrite needs SharedArrayBuffer,
+which the browser grants only cross-origin-isolated documents. Oracle
+side verified against the WebSRT source (Content-Type only). Row below.
+
 Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 `websrt-dump`, plus the WebSRT oracle bins (`wt_hs_probe`, `mock_obs`).
 
@@ -67,6 +72,7 @@ Client tooling: libwebsrt's patched ffmpeg (`websrt://` protocol) and
 | TLS / SNI | wtransport serves one identity; accepts IP-literal (no-SNI) clients | one SSL_CTX via `ea_get_ssl_ctx` only — SNI ignored, no-SNI clients (IP literals) complete; mkcert/PEM mode + cert-hash.js contract identical | **Parity** (browser gate passed on both; wt_hs_probe on 127.0.0.1) |
 | cert-hash.js contract | `CERT_HASH` (self) / `null` (mkcert) + `WT_PORT` | same runtime emission (cert.h) | **Parity** |
 | Player serving | web/dist embedded at compile time (rust-embed), cert-hash.js served dynamically | web/dist embedded at compile time (CMake-generated table from the WebSRT release dist), cert-hash.js served dynamically; optional `web_root` disk override (the oracle's own `--web-root`) | **Parity** |
+| Player COOP/COEP | none — axum serves the rust-embed table and cert-hash.js with Content-Type only (web_server.rs:96-122) | every player response (disk override and embedded table, 304s included) carries `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` (`PlayerHeaders`, web_server.cpp) | **C++ additive** (the emcc pthreads wasm rewrite needs a cross-origin-isolated document for SharedArrayBuffer; all player subresources are same-origin, so require-corp excludes nothing the current dist loads) |
 
 ## /health shape diff (key-by-key, equivalent live `browsertest` stream + one WT viewer on each)
 
