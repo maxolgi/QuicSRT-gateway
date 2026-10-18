@@ -6,7 +6,7 @@ C++ CLI-parity replacement of the Rust [WebSRT](https://github.com/maxolgi/WebSR
 gateway, consumed via the `deps/libwebsrt` submodule strictly through its
 exported interface targets. Behavioral parity vs the Rust oracle is tracked
 row-by-row in `docs/parity.md` — a deliberate behavior change or divergence
-needs a row there. Companion repos (siblings in `~/maxolgi/WebSRT-cpp/`):
+needs a row there. Companion repos (siblings under the WebSRT-cpp workspace root):
 `libwebsrt` (client library + srt fork), `srt` (the fork's working clone),
 `WebSRT` (Rust reference — **never modified from this repo**).
 
@@ -29,12 +29,12 @@ refreshing `web/dist` requires a re-configure (`build.sh web-dist` does both).
 ## Submodule pin discipline (two levels)
 
 1. Gateway changes only (`src/`, `tests/`) → `./build.sh gateway`, no submodule work.
-2. libwebsrt changes → work in `~/maxolgi/WebSRT-cpp/libwebsrt`, **never edit
+2. libwebsrt changes → work in the sibling `../libwebsrt` checkout, **never edit
    `deps/libwebsrt` in place** (git clobbers submodule checkouts). Commit there,
    human pushes, then bump this repo's gitlink and rebuild. Pins track
    libwebsrt master head; bump routinely, as their own commit:
    `Bump deps/libwebsrt to <short-sha> (reason)` — see `git log` for examples.
-3. srt fork changes → two hops: `~/maxolgi/WebSRT-cpp/srt` per libwebsrt's fork
+3. srt fork changes → two hops: the sibling `../srt` checkout per libwebsrt's fork
    discipline, then libwebsrt bumps its `deps/srt` pin, then step 2.
 
 A gitlink is only resolvable after the human pushes the submodule — bump and
@@ -71,7 +71,7 @@ include paths or link anything the targets don't export.
 - The tsan preset excludes `srt_initiator_test` (TSan slowdown alone blows its
   10 s internal deadline).
 - Golden acceptance commands against the supervised gateway (via the
-  libwebsrt-patched ffmpeg, `~/maxolgi/WebSRT-cpp/libwebsrt/deps/ffmpeg/ffmpeg`):
+  libwebsrt-patched ffmpeg, `../libwebsrt/deps/ffmpeg/ffmpeg`):
   `ffmpeg -f lavfi -i testsrc2 … -f mpegts websrt://gw:443?stream=test` and
   `ffmpeg -f mpegts -i websrt://gw:443?stream=test -c copy out.ts`.
 
