@@ -1,23 +1,19 @@
 // Multi-stream registry: maps stream names to broadcasters, owns the
-// first-wins publisher occupancy and the per-stream viewer cap (P3 step 4).
-// The C++ port of the Rust oracle's stream_registry.rs (HashMap<String,
-// Arc<Broadcaster>> + try_publish/subscribe), adapted to two deliberate
-// divergences locked for refinement item 2:
+// first-wins publisher occupancy and the per-stream viewer cap. Two
+// deliberate design points:
 //
-//   - WAITING VIEWERS. The oracle's subscribe() returns None for a stream
-//     that has no live broadcaster and the accept loop answers 404
-//     (gateway.rs:339-344). Here a stream with no publisher is an IDLE
+//   - WAITING VIEWERS. A stream with no publisher is an IDLE
 //     (waiting) stream: it is created by the first viewer attach, accepts
 //     subscribers that wait for a publisher to appear, and serves them the
-//     moment media flows. Publisher END closes the attached viewers (parity)
+//     moment media flows (instead of answering 404 until media exists).
+//     Publisher END closes the attached viewers
 //     - after which a reconnecting viewer recreates the idle stream.
-//   - STREAM LIFETIME. The oracle keeps dead broadcasters in the map until
-//     cleanup(); here a stream is dropped as soon as it has no publisher
+//   - STREAM LIFETIME. A stream is dropped as soon as it has no publisher
 //     and no viewers, so no ring outlives its last participant.
 //
 // Occupancy is source-agnostic: a WT publisher cannot preempt a live SRT
-// ingest stream or another publisher, and vice versa (the oracle's unified
-// is_alive invariant, stream_registry.rs:449-457).
+// ingest stream or another publisher, and vice versa (the unified
+// is_alive invariant).
 //
 // THREADING: loop-thread only. The gateway drives every call from the
 // SessionRegistryListener callbacks; the admission consult happens inline in
@@ -38,14 +34,12 @@
 namespace quicsrt::gateway
 {
 
-/// Registry-wide knobs (the oracle's StreamRegistry::new arguments).
+/// Registry-wide knobs.
 struct StreamRegistryConfig
 {
-    /// Per-stream concurrent viewer cap; clamps to 1 (the oracle's
-    /// `max_viewers.max(1)`).
+    /// Per-stream concurrent viewer cap; clamps to 1.
     std::size_t max_viewers = 16;
-    /// Per-stream ring depth in messages; clamps to 1 (the oracle's
-    /// `broadcast_capacity.max(1)`).
+    /// Per-stream ring depth in messages; clamps to 1.
     std::size_t broadcast_capacity = 32768;
     /// Per-ring retained-bytes budget (drop-oldest past it, counted in
     /// ring_drops). No clamp here: the operator path ([server].
@@ -151,7 +145,7 @@ public:
     }
 
     /// The publisher's session ended: release the name and report every
-    /// attached viewer so the caller can close them (Rust parity: viewers
+    /// attached viewer so the caller can close them (viewers
     /// see EOF when the source ends). The handles are snapshotted BEFORE
     /// the release because closing them re-enters the registry through each
     /// viewer's OnSessionEnded -> DetachViewer; with viewers attached that

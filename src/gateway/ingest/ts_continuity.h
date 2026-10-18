@@ -1,5 +1,4 @@
-// Per-connection MPEG-TS continuity-counter probe - the C++ port of the
-// Rust oracle's ingest/continuity.rs (TsContinuityChecker wrapping every
+// Per-connection MPEG-TS continuity-counter probe (wrapping every
 // ingester message) over the mpeg2ts fork's CcChecker semantics
 // (ISO/IEC 13818-1 / ITU-T H.222.0 §2.4.3.3).
 //
@@ -7,8 +6,7 @@
 // UPSTREAM of the gateway (OBS/publisher -> ingest); the absence of gaps
 // means any downstream loss originates in the broadcaster fanout or the
 // per-session SRT/QUIC path. The counters surface in /health's ingester
-// slot (per stream name), exactly the keys the oracle reports there
-// (websrt-gateway main.rs:669-689): cc_checks, cc_gaps, messages_seen.
+// slot (per stream name): cc_checks, cc_gaps, messages_seen.
 //
 // RULES (CcChecker, ported exactly):
 //   - Only payload-bearing packets (adaptation_field_control 0b01/0b11)
@@ -24,7 +22,7 @@
 //     next packet on the PID starts a new sequence, and the packet is NOT
 //     counted as a check. With length == 0 the field at offset 5 is a
 //     single stuffing byte and the PAYLOAD follows - it must not be
-//     misread as flags (the oracle's fixed regression).
+//     misread as flags (a fixed regression).
 //   - A non-0x47 sync byte fails the parse: the packet is skipped.
 //   - Null packets (PID 0x1FFF) are tracked like any other PID;
 //     transport_error_indicator is not treated specially.
@@ -33,13 +31,12 @@
 // comparison (everything except signalled resets); cc_gaps counts
 // continuity breaks (the received counter re-seeds the sequence).
 //
-// SCAN POINT. The oracle scans each raw ingester message with
+// SCAN POINT. A raw-message scan would use
 // chunks_exact(188); this gateway's TsChunker framing (srt_ingest.cpp
 // FeedAndChunk) guarantees every published chunk is already a whole
 // number of 188-byte packets, so the probe scans those - same coverage
-// of every complete TS packet, without the oracle's misalignment
-// exposure. messages_seen counts the messages scanned. The oracle logs
-// the first gap per PID (tracing); this port keeps the probe pure and
+// of every complete TS packet, without misalignment
+// exposure. messages_seen counts the messages scanned. The probe stays pure and
 // lets the counters speak - the ingest thread owns logging.
 //
 // THREADING: owned by the ingest connection (one probe per publisher
@@ -56,7 +53,7 @@ namespace quicsrt::gateway
 {
 
 /// The probe's live counters - the /health ingester values, per stream
-/// name (the oracle's TsStatsHandle).
+/// name.
 struct TsCcStats
 {
     std::uint64_t cc_checks     = 0; ///< payload-bearing packets compared
@@ -80,7 +77,7 @@ public:
             const std::uint8_t* p = data + off;
             if (p[0] != kSyncByte)
             {
-                continue; // parse failure: skipped, like the oracle's reader
+                continue; // parse failure: skipped
             }
             const std::uint16_t pid = static_cast<std::uint16_t>(((p[1] & 0x1F) << 8) | p[2]);
             const unsigned      afc = static_cast<unsigned>((p[3] >> 4) & 0x3);

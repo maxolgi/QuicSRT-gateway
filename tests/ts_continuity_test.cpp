@@ -1,5 +1,5 @@
-// TS-continuity probe units: the test set ported from the Rust oracle's
-// ingest/continuity.rs (which itself exercises the mpeg2ts fork's
+// TS-continuity probe units: the test set,
+// exercising the mpeg2ts fork's
 // CcChecker). Plain checks (not assert) so Release stays meaningful,
 // following libquicsrt's test style.
 
@@ -58,7 +58,7 @@ void ScanPackets(TsContinuityChecker& checker, const std::vector<std::array<std:
     checker.Scan(buf.data(), buf.size());
 }
 
-// continuity.rs: packets without payload never participate.
+// Packets without payload never participate.
 bool TestAfcNoPayloadSkipsCcCheck()
 {
     TsContinuityChecker checker;
@@ -175,7 +175,7 @@ bool TestFirstPacketOnAPidInitializes()
 }
 
 // messages_seen counts scanned messages; a sub-188 tail holds no complete
-// packet and is ignored (the oracle's chunks_exact).
+// packet and is ignored.
 bool TestMessagesSeenCountsMessages()
 {
     TsContinuityChecker checker;

@@ -1,4 +1,4 @@
-// on_connect/on_close webhooks (P4 step 3, PLAN.md P4.3): session
+// on_connect/on_close webhooks: session
 // lifecycle events POSTed as small JSON payloads to a configured URL -
 // the SLS-parity feature. Event sources (where each lifecycle fact is
 // observed):

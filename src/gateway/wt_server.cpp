@@ -59,8 +59,7 @@ namespace
 
 constexpr std::size_t kRecvBufSize = 16384;
 
-// QUIC minimum MTU (RFC 9000 s.14.2) - the datagram floor the Rust
-// oracle demands post-accept (gateway.rs:525-543).
+// QUIC minimum MTU (RFC 9000 s.14.2) - the datagram floor.
 constexpr std::size_t kPmtuFloorBytes = 1200;
 
 void Log(const char* fmt, ...)
@@ -241,10 +240,9 @@ struct WtServerCallbacks
         cc->server   = server;
         cc->conn     = conn;
         server->conns_[reinterpret_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(conn))] = cc;
-        // PMTU gate + write pin (the Rust oracle's post-accept check,
-        // gateway.rs:525-543): lsquic has no max-datagram-size getter, but
+        // PMTU gate + write pin: lsquic has no max-datagram-size getter, but
         // set_min_datagram_size doubles as the query - it fails exactly
-        // when datagrams are unsupported (the oracle's None case) or the
+        // when datagrams are unsupported or the
         // peer's advertised MAX_DATAGRAM_FRAME_SIZE is below the request
         // (its Some(max < 1200) case). A transport that cannot carry a
         // 1200-byte datagram cannot move SRT payloads, so the connection
@@ -590,34 +588,32 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     // activity - and WT sessions carry all media on DATAGRAMS, so their
     // session stream is silent after the handshake. Healthy 33 Mbps
     // datagram sessions died at exactly 60 s ("connection timed out due
-    // to lack of progress"). Disabled: SRT owns liveness (quinn parity -
-    // the Rust gateway has no such watchdog).
+    // to lack of progress"). Disabled: SRT owns liveness (no such
+    // watchdog).
     settings.es_noprogress_timeout              = 0;
     settings.es_versions                        = 1U << LSQVER_I001; // QUIC v1 + h3, as the clients speak
     settings.es_datagrams                       = 1;                 // advertise MAX_DATAGRAM_FRAME_SIZE
     settings.es_webtransport_server             = 1;                 // SETTINGS_ENABLE_WEBTRANSPORT
     settings.es_max_webtransport_server_streams = 100;               // sane default; no config key governs it
-    // WT idle timeout (Rust limits.rs max_idle_timeout, quinn parity):
+    // WT idle timeout:
     // a connection silent for this many seconds is closed. lsquic's own
-    // default is 30 s; the oracle runs 10 s. Media flows reset it (any
+    // default is 30 s; ours runs 10 s. Media flows reset it (any
     // received packet does - datagrams, ACKs, the lsquic client's 15 s
     // keepalive PINGs), so only truly abandoned connections hit it.
     settings.es_idle_timeout = static_cast<unsigned>(limits_.idle_timeout_s);
-    // QUIC handshake budget (Rust handshake_timeout; lsquic's default is
-    // also 10 s, made config-driven for parity).
+    // QUIC handshake budget (lsquic's default is
+    // also 10 s, made config-driven).
     settings.es_handshake_to = static_cast<unsigned long>(limits_.handshake_timeout_s) * 1000000UL;
-    // No-op-CC approximation (P3 step 7; PLAN.md risk 1): the Rust gateway
-    // runs a no-op quinn congestion controller (nocc.rs: window() ==
-    // u64::MAX, never paces) so SRT owns all congestion control and
+    // No-op-CC approximation: SRT owns all congestion control and
     // reliability. lsquic has NO pluggable no-op controller - es_cc_algo
     // offers only Cubic / BBRv1 / Adaptive (lsquic.h:750-758) - so this
     // approximates: the pacer is switched OFF (es_pace_packets=0: packets
-    // leave as soon as cwnd allows, the "never paces" half of nocc) and the
+    // leave as soon as cwnd allows, the "never paces" goal) and the
     // flow-control windows we advertise are made generous (16 MiB conn /
     // 8 MiB stream) so QUIC FC never bottlenecks the session streams. The
     // media path itself - WT datagrams - is exempt from flow control
     // entirely (RFC 9221 s.4), leaving congestion control as the only
-    // limiter. Residual difference, documented in PLAN.md step 7: under
+    // limiter. Residual difference: under
     // real loss, cubic/BBR cwnd still bounds in-flight bytes (a true
     // unlimited window does not exist); the e2e and concurrency tests
     // measure sustained send throughput == app write rate on loopback,
@@ -651,8 +647,8 @@ bool WtServer::Bind(const std::string& host, std::uint16_t port)
     // failing the handshake with a BoringSSL cert_cb error - which the
     // client sees as TLS alert 80 (internal_error), QUIC CONNECTION_CLOSE
     // 0x100 + "TLS alert 80". Browsers send no SNI for an IP literal (RFC
-    // 6066 s.3), so https://127.0.0.1:4434 - the closed-network WebSRT
-    // default, and the P3 browser gate's URL - could never complete. The
+    // 6066 s.3), so https://127.0.0.1:4434 - the closed-network
+    // default - could never complete. The
     // callback would only ever hand back ssl_ctx_ anyway: one identity for
     // every name, so the lookup is pure overhead with a fatal gate bolted
     // on. iquic_esfi_init_server builds each server SSL from
@@ -931,8 +927,8 @@ std::chrono::microseconds WtServer::SmoothedRtt(WtSessionHandle handle) const
     return std::chrono::microseconds{info.lci_rtt};
 }
 
-// One :status response written on the session stream. With half_close this
-// is the 404/403/429 fix for the Rust gateway's 404-reset race: the header
+// One :status response written on the session stream. With half_close the
+// client observes the 404/403/429 deterministically: the header
 // block goes out with eos=0 plus an explicit flush, so it lands in
 // outgoing packets NOW; the write side is then shut down, which sends a
 // FIN after (never instead of) that data. QUIC delivers a stream's direction
@@ -973,8 +969,7 @@ void WtServer::Respond(lsquic_stream_t* stream, const char* status, bool half_cl
 }
 
 // The accept path: one pass over the CONNECT header set, no blocking, the
-// policy answered inline (why the Rust accept-loop stall cannot reproduce
-// here - see wt_server.h).
+// policy answered inline (no accept-loop stall - see wt_server.h).
 void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet& hset)
 {
     std::string                             method;
@@ -1058,8 +1053,8 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
         return;
     }
 
-    // Connection limit (per-IP + global), the Rust tracker.try_acquire
-    // (gateway.rs:461-472): between the policy and the occupancy checks,
+    // Connection limit (per-IP + global):
+    // between the policy and the occupancy checks,
     // answered 429 on the CONNECT response the caller is waiting for.
     if (!SessionLimitOk(remote_host))
     {
@@ -1074,8 +1069,7 @@ void WtServer::ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet&
         return;
     }
 
-    // Query decomposition exactly like the Rust oracle's accept loop
-    // (gateway.rs:476-483): ?stream= then ?subscribe= names the stream to
+    // Query decomposition: ?stream= then ?subscribe= names the stream to
     // view; ?publish= names the stream to publish. Done BEFORE the 200 so
     // the admission gate below sees the same routing the session gets.
     std::optional<std::string> subscribe = ParseQueryParam(query, "stream");
@@ -1194,7 +1188,7 @@ void WtServer::HandleSessionStreamRead(StreamCtx& sc)
 }
 
 // WT client-initiated substreams (stream type 0x41): raw session payload,
-// surfaced uninterpreted for G4/G5 capsule work. WebSRT data rides
+// surfaced uninterpreted for G4/G5 capsule work. websrt:// data rides
 // datagrams; nothing here is interpreted today. The varint lsquic parses
 // after 0x41 identifies the owning session - WT-over-HTTP/3 calls it the
 // Session Id (the CONNECT stream id divided by 4), so both that reading

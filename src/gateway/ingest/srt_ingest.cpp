@@ -17,11 +17,11 @@ namespace
 {
 
 // SRTO_RCVBUF and the UDP socket buffers are in BYTES; srt converts with the
-// UDP header size (1500 - 28 = 1472) - the same trap srt_initiator.cpp and
-// the oracle's receiver.buffer_size (srt_listener.rs:54) spell out.
+// UDP header size (1500 - 28 = 1472) - the same trap srt_initiator.cpp
+// spells out.
 constexpr int kBytesPerPacket = 1500 - 28;
 
-// The oracle's UDP_BUF_SIZE (srt_listener.rs:12): 8 MB. The srt default is
+// UDP buffer: 8 MB. The srt default is
 // only 64 KB, ~57 ms of OBS data - easily overflowed when the process is
 // briefly starved.
 constexpr int kUdpBufBytes = 8 * 1024 * 1024;
@@ -76,7 +76,7 @@ void Bump(std::atomic<std::uint64_t>& counter, std::uint64_t by = 1)
 
 std::int64_t RecvBufferPackets(std::uint64_t latency_ms) noexcept
 {
-    // srt_listener.rs:22-25 verbatim: (ms * 20_000 / 1000 * 2).clamp(8192, 320_000).
+    // Verbatim: (ms * 20_000 / 1000 * 2).clamp(8192, 320_000).
     // At the 120 ms default that is 4800 -> the 8192 floor; the 320000
     // ceiling is reached at 8000 ms.
     const std::uint64_t pkts = latency_ms * 20'000 / 1'000 * 2;
@@ -210,8 +210,8 @@ bool SrtIngest::SetupListener(std::string* error)
             break;
         }
 
-        // Encryption. The oracle hands the passphrase to every accept
-        // (srt_listener.rs:40, 96); libquicsrt builds its srt fork with
+        // Encryption. The passphrase is handed to every accept;
+        // libquicsrt builds its srt fork with
         // ENABLE_ENCRYPTION=OFF, where the library itself rejects a non-empty
         // SRTO_PASSPHRASE (socketconfig.cpp: "encryption not enabled at
         // compile time"). Fail loudly rather than listen unencrypted behind
@@ -398,7 +398,7 @@ void SrtIngest::AcceptOne()
         return;
     }
 
-    // The oracle refuses a publisher with no streamid (srt_listener.rs:92-95)
+    // A publisher with no streamid is refused
     // - never a "default" name. The streamid only exists on the accepted
     // socket, so this is where the refusal happens; closing it ends the
     // caller's connection.
@@ -412,7 +412,7 @@ void SrtIngest::AcceptOne()
         return;
     }
     // The policy half of the WT accept path: the allowlist decides whether
-    // this name may be published at all (PLAN.md refinement item 2 - an
+    // this name may be published at all (an
     // ingest publisher that no [[stream]] entry with publish = true covers
     // is refused, the connection-refused analogue of the WT 403).
     if (!GateOnLoop(stream))
@@ -423,8 +423,8 @@ void SrtIngest::AcceptOne()
         srt_close(ns);
         return;
     }
-    // The occupancy half: the oracle's registry.try_publish_ingester
-    // (srt_listener.rs:106). Refused while a live publisher - a WebTransport
+    // The occupancy half.
+    // Refused while a live publisher - a WebTransport
     // session or another ingest connection - holds the name.
     if (!ClaimOnLoop(stream))
     {
@@ -437,8 +437,8 @@ void SrtIngest::AcceptOne()
 
     const std::string   remote     = PeerText(peer);
     const std::uint64_t session_id = next_webhook_session_id_++;
-    // Fresh per-name continuity counters: the oracle inserts a new
-    // TsStatsHandle at connection setup (main.rs:562-568), replacing any
+    // Fresh per-name continuity counters: a new
+    // entry at connection setup, replacing any
     // frozen entry a previous publisher on this name left behind.
     stream_cc_[stream] = TsCcStats{};
     Conn conn{.chunker = quicsrt::TsChunker{config_.payload_size}};
@@ -532,8 +532,8 @@ void SrtIngest::PublishChunk(SRTSOCKET sock, const std::uint8_t* data, std::size
     }
     Conn& conn = it->second;
 
-    // The read-only TS-continuity probe (the oracle's TsContinuityChecker
-    // wrapping its ingester): every published chunk is a whole number of
+    // The read-only TS-continuity probe: every published chunk is a whole
+    // number of
     // 188-byte packets, so this scans every complete TS packet exactly
     // once. Never modifies the bytes.
     conn.cc.Scan(data, len);

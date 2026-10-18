@@ -1,4 +1,4 @@
-// P4.3 webhook tests (PLAN.md P4.3 Verify), two layers:
+// Webhook tests, two layers:
 //
 //   A. The dispatcher against a tiny local HTTP receiver (a plain socket
 //      listener, no web server involved):
@@ -56,7 +56,7 @@ using quicsrt::gateway::WebhookEvent;
 using quicsrt::gateway::WebhookSettings;
 using quicsrt::gateway::WebhookSnapshot;
 
-constexpr int kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
+constexpr int kMaxPayload = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
 
 bool g_ok = true;
 

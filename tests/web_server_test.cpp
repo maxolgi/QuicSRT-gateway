@@ -7,10 +7,8 @@
 //      second-guess), HEAD, a 304 on If-None-Match, directory -> index
 //      resolution, ".." and encoded traversal refused, an unknown path 404,
 //      a POST 405, and nosniff on every response.
-//   2. /health SHAPE against the Rust oracle (websrt-gateway/src/main.rs
-//      health_handler): every key the oracle emits must be here, with the
-//      same meaning - a parity diff between the two gateways is meant to
-//      come back empty on the oracle's own keys.
+//   2. /health SHAPE: every documented key must be here, with the
+//      documented meaning.
 //   3. /stats and /health against LIVE state: a real libquicsrt publisher
 //      and subscriber through the gateway core, so the stream and session
 //      rows exist and the registry ticker is demonstrably advancing; the
@@ -537,7 +535,7 @@ int main()
     }
     const std::uint16_t web_port = web.Port();
 
-    // The health server: the oracle's plain HTTP on its own port.
+    // The health server: plain HTTP on its own port.
     WebServer health(
         WebServerConfig{.bind = "127.0.0.1", .port = 0, .web_root = {}, .gateway = &gateway, .ingest = &ingest});
     if (!Check(health.Start(&error), "the plain-HTTP health server binds an ephemeral port"))
@@ -640,7 +638,7 @@ int main()
         Check(response.status == 403 || response.status == 404, "1: a deep traversal is refused");
     }
 
-    // ---- 2. /health against the Rust oracle's shape ----
+    // ---- 2. /health shape ----
     {
         HttpClient   client;
         HttpResponse response;
@@ -649,7 +647,7 @@ int main()
         Check(response.status == 200, "2: /health is 200");
         Check(response.Header("content-type") == "application/json", "2: /health is JSON");
 
-        // Every key websrt-gateway/src/main.rs:690-704 emits.
+        // Every documented key.
         CheckKeys(response.body,
                   {"status",
                    "streams",
@@ -747,7 +745,7 @@ int main()
                   10000),
               "3: /health shows the live stream and its sessions");
 
-        // The per_stream / per_session rows carry the oracle's row keys.
+        // The per_stream / per_session rows carry their documented keys.
         Check(response.body.find(Q("alive") + ":true") != std::string::npos, "3: the stream row is alive");
         CheckKeys(response.body,
                   {"messages_sent",
@@ -1006,7 +1004,7 @@ int main()
     }
 
     // ---- the embedded player: no web_root, serve straight from the
-    // binary (the default deployment, rust-embed parity) ----
+    // binary (the default deployment) ----
     {
         WebServer embedded(
             WebServerConfig{.bind = "127.0.0.1", .port = 0, .cert_hash_js = cert_hash_js, .serve_player = true});

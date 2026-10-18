@@ -245,8 +245,8 @@ SRT_SOCKSTATUS SrtInitiator::ConnectionState()
 
     // First connected observation: read back the negotiated payload cap
     // via libquicsrt's NegotiatePayload (the same readback the publisher
-    // session performs; srt_session/negotiate.h carries the full MSS - 44
-    // / Rust MTU-field-quirk story). The value is stored before the flag
+    // session performs; srt_session/negotiate.h carries the full
+    // MSS/MTU-field story). The value is stored before the flag
     // (release/acquire), so an observed set flag implies the negotiated
     // cap; max_payload() itself only needs a coherent value.
     const int negotiated = NegotiatePayload(sock_, config_.payload_size);

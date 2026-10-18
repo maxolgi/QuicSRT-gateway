@@ -1,5 +1,4 @@
-// Session policy seam: implementation. Semantics are ported from the Rust
-// oracle (crates/websrt/src/hooks.rs) - see policy.h for the surface docs.
+// Session policy seam: implementation - see policy.h for the surface docs.
 
 #include "gateway/policy.h"
 
@@ -30,7 +29,7 @@ int HexVal(char c)
 }
 
 /// Append `bytes` to `out` as UTF-8 with lossy replacement (U+FFFD) - the
-/// WHATWG semantics of Rust's decode_utf8_lossy: each maximal ill-formed
+/// WHATWG decode_utf8_lossy semantics: each maximal ill-formed
 /// subpart becomes exactly one replacement character. Valid sequences
 /// (the table below rejects overlong forms, surrogates, > U+10FFFF and
 /// stray continuations) are copied verbatim.
@@ -141,8 +140,7 @@ std::optional<std::string> ParseQueryParam(std::string_view query, std::string_v
         {
             const std::string_view val = eq == std::string_view::npos ? std::string_view{} : kv.substr(eq + 1);
             // Percent-decode into raw bytes (invalid escapes pass through
-            // literally, '+' is NOT a space), then UTF-8 lossy-decode -
-            // hooks.rs semantics.
+            // literally, '+' is NOT a space), then UTF-8 lossy-decode.
             std::string raw;
             raw.reserve(val.size());
             for (std::size_t i = 0; i < val.size(); ++i)
@@ -429,7 +427,7 @@ Decision StreamAllowlistPolicy::Decide(const SessionRequest& req) const
             return d;
         }
     }
-    // `stream` wins over `subscribe` - the oracle's routing order.
+    // `stream` wins over `subscribe` - the routing order.
     if (stream_name.has_value())
     {
         const Decision d = DecideSubscribe(*stream_name, req);

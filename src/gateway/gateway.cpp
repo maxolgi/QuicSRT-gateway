@@ -21,8 +21,7 @@ namespace
 // for a stream whose publisher has gone quiet mid-handshake.
 constexpr std::chrono::milliseconds kHousekeepingInterval{500};
 
-// Bounded wait for the sessions to finish closing during Shutdown (the Rust
-// oracle's 3 s session drain, gateway.rs:487-497).
+// Bounded wait for the sessions to finish closing during Shutdown (3 s).
 constexpr auto kDrainTimeout = std::chrono::seconds{3};
 
 void Log(const char* fmt, ...)
@@ -360,8 +359,8 @@ void Gateway::EndPublish(const std::string& stream, const std::string& reason)
 {
     // Parity: viewers see a clean EOF when the source ends. Two closes per
     // viewer, in this order:
-    //   CloseConnection - the WT CONNECTION_CLOSE the Rust oracle sends
-    //     (registry.rs:370-386: "closes the WT connection, which the browser
+    //   CloseConnection - the WT CONNECTION_CLOSE ("closes the WT
+    //     connection, which the browser
     //     surfaces as wtClosed so its auto-reconnect can resubscribe"). It is
     //     also the only close a WT client sees as a session end - a
     //     session-stream FIN leaves the connection (and a libquicsrt

@@ -832,7 +832,7 @@ bool WebServer::Handle(Wire&              wire,
 
     if (!config_.cert_hash_js.empty() && path == "/cert-hash.js")
     {
-        // Dynamic on purpose (the oracle serves it the same way): in self
+        // Dynamic on purpose: in self
         // mode the pinned hash changes every boot, so the file must never
         // be cached across restarts.
         SendSimple(wire,
@@ -846,7 +846,7 @@ bool WebServer::Handle(Wire&              wire,
     }
 
     // Static file. Directory-ish targets resolve to their index.html, as
-    // the oracle's fallback does for "/".
+    // the fallback does for "/".
     std::string relative = path.empty() || path.front() != '/' ? "/" + path : path;
     if (relative.back() == '/' || relative == "/")
     {
@@ -930,7 +930,7 @@ bool WebServer::Handle(Wire&              wire,
     }
 
     // Embedded player (the default when serve_player is set and no
-    // web_root override is, rust-embed parity): the table is immutable
+    // web_root override is): the table is immutable
     // for the life of the binary, so the ETag is just the size - it
     // changes exactly when the binary does.
     if (config_.serve_player)
@@ -1083,7 +1083,7 @@ std::string WebServer::HealthJson() const
                   "messages_pushed",
                   session.info.publisher_role ? session.info.messages_received : session.info.messages_sent);
         out += ",";
-        // The oracle counts lagged messages; here the drop-oldest counter
+        // The drop-oldest counter
         // at the send backlog bound is the same event seen from the
         // session side (the ring has its own ring_drops in /stats).
         AppendNum(out, "viewer_lag", session.info.backlog_overflow_drops);
@@ -1103,7 +1103,7 @@ std::string WebServer::HealthJson() const
     AppendNum(out, "max_us", max);
     out += "}";
 
-    // The oracle's ingester slot (websrt-gateway main.rs:669-689): a map
+    // The ingester slot: a map
     // keyed by stream name, each entry that publisher connection's
     // TS-continuity probe (cc_checks / cc_gaps / messages_seen), null
     // while no publisher has ever connected. An entry appears when a
@@ -1186,8 +1186,8 @@ std::string WebServer::StatsJson() const
     AppendNum(out, "max_us", max);
     out += "}";
 
-    // The WT server's own counters (the oracle keeps these in its GUI
-    // only; here they are the other half of "is the accept path healthy").
+    // The WT server's own counters
+    // (the other half of "is the accept path healthy").
     out += ",\"server\":{";
     if (config_.gateway != nullptr)
     {

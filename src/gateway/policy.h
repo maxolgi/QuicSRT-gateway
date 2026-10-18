@@ -1,12 +1,10 @@
-// Session-acceptance policy seam for the gateway - a faithful port of the
-// Rust oracle's crates/websrt/src/hooks.rs (P3 step 2, refinement items 1+2).
+// Session-acceptance policy seam for the gateway.
 //
 // Each incoming WebTransport session is shown to a SessionPolicy, which
-// decides whether to accept or reject it. The library ships the four
-// built-in policies from the oracle (PathPolicy, OriginAllowlistPolicy,
-// AuthTokenPolicy, AcceptAll) composable via Chain(), plus the
-// StreamAllowlistPolicy from refinement item 2 (exact+glob stream names,
-// publish/subscribe roles, per-stream token).
+// decides whether to accept or reject it. Four built-in policies ship here
+// (PathPolicy, OriginAllowlistPolicy, AuthTokenPolicy, AcceptAll)
+// composable via Chain(), plus the StreamAllowlistPolicy (exact+glob
+// stream names, publish/subscribe roles, per-stream token).
 //
 // Thread-safety: Decide() is const and implementations are immutable after
 // construction - built once at startup and consulted from the accept loop.
@@ -27,7 +25,7 @@ namespace quicsrt::gateway
 {
 
 /// Decision returned by SessionPolicy::Decide(). The rejection variants map
-/// onto the WebTransport CONNECT responses the Rust oracle sends:
+/// onto WebTransport CONNECT responses:
 ///   Reject          -> 404 Not Found        (unknown paths or missing streams)
 ///   Forbidden       -> 403 Forbidden        (failed auth, disallowed origin/role)
 ///   TooManyRequests -> 429 Too Many Requests (rate limits, connection caps)
@@ -39,7 +37,7 @@ enum class Decision : std::uint8_t
     TooManyRequests
 };
 
-/// Remote peer socket address (the Rust oracle carries std::net::SocketAddr).
+/// Remote peer socket address.
 struct SocketAddress
 {
     std::string_view host;
@@ -99,8 +97,8 @@ struct SessionRequest
 /// are matched against the raw (percent-decoded) stream name.
 [[nodiscard]] bool GlobMatch(std::string_view pattern, std::string_view name) noexcept;
 
-/// Pluggable session-acceptance policy (the Rust oracle's `trait
-/// SessionPolicy`; Decide is synchronous here because the accept loop calls
+/// Pluggable session-acceptance policy (Decide is synchronous here because
+/// the accept loop calls
 /// it inline). Type-erased composition happens through shared_ptr + Chain().
 class SessionPolicy
 {
@@ -112,9 +110,8 @@ public:
 };
 
 /// Compose two type-erased policies: accepts only if both accept; short-
-/// circuits on the first rejection, propagating its variant (the oracle's
-/// `chain`). The Rust generic Chain<A, B> maps onto shared_ptr erasure here
-/// so the CLI can build chains at runtime from config.
+/// circuits on the first rejection, propagating its variant. shared_ptr
+/// erasure lets the CLI build chains at runtime from config.
 [[nodiscard]] std::shared_ptr<SessionPolicy> Chain(std::shared_ptr<SessionPolicy> first,
                                                    std::shared_ptr<SessionPolicy> second);
 
@@ -179,8 +176,8 @@ struct StreamAclEntry
 /// Stream access control: deny-by-default while entries are configured;
 /// with NO entries every stream name is allowed, publish and subscribe
 /// alike (a config file with no [[stream]] sections behaves like open
-/// mode, but with the file's [server] settings). Routing mirrors the Rust
-/// gateway's query shapes (`/wt?publish=NAME`, `/wt?stream=NAME` or
+/// mode, but with the file's [server] settings). Routing follows the query
+/// shapes (`/wt?publish=NAME`, `/wt?stream=NAME` or
 /// `/wt?subscribe=NAME`, optional `&token=`):
 ///   - publish request (`?publish=NAME`): no matching entry, an entry with
 ///     publish=false, or a token set on the entry and absent/mismatched in

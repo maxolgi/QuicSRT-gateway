@@ -1,5 +1,5 @@
-// WebTransport SERVER over lsquic - the P3 step 3 accept path, and the
-// deliberate fixes for the two Rust-gateway defects (PLAN.md):
+// WebTransport SERVER over lsquic - the accept path, with two deliberate
+// fixes:
 //
 // - Accept-loop stall: there is NO accept queue here. Every UDP packet is
 //   fed to the engine on the event-loop thread (HandleServerReadable), the
@@ -7,7 +7,7 @@
 //   inside Pump, and each CONNECT is answered inline from on_read. Nothing
 //   between packet-in and the :status response can block: SessionPolicy
 //   implementations are contractually non-blocking (policy.h) and there is
-//   no serialized await point like wtransport's accept() future. N
+//   no serialized await point. N
 //   concurrent handshakes cost N engine connections ticking in the same
 //   process_conns pass - they cannot stall each other for 10-20 s.
 // - 404-reset race: a rejected CONNECT is NEVER reset. See
@@ -97,8 +97,7 @@ private:
 };
 
 /// What OnWtSession tells the consumer about the accepted session, with the
-/// query already decomposed the way the Rust oracle's accept loop does
-/// (gateway.rs:476-483): `?stream=`/`?subscribe=` names the stream to view,
+/// query already decomposed: `?stream=`/`?subscribe=` names the stream to view,
 /// `?publish=` names the stream to publish (a session may ask for both).
 /// Names are percent-decoded (ParseQueryParam).
 struct WtSessionStart
@@ -132,15 +131,13 @@ public:
 
     /// Raw bytes arrived on a WT client-initiated bidirectional substream
     /// (stream type 0x41) of this session. Surfaced uninterpreted for later
-    /// capsule work (G4/G5); WebSRT data rides datagrams, not substreams.
+    /// capsule work (G4/G5); websrt:// data rides datagrams, not substreams.
     virtual void OnSessionStreamData(WtSessionHandle /*handle*/, const std::uint8_t* /*data*/, std::size_t /*size*/) {}
 };
 
-/// Connection-level admission limits and engine timeouts - the Rust
-/// oracle's GatewayLimits (limits.rs:40-49, enforced by its
-/// ConnectionTracker at session admission). A cap of 0 disables it
-/// (Rust's Option::None); the timeouts carry the oracle's defaults and
-/// the bounds its validate() enforces (idle 1..600 s, handshake 1..60 s).
+/// Connection-level admission limits and engine timeouts. A cap of 0
+/// disables it; the timeouts carry the defaults and validated bounds
+/// (idle 1..600 s, handshake 1..60 s).
 struct WtServerLimits
 {
     int max_sessions_per_ip = 10;   ///< concurrent sessions from one peer IP
@@ -168,8 +165,7 @@ public:
     /// decomposed into publish/subscribe names. Returning anything but
     /// Accept answers the CONNECT with that decision's status (403 / 429 /
     /// 404) INSTEAD of 200, so the client observes the refusal on the
-    /// response it is waiting for - the Rust oracle's pre-accept occupancy
-    /// check (gateway.rs:343-355, where the 403 precedes the WT handshake).
+    /// response it is waiting for (the 403 precedes the WT handshake).
     /// This is deliberately a separate seam from SessionPolicy: the policy
     /// answers "may this caller address this name at all" (path, origin,
     /// token, allowlist), admission answers "can this stream take it right
@@ -228,8 +224,8 @@ public:
 
     /// Thread-safe. Closes the whole QUIC connection carrying `handle`
     /// (CONNECTION_CLOSE; every session on it terminates with
-    /// OnSessionClosed "connection closed"). This is what the Rust oracle
-    /// does when a stream ends - registry.rs:370-386 closes the viewer's
+    /// OnSessionClosed "connection closed"). This is what a stream end
+    /// does - it closes the viewer's
     /// WT connection "which the browser surfaces as wtClosed so its
     /// auto-reconnect can resubscribe" - and it is the close a WT client
     /// observes as a session end: a session-stream FIN alone leaves the
@@ -253,7 +249,7 @@ public:
 
     /// The session's QUIC smoothed RTT (lsquic_conn_get_info().lci_rtt,
     /// microseconds) - the seed the per-session SRT initiator derives its
-    /// SRTO_INITIAL_RTT from (PLAN.md: RTT seeding via lci_rtt). 0 when
+    /// SRTO_INITIAL_RTT from. 0 when
     /// unmeasured or the handle is unknown. Loop thread only (called at
     /// session accept).
     [[nodiscard]] std::chrono::microseconds SmoothedRtt(WtSessionHandle handle) const;
@@ -282,7 +278,7 @@ private:
     [[nodiscard]] Session* FindSessionByContext(const ConnCtx& cc, std::uint64_t context_id) const;
     static void            Respond(lsquic_stream_t* stream, const char* status, bool half_close);
     void                   ProcessConnectHeaders(StreamCtx& sc, Session& session, HeaderSet& hset);
-    // Connection-limit accounting (loop thread; the Rust ConnectionTracker).
+    // Connection-limit accounting (loop thread).
     [[nodiscard]] bool SessionLimitOk(const char* peer_ip) const;
     void               CountSession(Session& session);
     void               UncountSession(Session& session);
@@ -316,7 +312,7 @@ private:
     // Live server state, loop thread only.
     std::map<std::uint64_t, ConnCtx*> conns_;    // keyed by raw conn ptr
     std::map<std::uint64_t, Session*> sessions_; // handle -> session
-    // Connection-limit state, loop thread only (Rust ConnectionTracker).
+    // Connection-limit state, loop thread only.
     std::map<std::string, std::size_t> sessions_per_ip_;
     std::size_t                        established_sessions_ = 0;
     // (Datagram context routing lives per connection in ConnCtx: every

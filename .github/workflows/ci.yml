@@ -16,7 +16,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Cancel superseded runs on the same ref (same as WebSRT's build.yml).
+# Cancel superseded runs on the same ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -42,9 +42,9 @@ jobs:
           ./build.sh lib
           ./build.sh gateway
       - name: Test
-        # Live-oracle tests (wt_echo, subscriber_test, publisher_test,
-        # c_api_test from deps/libquicsrt) self-skip via SKIP_RETURN_CODE
-        # 77 on runners without the Rust gateway. The tail lands in the
+        # The 4 libquicsrt tests that probe a live Rust gateway (wt_echo,
+        # subscriber_test, publisher_test, c_api_test) self-skip via
+        # SKIP_RETURN_CODE 77 when none is running. The tail lands in the
         # step summary (publicly viewable) because raw logs need auth.
         run: |
           set +e
@@ -119,7 +119,7 @@ jobs:
   #     the functional gate stays in the release suite (RUN_SERIAL there),
   #     and TSan's fanout/concurrency coverage remains via
   #     facade_race_test, which stays in the preset.
-  # The remaining 24 tests + the 4 live-oracle self-skips run green and
+  # The remaining 24 tests + the 4 Rust-gateway-probe self-skips run green and
   # stable (facade_race_test dominating the runtime).
   tsan:
     runs-on: ubuntu-24.04
@@ -139,8 +139,8 @@ jobs:
       - name: Test (TSan)
         run: ctest --preset tsan
 
-  # Publish a GitHub Release for every successful master build, like
-  # WebSRT's build.yml: master push -> dev-<short_sha> marked latest
+  # Publish a GitHub Release for every successful master build:
+  # master push -> dev-<short_sha> marked latest
   # (must NOT be a prerelease - GitHub ignores make_latest on
   # pre-releases, losing the Latest badge and /releases/latest);
   # v* tag push -> stable release tagged <version>.

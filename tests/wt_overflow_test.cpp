@@ -324,7 +324,7 @@ private:
         }
     }
 
-    // wtransport's extended-CONNECT set (client.cpp SendConnectHeaders).
+    // The extended-CONNECT set (mirrors client.cpp SendConnectHeaders).
     void SendConnectHeaders(lsquic_stream_t* stream)
     {
         const std::string authority = std::string{"127.0.0.1"} + ":" + std::to_string(ntohs(peer_sa_.sin_port));

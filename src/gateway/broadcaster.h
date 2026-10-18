@@ -1,6 +1,5 @@
 // Per-stream broadcaster: the bounded message ring plus the viewers attached
-// to it (P3 step 4). This is the C++ mapping of the Rust oracle's
-// broadcaster.rs + its tokio::sync::broadcast channel:
+// to it:
 //
 //   tokio broadcast::channel(capacity) -> the deque + sequence numbering below
 //   ViewerRx (one per viewer)          -> Broadcaster::ViewerState (a cursor)
@@ -18,13 +17,13 @@
 //     1128-byte payloads to whole multi-packet frames).
 //   - A viewer lagging further behind than the ring depth skips the
 //     messages it can no longer see and counts them in lagged_drops (the
-//     per-viewer drop accounting the Rust oracle surfaces as Lagged(n)).
+//     per-viewer drop accounting surfaced as Lagged(n)).
 //
 // CURSOR / PRIMED MECHANICS. A viewer that attaches starts at the ring's
 // TAIL, not at its head: it must not replay whatever accumulated while its
 // SRT handshake was in flight (those messages are already past the TSBPD
 // deadline; delivering them only triggers NAK/retransmit churn - the reason
-// the oracle calls drop_backlog on the first connected tick). The gateway
+// for drop_backlog on the first connected tick). The gateway
 // signals that moment through SessionRegistry::PopBacklogDrop; until it
 // arrives the viewer is NOT primed, Pump skips it entirely, and PrimeViewer
 // then snaps its cursor to the live edge. Viewers of an idle (no publisher
@@ -57,9 +56,8 @@ namespace quicsrt::gateway
 /// Per-stream broadcaster knobs.
 struct BroadcasterConfig
 {
-    /// Ring depth in messages. The Rust oracle's default
-    /// (gateway.rs:27 DEFAULT_BROADCAST_CAPACITY) - at the 1128-byte WebSRT
-    /// payload this is ~37 MiB of buffering per live stream, which absorbs
+    /// Ring depth in messages. At the 1128-byte websrt://
+    /// payload the default is ~37 MiB of buffering per live stream, which absorbs
     /// long viewer-side stalls (drop-oldest, never backpressure). At LARGE
     /// messages (whole multi-packet SRT frames, ~0.3 MB GOP keyframes; the
     /// registry's receive buffer grows to 4 MB for those) the count alone
@@ -72,13 +70,13 @@ struct BroadcasterConfig
     /// empty (the config layer's 4 MiB floor - the largest message the
     /// publish path reassembles - keeps that off operator configs).
     std::size_t byte_budget = 64 * 1024 * 1024;
-    /// Per-stream concurrent viewer cap (the oracle's max_viewers; enforced
+    /// Per-stream concurrent viewer cap (enforced
     /// by the registry's AttachViewer, carried here for the snapshot).
     std::size_t max_viewers = 16;
 };
 
-/// Snapshot of one stream's state for health/stats reporting (the oracle's
-/// StreamStats, plus the ring accounting this implementation owns).
+/// Snapshot of one stream's state for health/stats reporting, plus the
+/// ring accounting this implementation owns.
 struct StreamStats
 {
     std::string   name;
@@ -86,10 +84,8 @@ struct StreamStats
     std::size_t   viewers        = 0;
     std::size_t   ring_size      = 0;
     std::uint64_t messages_sent  = 0; ///< appended to the ring by a publisher
-    ///< Kept at 0, exactly like the oracle: appends never fail here, and the
-    ///< oracle's own increment path (tokio send err with a receiver-race) is
-    ///< effectively unreachable - it does NOT count no-viewer appends. The
-    ///< field stays for /health key parity.
+    ///< Kept at 0: appends never fail here, and it does NOT count no-viewer
+    ///< appends. The field stays for /health key parity.
     std::uint64_t send_failures  = 0;
     std::uint64_t ring_drops     = 0; ///< drop-oldest past the count cap OR the byte budget
     std::uint64_t oversize_drops = 0; ///< over a viewer's negotiated payload ceiling
@@ -113,7 +109,7 @@ public:
     [[nodiscard]] WtSessionHandle Publisher() const { return publisher_; }
 
     /// Claim the stream's publisher slot; false while another publisher
-    /// holds it (the Rust oracle's try_publish occupancy check).
+    /// holds it (the occupancy check).
     bool ClaimPublisher(WtSessionHandle handle)
     {
         if (publisher_.IsValid())

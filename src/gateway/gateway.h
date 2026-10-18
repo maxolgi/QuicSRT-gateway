@@ -18,14 +18,12 @@
 // THE TWO ENTRY DUTS, and why both exist:
 //   - ADMISSION (WtServer::AdmissionCheck, pre-200, loop thread). Consults
 //     the stream registry's live occupancy and viewer cap so a refused
-//     caller sees the status on its CONNECT response - the Rust oracle's
-//     pre-accept check (gateway.rs:343-355) and the contract libquicsrt's
-//     Publisher::Start already asserts (HTTP 403 -> kPublishRejected).
+//     caller sees the status on its CONNECT response - the contract
+//     libquicsrt's Publisher::Start already asserts (HTTP 403 -> kPublishRejected).
 //     It only CHECKS: two handshakes can interleave between the admission
 //     consult and the claim below.
 //   - THE CLAIM (SessionRegistryListener::OnSessionStart, post-200, loop
-//     thread). Re-checks and then claims, exactly the oracle's try_publish
-//     after its pre-check (gateway.rs:551-585). Losing that race is not a
+//     thread). Re-checks and then claims after the pre-check. Losing that race is not a
 //     protocol violation: the 200 is already out, so the session is closed
 //     with CloseSession instead.
 //
@@ -76,7 +74,7 @@ struct GatewayConfig
     RegistryConfig registry{};
     /// Webhook delivery (P4.3); an empty URL leaves the feature off.
     WebhookSettings webhooks{};
-    /// WT admission limits + engine timeouts (Rust GatewayLimits).
+    /// WT admission limits + engine timeouts.
     WtServerLimits wt{};
 };
 
@@ -149,8 +147,7 @@ public:
     /// (OnSessionStart), so first-wins occupancy is shared - an OBS publisher
     /// and a WT publisher contend for one slot and neither can preempt the
     /// other, and the waiting-viewer/EOF semantics are identical. The stream
-    /// is CREATED here when absent, which is the oracle's try_publish_ingester
-    /// (stream_registry.rs:89-106): a publisher never needs a viewer to
+    /// is CREATED here when absent: a publisher never needs a viewer to
     /// attach first. False when a live publisher holds the name - the caller
     /// (SrtIngest) then refuses the connection.
     /// Loop thread only (the ingest reaches it through an EventLoop Post).
@@ -186,7 +183,7 @@ public:
     /// above belongs to. An off-loop source (the SRT/UDP ingest) Posts its
     /// media here to reach PublishMedia.
     quicsrt::EventLoop& Loop() { return loop_; }
-    /// Longest registry tick so far, microseconds (the Rust tick monitor).
+    /// Longest registry tick so far, microseconds.
     [[nodiscard]] std::uint64_t TickMaxUs() const { return registry_.TickMaxUs(); }
     /// Mean registry tick over the process lifetime, microseconds
     /// (SessionRegistry::TickAvgUs - the concurrency gate's budget check).

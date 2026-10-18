@@ -1,8 +1,7 @@
-// CertProvider units (P3 step 1): self mode mirrors wtransport's
-// self-signed semantics (parses back, P-256, ~14-day validity, correct
-// SHA-256, regenerated per instance), mkcert round-trips through PEM
-// files and rejects mismatched pairs, and cert-hash.js matches the Rust
-// gateway's byte format. Plain checks (not assert) so Release stays
+// CertProvider units: self mode (parses back, P-256, ~14-day validity,
+// correct SHA-256, regenerated per instance), mkcert round-trips through
+// PEM files and rejects mismatched pairs, and cert-hash.js byte format.
+// Plain checks (not assert) so Release stays
 // meaningful, following libquicsrt's style.
 
 #include "gateway/cert.h"
@@ -221,12 +220,12 @@ void TestMkcertRoundTrip()
 
 void TestCertHashJs()
 {
-    // Self mode: hash form, exact Rust byte format (no trailing newline).
+    // Self mode: hash form, exact byte format (no trailing newline).
     {
         const quicsrt::gateway::CertProvider p;
         const std::string                    js = p.BuildCertHashJs(4433);
         Check(js == "window.CERT_HASH = \"" + p.Sha256Hex() + "\";\nwindow.WT_PORT = 4433;",
-              "cert-hash.js: self form matches Rust format byte-for-byte");
+              "cert-hash.js: self form matches the format byte-for-byte");
         Check(js.starts_with("window.CERT_HASH = "), "cert-hash.js: starts with window.CERT_HASH assignment");
     }
 

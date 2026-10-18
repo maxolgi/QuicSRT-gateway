@@ -1,7 +1,5 @@
-// SRT/UDP INGEST - the SRT-native entry point (P3 step 5, G6). The C++
-// counterpart of the Rust oracle's
-// crates/websrt/src/ingest/srt_listener.rs, which is the multi-publisher
-// listener the reference binary binds for OBS/ffmpeg.
+// SRT/UDP INGEST - the SRT-native entry point (G6): the multi-publisher
+// listener bound for OBS/ffmpeg.
 //
 // WHAT IT IS. Unlike every other socket in this gateway, the ingest is NOT
 // virtual-transport: it is an ordinary stock-mode libsrt socket on a real
@@ -14,23 +12,22 @@
 //   - MULTI-PUBLISHER. One listener, one socket per publisher; a peer's
 //     SRTO_STREAMID names the stream it publishes under.
 //   - STREAMID REQUIRED. A connection with no streamid (or an empty one)
-//     is refused - never a "default" name (srt_listener.rs:92-95).
-//   - FIRST-WINS via the gateway's registry: the oracle calls
-//     registry.try_publish_ingester(name, ingester), which refuses while a
-//     live broadcaster holds the name (stream_registry.rs:89-106). Here the
+//     is refused - never a "default" name.
+//   - FIRST-WINS via the gateway's registry: the claim refuses while a
+//     live broadcaster holds the name. Here the
 //     claim rides the same StreamRegistry::PublishAttempt a WebTransport
 //     publisher session runs (Gateway::ClaimIngestPublish), so an OBS
 //     publisher and a WT publisher contend for the SAME occupancy slot and
 //     neither can preempt the other.
-//   - LATENCY-SCALED BUFFERS (srt_listener.rs:22-25, 44-54): see
+//   - LATENCY-SCALED BUFFERS: see
 //     RecvBufferPackets() and the Start() docs for the formula and for the
 //     flow-control window discipline it must be set in.
-//   - ENCRYPTION: the oracle passes the configured passphrase to every
+//   - ENCRYPTION: the configured passphrase is passed to every
 //     accept. See Start() for what happens on a build without srt's
 //     encryption support.
 //
-// FRAMING (the one place we deliberately do more than the oracle). The Rust
-// ingester hands srt's messages straight to the broadcaster, but this
+// FRAMING (the one deliberate addition). A raw passthrough would hand
+// srt's messages straight to the broadcaster, but this
 // gateway's viewers negotiate <= 1128-byte SRT payloads and DROP anything
 // larger (Broadcaster::Pump, never truncate, never retry). So the ingest
 // frames the received byte stream itself with libquicsrt's TsChunker rules
@@ -88,13 +85,13 @@
 namespace quicsrt::gateway
 {
 
-/// Receiver buffer depth in SRT PACKETS, sized from the TSBPD latency. The
-/// oracle's recv_buffer_packets (srt_listener.rs:22-25), verbatim:
+/// Receiver buffer depth in SRT PACKETS, sized from the TSBPD latency,
+/// verbatim:
 /// `clamp(ms * 20000 / 1000 * 2, 8192, 320000)` - "TSBPD holds latency x
 /// packet_rate packets in the receiver buffer simultaneously; the
 /// srt-protocol default (8192x1500 B) overflows at high channel counts and
 /// silently caps ingest throughput, stalling publishers on flow control".
-/// Mirrors the browser-side formula from WebSRT 3560a46.
+/// Same formula as the browser side.
 [[nodiscard]] std::int64_t RecvBufferPackets(std::uint64_t latency_ms) noexcept;
 
 /// Ingest listener knobs, from [server] (config.h). The buffers are derived
@@ -104,9 +101,8 @@ struct SrtIngestConfig
     std::string   bind         = "127.0.0.1"; ///< IPv4 literal
     std::uint16_t port         = 9000;
     std::uint64_t latency_ms   = 120;  ///< TSBPD latency (floor 10 ms)
-    int           payload_size = 1128; ///< WebSRT constant: 6 x 188 TS packets
-    /// Concurrent publisher connections, 0 = unlimited (a C++ robustness
-    /// addition; the oracle's listener has no cap). Past the cap a new
+    int           payload_size = 1128; ///< websrt:// protocol constant: 6 x 188 TS packets
+    /// Concurrent publisher connections, 0 = unlimited. Past the cap a new
     /// connection is refused at accept, before any per-connection resource
     /// or loop round-trip is spent.
     int                        max_sessions = 100;
@@ -144,8 +140,8 @@ struct SrtIngestStats
     std::uint64_t                   bytes_out            = 0;
     std::uint64_t                   tail_flushes         = 0; ///< connections that ended with a buffered sub-188 tail
     std::vector<SrtConnectionStats> connections;
-    /// Per-stream-name TS-continuity probe - /health's ingester slot, the
-    /// oracle's exact shape (a map keyed by stream name). An entry appears
+    /// Per-stream-name TS-continuity probe - /health's ingester slot (a
+    /// map keyed by stream name). An entry appears
     /// when a publisher claims the name, survives the connection's end
     /// (frozen at its final counters), and starts fresh when the name is
     /// claimed again.
@@ -257,7 +253,7 @@ private:
     /// Per-name continuity counters (ingest thread; mirrored into
     /// stream_cc_snapshot_ by RefreshSnapshot). Written from the live
     /// connection's probe, never erased on connection end - the /health
-    /// parity behavior (the oracle's TsStatsHandle map in main.rs).
+    /// behavior.
     std::map<std::string, TsCcStats> stream_cc_;
     std::uint64_t                    next_webhook_session_id_ = 1;     ///< mints Conn::session_id
     bool                             srt_runtime_             = false; ///< holds an srt_startup() reference

@@ -1,9 +1,5 @@
 // Per-session SRT initiator (caller role) over the fork's virtual
-// transport - the C++ analogue of the Rust oracle's srt_sender.rs
-// (WebSRT crates/websrt/src/srt_sender.rs), with one architectural
-// difference the PLAN fixes: srt-rs is threadless, so the Rust gateway
-// hand-drives the Connect/DuplexConnection state machines from its ~2 ms
-// ticker. The fork is real libsrt with its own internal send/receive
+// transport. The fork is real libsrt with its own internal send/receive
 // threads - THIS initiator socket handshakes, retransmits and ACKs by
 // itself. The ticker's remaining jobs (publisher pumping, viewer pacing,
 // health, drop_backlog) live in session_registry.h, not here.
@@ -17,8 +13,7 @@
 // ticker), a publisher session RECEIVES from it (the registry pumps
 // released messages toward the stream sink).
 //
-// Socket options, set BEFORE srt_connect and mirroring SrtConfig defaults
-// (srt_sender.rs:51-63) plus the M0 caller lessons
+// Socket options, set BEFORE srt_connect (defaults plus the M0 caller lessons
 // (libquicsrt tests/loopback_srt.cpp):
 //   SRTO_TRANSTYPE      SRTT_LIVE (first - it resets the presets)
 //   SRTO_PAYLOADSIZE    1128 (6 x 188 TS packets; HSv5 negotiates
@@ -30,7 +25,7 @@
 //                       srt converts with MSS - UDP header = 1500 - 28)
 //   SRTO_RCVBUF         rcv packets x 1472 bytes (same trap)
 //   SRTO_SKIP_INDUCTION 1 (caller, Conclusion-first, cookie 0)
-//   SRTO_TLPKTDROP      1 (Rust ConnInitSettings too_late_packet_drop)
+//   SRTO_TLPKTDROP      1 (too_late_packet_drop)
 //   SRTO_INITIAL_RTT    the WT session's QUIC smoothed RTT, us -> ms
 //                       clamped to 1..30000, skipped when unmeasured
 //   SRTO_CONNTIMEO      params.connect_timeout_ms (bounds the handshake)
@@ -84,11 +79,10 @@
 namespace quicsrt::gateway
 {
 
-/// Initiator-side SRT parameters, mirroring the Rust oracle's SrtConfig
-/// defaults (srt_sender.rs). Latency is the gateway-side TSBPD floor.
+/// Initiator-side SRT parameters. Latency is the gateway-side TSBPD floor.
 struct InitiatorConfig
 {
-    int payload_size       = 1128; // WebSRT constant: 6 x 188-byte TS packets
+    int payload_size       = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
     int latency_ms         = 10;   // gateway floor; TSBPD = max(sender, receiver)
     int send_buffer_pkts   = 65536;
     int recv_buffer_pkts   = 8192;
@@ -161,9 +155,8 @@ public:
     /// Teardown's close. The FIRST connected observation reads back the
     /// negotiated payload cap (SRTO_PAYLOADSIZE vs SRTO_MSS - 44 floored
     /// to whole TS packets, mirroring libquicsrt's publisher session: the
-    /// Rust initiator fills the HSv5 MTU field with its payload size
-    /// although the field includes UDP/IP headers, which can cap a
-    /// fork-to-Rust session below 1128).
+    /// HSv5 MTU field carries the payload size although the field includes
+    /// UDP/IP headers, which can cap a peer session below 1128).
     [[nodiscard]] SRT_SOCKSTATUS ConnectionState();
 
     /// Any thread, best effort (false once torn down or not connected).

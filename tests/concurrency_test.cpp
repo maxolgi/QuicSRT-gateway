@@ -4,12 +4,12 @@
 // SHAPE. Every viewer is a real libquicsrt Subscriber on its OWN event loop
 // (G3: one lsquic engine per loop - the Subscriber spawns it internally),
 // started on its own thread so the 50 WT+SRT handshakes land on the accept
-// path in one burst (the Rust oracle's accept-stall defect scenario). The
+// path in one burst. The
 // publisher (libquicsrt Publisher) then claims the name and paces a
 // deterministic 188-aligned pattern for ~15 s: 11280 bytes (10 x 1128, the
-// WebSRT payload) every 33 ms = ~2.73 Mbps, 455 ticks = 5,132,400 bytes.
+// websrt:// payload) every 33 ms = ~2.73 Mbps, 455 ticks = 5,132,400 bytes.
 //
-// GATE (PLAN.md): zero viewer lag - every viewer receives the stream,
+// GATE: zero viewer lag - every viewer receives the stream,
 // byte counts within a sane window of each other; ticker avg < 5 ms; no
 // session errors; fd/memory accounting clean afterwards. Because the
 // viewers attach BEFORE the publisher (waiting viewers), every viewer is
@@ -21,8 +21,8 @@
 // approximation (P3 step 7): send throughput equals the app write rate -
 // 50 viewers each sustaining the full 2.7 Mbps the publisher writes.
 //
-// Ports: 127.0.0.1:4436 with an ephemeral fallback. The Rust gateway's
-// 4433/9000 and the dev gateway's 4434/9100 are never touched.
+// Ports: 127.0.0.1:4436 with an ephemeral fallback. Ports 4433/9000 and
+// the dev gateway's 4434/9100 are never touched.
 
 #include "gateway/cert.h"
 #include "gateway/gateway.h"
@@ -56,7 +56,7 @@ using quicsrt::gateway::Gateway;
 using quicsrt::gateway::GatewayConfig;
 
 constexpr int         kViewers    = 50;
-constexpr int         kMaxPayload = 1128;  // WebSRT constant: 6 x 188-byte TS packets
+constexpr int         kMaxPayload = 1128;  // websrt:// protocol constant: 6 x 188-byte TS packets
 constexpr std::size_t kTickBytes  = 11280; // 10 messages per 33 ms frame cadence
 constexpr int         kTickMs     = 33;
 constexpr int         kTicks      = 455; // ~15 s
@@ -238,8 +238,8 @@ int main()
     // Open mode (no allowlist): PathPolicy + AcceptAll, viewer cap 64.
     const auto policy = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
                                                 std::make_shared<quicsrt::gateway::AcceptAll>());
-    // 50 viewers from one loopback IP: lift the Rust-default per-IP cap
-    // (the oracle's own concurrency test lifts it via the builder too).
+    // 50 viewers from one loopback IP: lift the default per-IP cap
+    // (10 would refuse the burst).
     quicsrt::gateway::GatewayConfig gw_cfg{.max_viewers = kMaxViewers};
     gw_cfg.wt.max_sessions_per_ip = 0;
     Gateway gateway(cert, policy, gw_cfg);

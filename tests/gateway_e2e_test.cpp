@@ -1,12 +1,12 @@
 // G5 end-to-end: the full gateway loop - accept, admission, per-session SRT
 // initiators, the broadcaster ring and first-wins occupancy - driven by
 // libquicsrt's public Subscriber/Publisher clients over WT loopback. C++ on
-// both sides, no Rust gateway. The gateway under test is a real Gateway
+// both sides. The gateway under test is a real Gateway
 // configured from a real TOML config (config -> StreamAllowlistPolicy ->
 // Gateway), so the allowlist path is exercised too, not just the open mode.
 //
 //   1. HAPPY PATH, byte-for-byte. A Subscriber attaches FIRST (the waiting
-//      viewer), the Publisher joins, and the whole WebSRT fixture
+//      viewer), the Publisher joins, and the whole fixture
 //      (fixtures/test.ts) comes back through the ring byte-for-byte in
 //      order - the TS bytes are never modified server-side.
 //   2. WAITING VIEWER. A subscriber of a configured stream with no
@@ -29,7 +29,7 @@
 //      with here.
 //
 // Ports: 127.0.0.1:4434 with an ephemeral fallback (probe-bind :0, read the
-// port, close, hand it over) if 4434 is busy. The Rust gateway's
+// port, close, hand it over) if 4434 is busy. Ports
 // 4433/9000 are never touched. Each Subscriber/Publisher owns its own
 // EventLoop internally (G3: one engine per loop).
 
@@ -72,7 +72,7 @@ std::string FixturePath()
         return env;
     return WEBSRT_TEST_FIXTURE_DEFAULT;
 }
-constexpr int         kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
+constexpr int         kMaxPayload = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
 constexpr std::size_t kMaxViewers = 2;
 
 bool g_ok = true;

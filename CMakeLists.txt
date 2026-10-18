@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 project(QuicSRT-gateway
     VERSION 0.1.0
-    DESCRIPTION "CLI-parity C++ replacement of the Rust WebSRT gateway"
+    DESCRIPTION "C++ WebTransport-to-SRT bridging gateway"
     LANGUAGES CXX C)
 
 # Strict warnings for OUR targets only; deps/libquicsrt and everything it
@@ -33,7 +33,7 @@ endif()
 
 find_package(Threads REQUIRED)
 
-# ---- The embedded player (rust-embed parity) ----
+# ---- The embedded player ----
 # web/dist is fetched from the latest websrt-wasm-cpp release (./build.sh
 # setup or
 # ./build.sh web-dist) and baked into the binary: a generated table in
@@ -150,8 +150,7 @@ target_link_libraries(policy_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME policy_test COMMAND policy_test)
 set_tests_properties(policy_test PROPERTIES TIMEOUT 30)
 
-# Unit: the ingest's TS continuity probe (the oracle's ingest/continuity.rs
-# test set, ported).
+# Unit: the ingest's TS continuity probe.
 add_executable(ts_continuity_test tests/ts_continuity_test.cpp)
 target_compile_features(ts_continuity_test PRIVATE cxx_std_20)
 set_target_properties(ts_continuity_test PROPERTIES CXX_EXTENSIONS OFF)

@@ -1,5 +1,5 @@
-// Certificate provider implementation (see cert.h for the mirrored Rust
-// semantics). All BoringSSL state is created through bssl::UniquePtr and
+// Certificate provider implementation (see cert.h for the semantics). All
+// BoringSSL state is created through bssl::UniquePtr and
 // released into the owning members only after every fallible step passed,
 // so failure paths never leak and never leave half-built state behind.
 
@@ -26,13 +26,13 @@ namespace
 using BsslX509 = bssl::UniquePtr<X509>;
 using BsslPkey = bssl::UniquePtr<EVP_PKEY>;
 
-/// The Rust gateway's fixed self-signed SAN list (main.rs:336-341).
+/// The fixed self-signed SAN list.
 constexpr const char* kSelfSans[] = {"localhost", "127.0.0.1", "::1"};
 
-/// "wtransport self-signed" - the CN wtransport's builder writes (tls.rs:1215).
+/// "wtransport self-signed" - the CN.
 constexpr const char* kSelfCommonName = "wtransport self-signed";
 
-/// 14-day validity, wtransport's self-signed lifetime (tls.rs:348).
+/// 14-day validity.
 constexpr long kSelfValiditySeconds = 14LL * 24 * 60 * 60;
 
 std::string HexLower(const unsigned char* bytes, std::size_t len)
@@ -119,8 +119,7 @@ void BuildSelfSigned(X509* cert, EVP_PKEY* key)
         throw CertError("self: failed to set certificate version");
     }
 
-    // Serial: first 20 bytes of SHA-256(public key bytes), MSB cleared
-    // (rcgen certificate.rs:437-443).
+    // Serial: first 20 bytes of SHA-256(public key bytes), MSB cleared.
     {
         const EC_KEY* ec_key    = EVP_PKEY_get0_EC_KEY(key);
         const size_t  point_len = EC_POINT_point2oct(EC_KEY_get0_group(ec_key),
@@ -153,15 +152,14 @@ void BuildSelfSigned(X509* cert, EVP_PKEY* key)
         }
     }
 
-    // Validity: notBefore = now (wtransport applies NO back-skew, tls.rs
-    // from_now_utc), notAfter = notBefore + 14 days.
+    // Validity: notBefore = now (NO back-skew), notAfter = notBefore + 14 days.
     if (X509_gmtime_adj(X509_getm_notBefore(cert), 0) == nullptr ||
         X509_gmtime_adj(X509_getm_notAfter(cert), kSelfValiditySeconds) == nullptr)
     {
         throw CertError("self: failed to set validity period");
     }
 
-    // Self-signed: issuer == subject, CN as wtransport writes it.
+    // Self-signed: issuer == subject, CN as above.
     X509_NAME* name = X509_get_subject_name(cert);
     if (X509_NAME_add_entry_by_txt(
             name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(kSelfCommonName), -1, -1, 0) != 1 ||
@@ -341,7 +339,7 @@ std::string CertProvider::Sha256Hex() const
 
 std::string CertProvider::BuildCertHashJs(std::uint16_t wt_port) const
 {
-    // Byte-for-byte the Rust gateway's format (main.rs:385-395): hash form
+    // Byte-for-byte format: hash form
     // for self mode, null form for mkcert, single \n between the two
     // statements, NO trailing newline.
     const std::string js =

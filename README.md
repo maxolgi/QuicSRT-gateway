@@ -1,7 +1,6 @@
 # QuicSRT-gateway
 
-CLI-parity C++ replacement of the Rust
-[WebSRT](https://github.com/maxolgi/WebSRT) gateway: an lsquic
+An lsquic
 WebTransport server bridging browser WT datagram sessions to per-session SRT
 (skip-induction) plus stock-mode SRT/UDP ingest, with broadcaster fanout,
 cert modes, and runtime `cert-hash.js` emission. Built on
@@ -9,23 +8,20 @@ cert modes, and runtime `cert-hash.js` emission. Built on
 `deps/libquicsrt` submodule strictly through its exported interface targets.
 
 **Status:** feature-complete through P4 (hot reload, HTML stats, webhooks,
-packaging). Behavioral parity vs the Rust gateway is measured row-by-row
-in [docs/parity.md](docs/parity.md); the phase/gate record is the git
-history (the P3/P4 gate commits) — PLAN.md was retired once every phase
-and gate had closed.
+packaging).
 
 ## Build
 
     ./build.sh setup     # one-time: submodule init (recursive), player dist fetch (websrt-wasm-cpp release), BoringSSL fetch+build, cmake configure
     ./build.sh lib       # build the tree (libquicsrt + srt fork + lsquic)
     ./build.sh gateway   # build the QuicSRT-gateway binary
-    ./build.sh test      # run tests (live-oracle tests self-skip without the Rust gateway)
+    ./build.sh test      # run tests (the 4 Rust-gateway probes from libquicsrt self-skip)
     ./build.sh web-dist  # refresh the embedded player (latest websrt-wasm-cpp release), then re-configure
 
 Requires gcc 13+, CMake 3.24+, ninja, nasm, curl + unzip.
 
 The player (the browser web app) is **embedded in the binary** at compile
-time, exactly like the Rust gateway's rust-embed: `./build.sh setup`
+time: `./build.sh setup`
 fetches the latest `websrt-wasm-dist.zip` from
 [websrt-wasm-cpp releases](https://github.com/maxolgi/websrt-wasm-cpp/releases)
 into `web/dist` (gitignored), and CMake bakes it into the gateway. The
@@ -85,7 +81,7 @@ newer releases.
 - `/usr/local/etc/QuicSRT-gateway/gateway.example.conf` — the example config
 - `/usr/local/etc/supervisor/conf.d/QuicSRT-gateway.conf` — the supervisord conf
 
-Production setup mirrors the Rust gateway's pattern (no player directory
+Production setup (no player directory
 to deploy — it is embedded in the binary):
 
     sudo cp /usr/local/etc/supervisor/conf.d/QuicSRT-gateway.conf /etc/supervisor/conf.d/

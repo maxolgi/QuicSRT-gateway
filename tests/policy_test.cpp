@@ -1,5 +1,5 @@
-// Policy seam units: the hooks.rs test matrix ported from the Rust oracle
-// (crates/websrt/src/hooks.rs) plus the glob matcher, the StreamAllowlist
+// Policy seam units: the path-policy test matrix
+// plus the glob matcher, the StreamAllowlist
 // role/token matrix and chain short-circuiting. Plain checks (not assert)
 // so Release stays meaningful, following libquicsrt's test style.
 

@@ -33,12 +33,10 @@ public:
     }
 };
 
-/// [server] scalar knobs. Defaults mirror the Rust gateway CLI
-/// (crates/websrt-gateway/src/main.rs). Rust CLI knobs deliberately
-/// deferred (documented):
+/// [server] scalar knobs. Deliberately absent (documented):
 ///   - no_gui / no_web                 binary-side flags; the C++ gateway
 ///                                     is CLI-only
-///   - input / fixture*                Rust dev file-source; the C++ gateway
+///   - input / fixture*                dev file-source; the C++ gateway
 ///                                      sources are SRT ingest + WT publish
 ///   - srt_mode / srt_call / srt_streamid  ingest here is always
 ///                                      listener-mode UDP; streamid comes
@@ -56,13 +54,12 @@ struct ServerConfig
     std::uint64_t latency_ms =
         120; ///< SRT/UDP ingest TSBPD latency; per-session viewer latency is the fixed 10 ms floor (srt_sender.rs)
     std::uint64_t max_bandwidth_kbps  = 0;    ///< 0 = unlimited
-    int           max_sessions_per_ip = 10;   ///< WT sessions per peer IP, 0 = unlimited (Rust GatewayLimits)
+    int           max_sessions_per_ip = 10;   ///< WT sessions per peer IP, 0 = unlimited
     int           max_sessions        = 1000; ///< total WT sessions, 0 = unlimited
     /// Concurrent SRT ingest publisher connections, 0 = unlimited. Each
     /// accepted publisher holds a ~1 MiB receive buffer plus latency-scaled
     /// srt buffers, so past the cap the new connection is refused right at
-    /// accept (the ingest analogue of max_sessions; the oracle has no such
-    /// cap - a C++ robustness addition). Range 0..1000000.
+    /// accept (the ingest analogue of max_sessions). Range 0..1000000.
     int max_ingest_sessions    = 100;
     int wt_idle_timeout_s      = 10; ///< WT idle timeout in seconds (1..600)
     int wt_handshake_timeout_s = 10; ///< QUIC/WT handshake budget in seconds (1..60)
@@ -70,8 +67,7 @@ struct ServerConfig
     /// health HTTP servers, per request (1..600). The per-read 10 s
     /// socket timeout cannot catch a client that trickles a byte every
     /// few seconds - this deadline does (408 + close), so a slow sender
-    /// cannot hold a bounded worker forever (the oracle has no such
-    /// knob - a C++ robustness addition).
+    /// cannot hold a bounded worker forever.
     int                        request_header_timeout_s = 30;
     std::uint16_t              health_port              = 0; ///< 0 = disabled
     std::string                health_bind              = "127.0.0.1";

@@ -2,13 +2,10 @@
 
 Repo-specific guidance. (Behavioral guidelines live in `~/maxolgi/AGENTS.md`.)
 
-C++ CLI-parity replacement of the Rust [WebSRT](https://github.com/maxolgi/WebSRT)
-gateway, consumed via the `deps/libquicsrt` submodule strictly through its
-exported interface targets. Behavioral parity vs the Rust oracle is tracked
-row-by-row in `docs/parity.md` — a deliberate behavior change or divergence
-needs a row there. Companion repos (siblings under the WebSRT-cpp workspace root):
-`libquicsrt` (client library + srt fork), `srt` (the fork's working clone),
-`WebSRT` (Rust reference — **never modified from this repo**).
+QuicSRT-gateway: a C++ WebTransport-to-SRT bridging gateway, consumed via
+the `deps/libquicsrt` submodule strictly through its exported interface
+targets. Companion repos (siblings under the WebSRT-cpp workspace root):
+`libquicsrt` (client library + srt fork), `srt` (the fork's working clone).
 
 ## Build
 
@@ -62,9 +59,9 @@ include paths or link anything the targets don't export.
     ctest --preset release -R <name>          # single test (binaries in build/release/)
     ctest --preset tsan                       # TSan build; cmake/tsan.supp suppressions
 
-- The 4 live-oracle tests from libquicsrt (`wt_echo`, `subscriber_test`,
-  `publisher_test`, `c_api_test`) self-skip (SKIP_RETURN_CODE 77) without the
-  Rust gateway running locally — skips are green, not failures.
+- The 4 libquicsrt tests that probe a live Rust gateway (`wt_echo`,
+  `subscriber_test`, `publisher_test`, `c_api_test`) self-skip
+  (SKIP_RETURN_CODE 77) when none is running — skips are green, not failures.
 - Tests probe-bind preferred ports (4434/9100…) with ephemeral fallback, so
   `--parallel` is safe; `concurrency_test` is RUN_SERIAL (CPU-tight, fails
   under core contention).
@@ -88,8 +85,7 @@ configs).
 - Ports as deployed: WT `0.0.0.0:4435`, SRT ingest `0.0.0.0:9102`, player
   (HTTPS) `0.0.0.0:8443` — e.g. `https://127.0.0.1:8443/?stream=browsertest`
   — health (plain HTTP, loopback) `127.0.0.1:9292` — e.g.
-  `curl http://127.0.0.1:9292/health`. The Rust oracle runs side-by-side on
-  4433/9000/9091 — don't mix them up.
+  `curl http://127.0.0.1:9292/health`.
 - Logs: `/var/log/QuicSRT-gateway/` — `gateway.err.log` is the gateway's main
   output (level `notice`), `testpub.err.log` the publisher's.
 - Deploy a code change: `./build.sh gateway && sudo supervisorctl restart

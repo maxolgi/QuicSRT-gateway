@@ -1,17 +1,16 @@
 // Session registry + ticker (P3 step 3): owns every live SrtInitiator and
-// drives them from ONE ~2 ms repeating EventLoop timer - the C++ mapping
-// of the Rust oracle's registry.rs, budget-for-budget, with the mechanics
+// drives them from ONE ~2 ms repeating EventLoop timer, with the mechanics
 // adapted to real libsrt (see srt_initiator.h: the sockets run themselves;
 // the ticker here only pumps, paces and reaps).
 //
-// RUST NUMBER -> C++ MECHANIC MAPPING (registry.rs):
+// PACING NUMBERS -> C++ MECHANIC MAPPING:
 //   TICKS_PER_SEC 500 / 2 ms interval   -> RegistryConfig::tick_interval
 //                                         (EventLoop repeating timer).
 //   MAX_MSGS_PER_TICK 256               -> send_credit_per_tick: one
 //                                         viewer session sends at most 256
 //                                         backlog messages per tick.
-//   TICK_CONCURRENCY 16                 -> sessions_serviced_per_tick: the
-//                                         Rust ticker runs at most 16
+//   TICK_CONCURRENCY 16                 -> sessions_serviced_per_tick: at
+//                                         most 16
 //                                         sessions' state machines in
 //                                         parallel inside one tick_all;
 //                                         this single-threaded tick
@@ -23,8 +22,8 @@
 //                                         the next tick. Same bound: one
 //                                         slow viewer cannot consume the
 //                                         whole tick.
-//   drain_credits rate math             -> NOT carried over: the Rust
-//                                         credit formula paces the drain
+//   drain_credits rate math             -> NOT carried over: a credit
+//                                         formula would pace the drain
 //                                         against the broadcaster's EWMA
 //                                         rate; here G5's ring will own
 //                                         rate tracking and EnqueueForViewer
@@ -71,12 +70,12 @@
 namespace quicsrt::gateway
 {
 
-/// Ticker + pacing parameters (the Rust numbers - see the file comment).
+/// Ticker + pacing parameters - see the file comment.
 struct RegistryConfig
 {
-    std::chrono::milliseconds tick_interval{2};                  ///< Rust 2 ms cadence (500/s)
-    int                       send_credit_per_tick       = 256;  ///< Rust MAX_MSGS_PER_TICK
-    int                       sessions_serviced_per_tick = 16;   ///< Rust TICK_CONCURRENCY mapping
+    std::chrono::milliseconds tick_interval{2};                  ///< 2 ms cadence (500/s)
+    int                       send_credit_per_tick       = 256;  ///< max backlog messages per viewer per tick
+    int                       sessions_serviced_per_tick = 16;   ///< viewer sessions serviced per tick
     int                       recv_budget_per_tick       = 256;  ///< publisher pump bound per session per tick
     std::size_t               viewer_backlog_max         = 4096; ///< drop-oldest bound until G5's ring takes over
     int                       latency_ms                 = 10;   ///< per-session SRTO_RCVLATENCY/PEERLATENCY
@@ -98,9 +97,8 @@ struct SessionInfo
     std::uint64_t backlog_overflow_drops = 0;     ///< drop-oldest when the backlog bound was hit
 };
 
-/// One live session's evidence in one shot (SnapshotSessions): the C++
-/// counterpart of the oracle's snapshot_sessions(), which /health's
-/// per_session array is built from.
+/// One live session's evidence in one shot (SnapshotSessions), which
+/// /health's per_session array is built from.
 struct SessionSnapshot
 {
     std::uint64_t   session_id = 0; ///< WtSessionHandle::Id()
@@ -197,12 +195,11 @@ public:
     [[nodiscard]] bool                         Stats(WtSessionHandle handle, SRT_TRACEBSTATS* out) const;
     [[nodiscard]] int                          ActiveSessionCount() const;
     [[nodiscard]] std::uint64_t                TickCount() const { return tick_count_.load(); }
-    /// Longest tick so far, microseconds (the Rust tick budget monitor).
+    /// Longest tick so far, microseconds.
     [[nodiscard]] std::uint64_t TickMaxUs() const { return tick_max_us_.load(); }
-    /// Mean tick over the process lifetime, microseconds. The oracle's
-    /// ticker.avg_us in /health is a rolling window average; ours is
-    /// cumulative, because a moving window would have to be shared with
-    /// the ticker under a lock for no decision ever reads it.
+    /// Mean tick over the process lifetime, microseconds (the /health
+    /// ticker.avg_us). Cumulative, because a moving window would have to
+    /// be shared with the ticker under a lock for no decision ever reads it.
     [[nodiscard]] std::uint64_t TickAvgUs() const
     {
         const std::uint64_t count = tick_count_.load(std::memory_order_relaxed);

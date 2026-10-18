@@ -1,5 +1,5 @@
-// QuicSRT-gateway: CLI-parity C++ replacement of the Rust WebSRT gateway.
-// Thin CLI over the QuicSRTgw core library (refinement item 1): argument
+// QuicSRT-gateway CLI entry.
+// Thin CLI over the QuicSRTgw core library: argument
 // wiring, TOML config, signal handling and the run-until-signalled loop live
 // here; the accept loop, per-session SRT initiators and the broadcaster
 // ring live in src/gateway/. --selftest is the ctest smoke entry (the
@@ -110,7 +110,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
         std::fflush(stdout);
     }
     // Cert mode comes from the config when present, self mode otherwise
-    // (the Rust gateway's default). Self mode ALWAYS generates a fresh
+    // (the default). Self mode ALWAYS generates a fresh
     // cert on every boot - nothing is persisted to disk, so the hash
     // changes per restart and viewers must reload the page.
     std::string                                      cert_mode = "self";
@@ -236,7 +236,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     }
     else
     {
-        // No config: open mode (Rust-oracle parity for dev/tests) with a
+        // No config: open mode (dev/tests) with a
         // loud warning. Any stream name is accepted; only the fixed /wt
         // path is enforced. First run also drops ./gateway.conf.
         WriteExampleConfigIfAbsent();
@@ -281,8 +281,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     }
     std::fflush(stdout);
 
-    // Per-session TSBPD latency stays at the registry's 10 ms floor (the
-    // Rust SrtConfig default, srt_sender.rs:58-59): a client couples with
+    // Per-session TSBPD latency stays at the registry's 10 ms floor: a
+    // client couples with
     // the gateway, not with the publisher. [server].latency_ms is the
     // SRT/UDP ingest knob only.
     quicsrt::gateway::Gateway gateway(cert, policy, gateway_config);
@@ -346,7 +346,7 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
     }
 
     // cert-hash.js, served DYNAMICALLY by the web server (never written
-    // to disk, the oracle's shape): the page reads window.CERT_HASH +
+    // to disk): the page reads window.CERT_HASH +
     // window.WT_PORT from it, and in self mode the hash changes every
     // boot, so viewers must reload the page after a restart.
     const std::string cert_hash_js = cert.BuildCertHashJs(wt_bind_port);
@@ -417,8 +417,8 @@ int Run(const std::optional<std::string>& config_path, const std::optional<std::
 
     if (health_port != 0)
     {
-        // The Rust gateway warns when metrics are bound off loopback
-        // (main.rs:466-471); the same exposure applies here.
+        // Warn when metrics are bound off loopback
+        // (the same exposure applies).
         if (health_bind != "127.0.0.1" && health_bind != "localhost" && health_bind != "::1")
         {
             std::fprintf(stderr,

@@ -1,14 +1,10 @@
 // The gateway's own web server (P3 step 6): the browser player, the
-// health/stats endpoint, and the runtime cert-hash.js - the C++ port of
-// the Rust oracle's crates/websrt-gateway/src/web_server.rs (axum +
-// axum-server + rust-embed) and of the /health router wired in its
-// main.rs. The oracle embeds web/dist at compile time; so does this one
-// (the table generated from web/dist by CMake - see embedded_player.h),
-// with a [server].web_root override for serving some other tree from
-// disk (the Rust gateway's own --web-root escape hatch). cert-hash.js is
-// served DYNAMICALLY in both modes - never written to disk - exactly as
-// the oracle serves it (web_server.rs: "served dynamically, changes every
-// boot").
+// health/stats endpoint, and the runtime cert-hash.js. web/dist is
+// embedded at compile time (the table generated from web/dist by CMake -
+// see embedded_player.h), with a [server].web_root override for serving
+// some other tree from disk (the dev/ops escape hatch). cert-hash.js is
+// served DYNAMICALLY in both modes - never written to disk ("served
+// dynamically, changes every boot").
 //
 // WHAT IT SERVES. Two roles, one class, so the endpoint paths and JSON
 // shapes are literally the same code in both:
@@ -21,22 +17,17 @@
 //     the WebTransport handshake stays TLS (pinned via cert-hash.js) either
 //     way.
 //   - the HEALTH server (no cert): plain HTTP on health_port, serving
-//     /health and /stats. This is the oracle's shape exactly - its
-//     health listener is axum::serve on a raw TcpListener (main.rs:490),
-//     i.e. plain HTTP on a separate port from the HTTPS web server, with
+//     /health and /stats - i.e. plain HTTP on a separate port from the
+//     HTTPS web server, with
 //     a startup warning when the bind is not loopback.
 //
 // TLS comes from the SAME CertProvider instance the WebTransport server
 // uses (NewServerSslCtx), so one cert-hash.js hash pins both listeners.
 //
-// JSON SHAPE. /health reproduces the oracle's health_handler key for
-// key (websrt-gateway/src/main.rs:690-704) - status, streams,
+// JSON SHAPE. /health keys: status, streams,
 // alive_streams, viewers, max_viewers, per_stream, per_session, ticker,
-// ingester - plus two additive keys the C++ gateway adds (uptime_ms,
-// active_sessions), so a parity diff over the oracle's keys still
-// matches. /stats is the C++ addition (P4's "HTTP stats page" in the
-// oracle's terms): the same evidence with the stream/session/ingest
-// detail the oracle's GatewayStats struct carries but does not expose.
+// ingester, uptime_ms, active_sessions. /stats is the richer view: the
+// same evidence with the stream/session/ingest detail /health omits.
 // Since P4 step 2 the same /stats also renders as HTML when the
 // request's Accept names text/html (the SLS-parity stats page:
 // server-side-rendered tables, auto-refresh meta, same data as the
@@ -94,8 +85,8 @@ struct WebServerConfig
     std::uint16_t port = 0;
 
     /// HTTPS with this identity (the web server role, [server].web_tls =
-    /// true); nullptr = plain HTTP (the health server role, the oracle's
-    /// shape, and the closed-network web server).
+    /// true); nullptr = plain HTTP (the health server role and the
+    /// closed-network web server).
     const CertProvider* cert = nullptr;
 
     /// Directory the static files are read from, overriding the embedded
@@ -111,8 +102,7 @@ struct WebServerConfig
 
     /// Serve the player (the embedded web/dist, or the web_root override)
     /// on this server - the WEB role. False = /health and /stats only
-    /// (the health server's shape, like the oracle's separate health
-    /// router).
+    /// (the health server's shape).
     bool serve_player = false;
 
     /// Live stats sources, both optional (nullptr reports zeros). The
@@ -197,7 +187,7 @@ private:
                            const std::vector<std::pair<std::string, std::string>>& extra      = {},
                            bool                                                    keep_alive = true);
 
-    /// /health - the oracle's shape (see the file header).
+    /// /health (see the file header).
     [[nodiscard]] std::string HealthJson() const;
     /// /stats - the C++ addition: the same evidence, untruncated.
     [[nodiscard]] std::string StatsJson() const;

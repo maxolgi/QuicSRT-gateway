@@ -166,7 +166,7 @@ ServerConfig ParseServer(Table& table)
     s.srt_ingest_port =
         static_cast<std::uint16_t>(OptInt(table, "srt_ingest_port", "[server]", s.srt_ingest_port, 1, 65535));
     s.srt_ingest_bind = OptString(table, "srt_ingest_bind", "[server]").value_or(s.srt_ingest_bind);
-    // PLAN.md: gateway-side TSBPD floor is 10 ms.
+    // Gateway-side TSBPD floor is 10 ms.
     s.latency_ms         = OptInt(table, "latency_ms", "[server]", s.latency_ms, 10, 60000);
     s.max_bandwidth_kbps = OptInt(table, "max_bandwidth_kbps", "[server]", s.max_bandwidth_kbps, 0, 1'000'000'000ULL);
     s.health_port = static_cast<std::uint16_t>(OptInt(table, "health_port", "[server]", s.health_port, 0, 65535));
@@ -174,9 +174,8 @@ ServerConfig ParseServer(Table& table)
     s.web_port    = static_cast<std::uint16_t>(OptInt(table, "web_port", "[server]", s.web_port, 0, 65535));
     s.web_bind    = OptString(table, "web_bind", "[server]").value_or(s.web_bind);
     // The static root OVERRIDE. Absent = serve the embedded player (the
-    // dist baked into the binary at compile time, rust-embed parity); set
-    // = serve that directory from disk instead (the dev/ops escape hatch,
-    // the Rust gateway's own --web-root).
+    // dist baked into the binary at compile time); set
+    // = serve that directory from disk instead (the dev/ops escape hatch).
     s.web_root = OptString(table, "web_root", "[server]");
     // Plain-HTTP page serving is the closed-network deployment mode: the
     // WT listener keeps its TLS either way, so nothing about the handshake
@@ -189,20 +188,19 @@ ServerConfig ParseServer(Table& table)
     // whole maximum-size message always stays buffered at the minimum.
     s.broadcast_byte_budget =
         OptInt(table, "broadcast_byte_budget", "[server]", s.broadcast_byte_budget, 4 * 1024 * 1024, 1ULL << 40);
-    // Rust GatewayLimits parity (limits.rs): caps 0 = unlimited (Option::None);
-    // timeout bounds are the oracle's validate() ranges.
+    // WT admission caps: 0 = unlimited;
+    // timeout bounds are the validated ranges.
     s.max_sessions_per_ip =
         static_cast<int>(OptInt(table, "max_sessions_per_ip", "[server]", s.max_sessions_per_ip, 0, 1'000'000));
     s.max_sessions = static_cast<int>(OptInt(table, "max_sessions", "[server]", s.max_sessions, 0, 100'000'000));
-    // The ingest admission cap (robustness addition, not oracle parity);
+    // The ingest admission cap;
     // 0 = unlimited like the WT caps above.
     s.max_ingest_sessions =
         static_cast<int>(OptInt(table, "max_ingest_sessions", "[server]", s.max_ingest_sessions, 0, 1'000'000));
     s.wt_idle_timeout_s = static_cast<int>(OptInt(table, "wt_idle_timeout_s", "[server]", s.wt_idle_timeout_s, 1, 600));
     s.wt_handshake_timeout_s =
         static_cast<int>(OptInt(table, "wt_handshake_timeout_s", "[server]", s.wt_handshake_timeout_s, 1, 60));
-    // The web/health servers' total header-read budget (robustness
-    // addition, not oracle parity); 1 s floor so a promptly-sent
+    // The web/health servers' total header-read budget; 1 s floor so a promptly-sent
     // request always fits, 600 s ceiling like wt_idle_timeout_s.
     s.request_header_timeout_s =
         static_cast<int>(OptInt(table, "request_header_timeout_s", "[server]", s.request_header_timeout_s, 1, 600));

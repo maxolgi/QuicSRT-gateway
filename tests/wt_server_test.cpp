@@ -1,6 +1,6 @@
 // WtServer end-to-end over the loopback: libquicsrt's WTClient drives the
-// gateway's WebTransport server. Asserts the P3 accept path plus the two
-// Rust-gateway defect fixes:
+// gateway's WebTransport server. Asserts the accept path plus the two
+// deliberate fixes:
 //   1. Accept: CONNECT /wt?stream=test -> 200, OnWtSession with the right
 //      name/role, client session ready.
 //   2. Policy rejections are DELIVERABLE: a publish the allowlist forbids
@@ -14,7 +14,7 @@
 //      loop Stop() joins.
 //
 // Ports: 127.0.0.1:4434 with an ephemeral fallback (bind a :0 probe socket,
-// read its port, close, then bind that) if 4434 is busy. The Rust gateway's
+// read its port, close, then bind that) if 4434 is busy. Ports
 // 4433/9000 are never touched. Each WTClient owns its own EventLoop (an
 // EventLoop hosts at most one engine); the server has its own loop too.
 

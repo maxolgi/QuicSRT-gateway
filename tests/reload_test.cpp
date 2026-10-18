@@ -1,4 +1,4 @@
-// P4.1 hot reload - the PLAN.md P4.1 Verify scenario against a real
+// Hot reload - the Verify scenario against a real
 // gateway core configured from a real config FILE (the reload re-parses
 // it, so unlike gateway_e2e_test the config lives on disk):
 //   1. One-stream-allowlist config (two streams, max_viewers = 1): a
@@ -50,7 +50,7 @@ namespace
 {
 
 constexpr const char* kConfigPath = "/tmp/QuicSRT-gateway-reload-test.conf";
-constexpr int         kMaxPayload = 1128; // WebSRT constant: 6 x 188-byte TS packets
+constexpr int         kMaxPayload = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
 
 bool g_ok = true;
 

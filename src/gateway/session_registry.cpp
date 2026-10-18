@@ -18,7 +18,7 @@ namespace
 // NOT bounded by the negotiated payload size - a message spans many payload
 // packets and reassembles whole (the SlopShady wasm muxer frames whole
 // ~0.3 MB GOPs as single messages; srt_recvmsg silently truncates to the
-// buffer, so it grows on a full read, Rust-oracle style unbounded-in-kind).
+// buffer, so it grows on a full read - unbounded-in-kind).
 constexpr std::size_t kRecvBufInitial = 1024 * 1024;
 constexpr std::size_t kRecvBufMax     = 4 * 1024 * 1024;
 
@@ -81,7 +81,7 @@ struct RegistryEntry
     std::uint64_t                         backlog_overflow_drops = 0; // drop-oldest at the bound
 
     // Set on the first tick the initiator is observed connected; for a
-    // viewer it also clears the backlog (Rust viewer_primed/drop_backlog)
+    // viewer it also clears the backlog (drop_backlog)
     // and raises the consume-once marker G5 reads via PopBacklogDrop.
     std::atomic<bool> connected_seen{false};
     std::atomic<bool> backlog_drop_marked{false};
@@ -340,8 +340,8 @@ void SessionRegistry::PumpPublisher(const std::shared_ptr<RegistryEntry>& entry)
         if (n == SrtInitiator::kRecvClosed)
         {
             // The browser publisher ended the stream (SRT shutdown after
-            // its TSBPD window drained). Parity with the Rust oracle:
-            // the session ends; G5 releases the stream name from here.
+            // its TSBPD window drained).
+            // The session ends; G5 releases the stream name from here.
             FinishEntry(entry, "publisher closed the stream");
             return;
         }
@@ -517,7 +517,7 @@ std::vector<SessionSnapshot> SessionRegistry::SnapshotSessions() const
         live.reserve(entries_.size());
         for (const auto& entry : entries_)
         {
-            // Finished entries are on their way out; the oracle filters
+            // Finished entries are on their way out; filter
             // them out of snapshot_sessions for the same reason.
             if (!entry.second->finished.load(std::memory_order_relaxed))
             {

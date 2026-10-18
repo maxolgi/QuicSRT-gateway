@@ -2,8 +2,7 @@
 # Always-on websrt:// test publisher for the C++ gateway (the
 # WebTransport publish path, not the SRT ingest). Deployed as the
 # supervisord program QuicSRT-gateway-testpub (see QuicSRT-gateway-testpub.conf)
-# with command= pointing HERE, the same convention websrt.conf uses for
-# the Rust gateway binary - run from the checkout, never installed.
+# with command= pointing HERE - run from the checkout, never installed.
 #
 # Fetches the gateway's live cert-hash.js first: self mode regenerates
 # the cert every boot, so the pin must be refreshed each start; a fetch

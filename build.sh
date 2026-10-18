@@ -18,14 +18,13 @@ EOF
 # the revision lsquic CI builds against). Same pin libquicsrt builds with.
 BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 
-# The player (web/dist) is EMBEDDED into the binary at compile time
-# (rust-embed parity with the Rust gateway). The dist is never built here:
-# it is fetched from the latest websrt-wasm-cpp release artifact — the
-# C++/emscripten player (its ci publishes every master push as dev-<sha>
-# marked latest, v* tags as stable cuts), engineered in the same zip
-# shape. This replaces the Rust WebSRT dist deliberately: one source of
-# truth for the player, matching what the deployed gateway serves via
-# web_root. Divergence recorded in docs/parity.md ("Player serving").
+# The player (web/dist) is EMBEDDED into the binary at compile time.
+# The dist is never built here: it is fetched from the latest
+# websrt-wasm-cpp release artifact — the C++/emscripten player (its ci
+# publishes every master push as dev-<sha> marked latest, v* tags as
+# stable cuts), engineered in the same zip shape. One source of truth
+# for the player, matching what the deployed gateway serves via
+# web_root.
 WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/websrt-wasm-cpp/releases/latest
 WEB_DIST_ASSET=websrt-wasm-dist.zip
 

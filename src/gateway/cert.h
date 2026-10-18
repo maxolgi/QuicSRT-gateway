@@ -1,14 +1,11 @@
-// Certificate provider for the WebTransport server - a port of the Rust
-// oracle's crates/websrt/src/cert.rs (P3 step 1).
+// Certificate provider for the WebTransport server.
 //
-// Self mode (the default) mirrors wtransport 0.7.1's Identity::self_signed
-// exactly (tls.rs:1213-1232 via tls.rs:340-350): a fresh ECDSA P-256 key
+// Self mode (the default): a fresh ECDSA P-256 key
 // with SHA-256 signature, CN "wtransport self-signed", SANs
-// localhost/127.0.0.1/::1 (the Rust gateway's fixed list, main.rs:336-341),
+// localhost/127.0.0.1/::1,
 // notBefore = now (NO back-skew), notAfter = now + 14 days, serial = first
-// 20 bytes of SHA-256(public key bytes) with the MSB cleared (rcgen
-// certificate.rs:437-443), and SANs as the ONLY extension (rcgen's IsCa
-// default NoCa writes no BasicConstraints/SKI). A new cert is generated on
+// 20 bytes of SHA-256(public key bytes) with the MSB cleared, and SANs as
+// the ONLY extension (no BasicConstraints/SKI). A new cert is generated on
 // EVERY construction (one boot = one provider = one cert) and is NEVER
 // written to disk by the provider.
 //
@@ -49,7 +46,7 @@ public:
     }
 };
 
-/// Cert modes, mirroring the Rust oracle's --cert-mode flag.
+/// Cert modes.
 enum class CertMode : std::uint8_t
 {
     /// Self-signed ECDSA P-256, regenerated on every boot, never persisted.
@@ -102,8 +99,7 @@ public:
     /// Which mode this provider was built in.
     [[nodiscard]] CertMode Mode() const { return mode_; }
 
-    /// Build the cert-hash.js BODY in the EXACT format the Rust gateway
-    /// produces (websrt-gateway main.rs:381-397; no trailing newline):
+    /// Build the cert-hash.js BODY (no trailing newline):
     ///   Self:    window.CERT_HASH = "<sha256-hex>";\nwindow.WT_PORT = <port>;
     ///   Mkcert:  window.CERT_HASH = null;\nwindow.WT_PORT = <port>;
     /// The gateway serves this at /cert-hash.js dynamically (the hash

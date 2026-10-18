@@ -1,7 +1,7 @@
 // G4 loopback: the per-session SRT initiator + session registry ticker,
 // end-to-end over WT loopback against libquicsrt's own Subscriber (viewer
-// direction) and Publisher (publisher direction) - full C++ on both sides,
-// no Rust gateway. Gate criteria:
+// direction) and Publisher (publisher direction) - full C++ on both sides.
+// Gate criteria:
 //   1. Viewer: session accepted -> initiator connects (caller,
 //      skip-induction) -> Subscriber Start returns connected; N x 1128
 //      deterministic messages fed through EnqueueForViewer are paced out
@@ -29,7 +29,7 @@
 // Client side: the public quicsrt::Subscriber and quicsrt::Publisher each
 // own their EventLoop internally (G3: one engine per loop), so the two
 // client engines run on two separate loops. Ports: 127.0.0.1:4435 with
-// an ephemeral fallback; 4433/9000 (the Rust gateway) are never touched.
+// an ephemeral fallback; 4433/9000 are never touched.
 
 #include "gateway/cert.h"
 #include "gateway/policy.h"
@@ -62,7 +62,7 @@ namespace
 
 using quicsrt::gateway::WtSessionHandle;
 
-constexpr int         kPayloadSize = 1128; // WebSRT constant: 6 x 188-byte TS packets
+constexpr int         kPayloadSize = 1128; // websrt:// protocol constant: 6 x 188-byte TS packets
 constexpr int         kViewerMsgs  = 1000; // > 4 x the 256/tick credit budget
 constexpr int         kPubMsgs     = 2000;
 constexpr std::size_t kViewerBytes = std::size_t{kViewerMsgs} * kPayloadSize;
