@@ -77,10 +77,29 @@ include paths or link anything the targets don't export.
 
 ## Live gateway (supervisord)
 
-Live testing uses the supervised `websrt-cpp` gateway (test stream
-`browsertest` from `websrt-cpp-testpub`). WT 127.0.0.1:4435, health
-http://127.0.0.1:9292, logs `/var/log/websrt-cpp/`. Cert pin: `curl -k
-https://127.0.0.1:8443/cert-hash.js`.
+The host's gateway runs under supervisord — program `websrt-cpp`, straight
+from this repo's build tree, open mode (every stream name accepted) —
+alongside the always-on publisher `websrt-cpp-testpub` (stream
+`browsertest`). All live testing (golden commands, parity measurements,
+`/health` and `/stats` curls, the player page) goes through these services;
+never launch ad-hoc `websrt-gateway` processes (bare runs, `/tmp` dev
+configs).
+
+- Ports as deployed: WT `0.0.0.0:4435`, SRT ingest `0.0.0.0:9102`, player
+  (HTTPS) `0.0.0.0:8443` — e.g. `https://127.0.0.1:8443/?stream=browsertest`
+  — health (plain HTTP, loopback) `127.0.0.1:9292` — e.g.
+  `curl http://127.0.0.1:9292/health`. The Rust oracle runs side-by-side on
+  4433/9000/9091 — don't mix them up.
+- Logs: `/var/log/websrt-cpp/` — `gateway.err.log` is the gateway's main
+  output (level `notice`), `testpub.err.log` the publisher's.
+- Deploy a code change: `./build.sh gateway && sudo supervisorctl restart
+  websrt-cpp` (a rebuild alone does nothing until the restart; agents may
+  restart freely). Config edit touching hot-reloadable keys only:
+  `sudo kill -HUP $(pidof websrt-gateway)`.
+- Test stream: `sudo supervisorctl restart websrt-cpp-testpub` — never run
+  the publisher script by hand.
+- ctest suites are the exception: they run in-process gateway cores with
+  ephemeral-port fallback and never touch the supervised services.
 
 ## Formatting / lint
 
