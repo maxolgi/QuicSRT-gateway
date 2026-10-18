@@ -4,7 +4,7 @@ Repo-specific guidance. (Behavioral guidelines live in `~/maxolgi/AGENTS.md`.)
 
 QuicSRT-gateway: a C++ WebTransport-to-SRT bridging gateway, consumed via
 the `deps/libquicsrt` submodule strictly through its exported interface
-targets. Companion repos (siblings under the WebSRT-cpp workspace root):
+targets. Companion repos (siblings under the QuicSRT-cpp workspace root):
 `libquicsrt` (client library + srt fork), `srt` (the fork's working clone).
 
 ## Build
