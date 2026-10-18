@@ -64,7 +64,7 @@
             },
             "filter": {
                 "exclude": {
-                    "name": "srt_initiator_test"
+                    "name": "srt_initiator_test|concurrency_test"
                 }
             }
         }

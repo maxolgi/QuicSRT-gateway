@@ -113,12 +113,21 @@ jobs:
   # log-level access in lsquic, deferred by the unmodified-lsquic
   # policy.
   #
-  # Test scope: the always-run set MINUS one test, via the tsan test
+  # Test scope: the always-run set MINUS two tests, via the tsan test
   # preset's exclusion filter (delete the filter entry to re-include):
   #   - srt_initiator_test: no race involved; its 10 s internal read
   #     deadline is blown by TSan's slowdown alone (16.7 s pass vs
   #     36.5 s fail-of-timeout locally, 2 fails in 3 runs).
-  # The remaining 25 tests + the 4 live-oracle self-skips run green and
+  #   - concurrency_test: its G8 budgets (zero viewer lag spread,
+  #     byte-exact fanout, send-buffer drain deadlines) are throughput
+  #     assertions, not race assertions, and TSan's 5-15x slowdown makes
+  #     them unreachable on a 4-vCPU runner: the 50-viewer run collapses
+  #     into a too-late drop storm (ticker 110 ms over budget, 23k
+  #     datagrams dropped, 3/50 viewers hash-exact) with NO race report -
+  #     the functional gate stays in the release suite (RUN_SERIAL there),
+  #     and TSan's fanout/concurrency coverage remains via
+  #     facade_race_test, which stays in the preset.
+  # The remaining 24 tests + the 4 live-oracle self-skips run green and
   # stable (facade_race_test dominating the runtime).
   tsan:
     runs-on: ubuntu-24.04
