@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -57,22 +57,33 @@ jobs:
         run: ./build.sh test
 
   # ---------------------------------------------------------------------------
-  # 2. Linux build — Debian 13 (trixie) container, glibc 2.41.
-  #    ubuntu-latest images carry a newer glibc, which would raise the
-  #    binary's minimum requirement above Debian stable. Building inside
-  #    debian:trixie caps it at glibc 2.41, and dpkg-shlibdeps resolves the
-  #    .deb's Depends against trixie's library versions (same mechanism
-  #    cargo-deb uses). Single platform: the gateway is a Linux server
-  #    binary (supervisord deployment); no Windows/macOS matrix.
+  # 2. Linux build — one leg per target distro, built INSIDE that distro's
+  #    container so the binary's glibc floor matches the distro (trixie
+  #    2.41, noble 2.39): an ubuntu-latest runner image carries a newer
+  #    glibc and the binary would run on neither stable. Same dependency
+  #    set on both legs; dpkg-shlibdeps resolves each .deb's Depends
+  #    against its own distro's library versions (the cargo-deb mechanism).
+  #    Single platform: the gateway is a Linux server binary (supervisord
+  #    deployment); no Windows/macOS matrix.
   # ---------------------------------------------------------------------------
   build-linux:
-    name: Build (Linux x64)
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian 13 x64
+            image: debian:trixie
+            distro: debian13
+          - name: Ubuntu 24.04 x64
+            image: ubuntu:24.04
+            distro: ubuntu24.04
     runs-on: ubuntu-latest
-    container: debian:trixie
+    container: ${{ matrix.image }}
     steps:
-      # Must precede checkout: git is not in the base image and checkout falls
-      # back to a REST download (no submodules) without it.
-      - name: Install build deps (Debian trixie)
+      # Must precede checkout: git is not in the base images and checkout
+      # falls back to a REST download (no submodules) without it.
+      - name: Install build deps (${{ matrix.image }})
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -97,12 +108,12 @@ jobs:
       - name: Stage binary
         run: |
           mkdir -p artifact
-          cp build/release/QuicSRT-gateway artifact/QuicSRT-gateway-linux-x64
+          cp build/release/QuicSRT-gateway "artifact/QuicSRT-gateway-${{ matrix.distro }}-x64"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: QuicSRT-gateway-linux-x64
-          path: artifact/QuicSRT-gateway-linux-x64
+          name: QuicSRT-gateway-${{ matrix.distro }}-x64
+          path: artifact/QuicSRT-gateway-${{ matrix.distro }}-x64
           if-no-files-found: error
 
       # .deb from the CMake install rules (P4.4 layout: the binary under
@@ -110,7 +121,8 @@ jobs:
       # expects it, plus the two conf files). Depends come from
       # dpkg-shlibdeps against the staged binary. Version: v* tag push ->
       # <tag>, otherwise <CMake project VERSION>~dev.<short_sha> (sorts
-      # below the eventual release).
+      # below the eventual release); the distro id rides as a +suffix so
+      # the two legs' assets never collide.
       - name: Build .deb package
         run: |
           set -euxo pipefail
@@ -121,6 +133,7 @@ jobs:
           else
             version="${projver}~dev.${short}"
           fi
+          version="${version}+${{ matrix.distro }}"
           pkgdir="$PWD/pkg/quicsrt-gateway"
           install -d "$pkgdir" debian
           DESTDIR="$pkgdir" cmake --install build/release
@@ -152,14 +165,14 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: quicsrt-gateway-deb
+          name: quicsrt-gateway-deb-${{ matrix.distro }}
           path: dist/*.deb
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # 3. Publish a GitHub Release for every successful build (same convention
   #    as the QuicSRT-wasm CI the player dist is fetched from).
-  #    - Push to main  → regular release tagged dev-<short_sha>, marked "latest"
+  #    - Push to master → regular release tagged dev-<short_sha>, marked "latest"
   #    - v* tag push    → stable release tagged <version>, marked "latest"
   # ---------------------------------------------------------------------------
   release:
@@ -167,7 +180,7 @@ jobs:
     needs: [check, build-linux]
     if: >-
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -180,8 +193,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          cp artifacts/QuicSRT-gateway-linux-x64/* release/
-          cp artifacts/quicsrt-gateway-deb/*.deb release/
+          cp artifacts/QuicSRT-gateway-debian13-x64/* release/
+          cp artifacts/QuicSRT-gateway-ubuntu24.04-x64/* release/
+          cp artifacts/quicsrt-gateway-deb-debian13/*.deb release/
+          cp artifacts/quicsrt-gateway-deb-ubuntu24.04/*.deb release/
 
       - name: Set release metadata
         id: meta
