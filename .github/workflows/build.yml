@@ -1,0 +1,213 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Fast checks on every push / PR.
+  #    clang-format 19 is pinned via pip exactly (18 formats some constructs
+  #    differently and would fail CI); checked on src tests only, never deps/.
+  #    Then the full build (BoringSSL + lsquic + srt fork + libquicsrt +
+  #    gateway) and the ctest suite. Toolchain per README/AGENTS.md: gcc 13+
+  #    (ubuntu default), CMake >= 3.24 (preinstalled), ninja, nasm, Go +
+  #    zlib1g-dev for the BoringSSL build, curl + unzip for the player dist.
+  #    The 4 libquicsrt tests that probe a live gateway self-skip (green).
+  # ---------------------------------------------------------------------------
+  check:
+    name: Lint + build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build nasm pkg-config \
+            golang-go zlib1g-dev unzip
+
+      - name: Install clang-format 19 (pinned)
+        run: python3 -m pip install --break-system-packages clang-format==19.1.7
+
+      - name: clang-format check (src tests only, never deps/)
+        run: find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+
+      - name: ./build.sh setup (submodules, player dist, BoringSSL, configure)
+        run: ./build.sh setup
+
+      - name: Build
+        run: ./build.sh lib
+
+      - name: Test
+        run: ./build.sh test
+
+  # ---------------------------------------------------------------------------
+  # 2. Linux build — Debian 13 (trixie) container, glibc 2.41.
+  #    ubuntu-latest images carry a newer glibc, which would raise the
+  #    binary's minimum requirement above Debian stable. Building inside
+  #    debian:trixie caps it at glibc 2.41, and dpkg-shlibdeps resolves the
+  #    .deb's Depends against trixie's library versions (same mechanism
+  #    cargo-deb uses). Single platform: the gateway is a Linux server
+  #    binary (supervisord deployment); no Windows/macOS matrix.
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build (Linux x64)
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      # Must precede checkout: git is not in the base image and checkout falls
+      # back to a REST download (no submodules) without it.
+      - name: Install build deps (Debian trixie)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git unzip \
+            build-essential cmake ninja-build nasm pkg-config \
+            golang-go zlib1g-dev
+          ldd --version | head -n 1
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # setup: submodule init (idempotent), player dist fetch from the
+      # QuicSRT-wasm release, BoringSSL fetch+build, CMake configure
+      # (QUICSRT_ENABLE_WT=ON is passed by build.sh).
+      - name: Build gateway binary
+        run: |
+          ./build.sh setup
+          ./build.sh gateway
+          strip build/release/QuicSRT-gateway
+
+      - name: Stage binary
+        run: |
+          mkdir -p artifact
+          cp build/release/QuicSRT-gateway artifact/QuicSRT-gateway-linux-x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: QuicSRT-gateway-linux-x64
+          path: artifact/QuicSRT-gateway-linux-x64
+          if-no-files-found: error
+
+      # .deb from the CMake install rules (P4.4 layout: the binary under
+      # /usr/local/bin exactly where scripts/QuicSRT-gateway.conf's command=
+      # expects it, plus the two conf files). Depends come from
+      # dpkg-shlibdeps against the staged binary. Version: v* tag push ->
+      # <tag>, otherwise <CMake project VERSION>~dev.<short_sha> (sorts
+      # below the eventual release).
+      - name: Build .deb package
+        run: |
+          set -euxo pipefail
+          short="${GITHUB_SHA:0:7}"
+          projver="$(sed -n 's/^    VERSION \(.*\)$/\1/p' CMakeLists.txt)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${projver}~dev.${short}"
+          fi
+          pkgdir="$PWD/pkg/quicsrt-gateway"
+          install -d "$pkgdir" debian
+          DESTDIR="$pkgdir" cmake --install build/release
+          cat > debian/control <<'EOF'
+          Source: quicsrt-gateway
+          Package: quicsrt-gateway
+          Architecture: amd64
+          Maintainer: maxolgi <maxolgi@users.noreply.github.com>
+          Description: WebTransport-to-SRT bridging gateway
+          EOF
+          deps="$(dpkg-shlibdeps -O "$pkgdir/usr/local/bin/QuicSRT-gateway" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')"
+          [ -n "$deps" ] || { echo "dpkg-shlibdeps resolved no Depends" >&2; exit 1; }
+          install -d "$pkgdir/DEBIAN"
+          cat > "$pkgdir/DEBIAN/control" <<EOF
+          Package: quicsrt-gateway
+          Version: $version
+          Architecture: amd64
+          Maintainer: maxolgi <maxolgi@users.noreply.github.com>
+          Depends: $deps
+          Section: net
+          Priority: optional
+          Homepage: https://github.com/maxolgi/QuicSRT-gateway
+          Description: WebTransport-to-SRT bridging gateway
+           C++ gateway bridging WebTransport (HTTP/3) subscriber sessions to
+           SRT ingest streams, with an embedded web player.
+          EOF
+          mkdir -p dist
+          dpkg-deb --root-owner-group --build "$pkgdir" "dist/quicsrt-gateway_${version}_amd64.deb"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quicsrt-gateway-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 3. Publish a GitHub Release for every successful build (same convention
+  #    as the QuicSRT-wasm CI the player dist is fetched from).
+  #    - Push to main  → regular release tagged dev-<short_sha>, marked "latest"
+  #    - v* tag push    → stable release tagged <version>, marked "latest"
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish release
+    needs: [check, build-linux]
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          cp artifacts/QuicSRT-gateway-linux-x64/* release/
+          cp artifacts/quicsrt-gateway-deb/*.deb release/
+
+      - name: Set release metadata
+        id: meta
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          short="${SHA:0:7}"
+          if [[ "$REF" == refs/tags/v* ]]; then
+            echo "tag=${REF#refs/tags/}"    >> "$GITHUB_OUTPUT"
+            echo "name=${REF#refs/tags/}"   >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"         >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"         >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev-${short}"         >> "$GITHUB_OUTPUT"
+            echo "name=Dev ${short}"        >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"         >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"         >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.make_latest }}
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
