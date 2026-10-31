@@ -16,6 +16,7 @@ meant to be executed in order; each has a definition of done.
 | Deployment | Runs anywhere: laptop, NUC, appliance. systemd unit provided; Docker deferred (wrapper, not foundation) |
 | Licensing | Offline signed key, **per number of channels**; tiers TBD (e.g. 2/8/16/unlimited) |
 | Markets | 4 presets ("models"): Return Feeds, Venue, Site, Field — landing page shows all four; deployment restriction via license model bitmask later |
+| Recording | **Everything recorded goes to an embedded TAMS store** (Time Addressable Media Store, BBC R&D open API, github.com/bbc/tams) — interop-first, not a private file format |
 | Network posture | Local-first. Bind defaults: WT/UDP + player web port on LAN; admin API on 127.0.0.1 unless explicitly opened, token-protected |
 | Bonding | Parked ("maybe one day"). Lives in engine-land (dual-path publish) if ever |
 
@@ -31,6 +32,12 @@ meant to be executed in order; each has a definition of done.
   path stays what it is: external interop. Internally we *are* the ffmpeg.
 - **Recorder = fan-out tap.** The broadcaster already fans out to browser
   sessions; recording is one more sink. Zero extra sessions, zero hops.
+- **Recording is TAMS.** Segments land in an embedded, spec-shaped
+  Time-addressable Media Store instead of a private pile of TS files:
+  recordings become readable by any TAMS client (AWS reference store,
+  Omakase, future MAMs), timeline addressing is standardized (NMOS UUIDs,
+  nanosecond timeranges), and clips can eventually reference media
+  instead of copying it.
 - **M2 LAN failover is architectural, not a feature.** Player + stream are
   served from the same box the mixer feeds; WAN loss cannot interrupt it.
 
@@ -47,7 +54,7 @@ meant to be executed in order; each has a definition of done.
 │  embedded wasm player [exists]   remux TS → in-process publish into   │
 │  stats / webhooks [exists]         the existing broadcaster          │
 │  toml config + hot reload        recorder sink: fan-out tap →        │
-│  .deb packaging + CI [exists]      segments + retention + timeline   │
+│  .deb packaging + CI [exists]      TAMS flow segments + retention    │
 │                                                                      │
 │ admin plane [new, extends existing HTTP ports]                       │
 │  REST + WS admin API          SolidJS SPA embedded like the player   │
@@ -111,17 +118,38 @@ existing toml + hot-reload path.
 - Threading: per-channel demux thread feeds the publisher; no shared locks
   across channels beyond the broadcaster's own.
 
-### 3.3 Recorder sink
+### 3.3 Recorder sink → TAMS store
 
-- Hangs off the broadcaster fan-out: receives the same TS the browsers get.
-- Writes `recordings/<stream>/%Y%m%dT%H%M%S.ts` segments (`seg_s`, default
-  600 s) with straight strftime naming — **no database**: the timeline is
-  derived by directory scan (start = filename, duration = size/duration
-  probed on demand). Simpler to back up, simpler to trust.
-- Retention pruner (hourly): delete oldest segments beyond `retention_h`;
-  hard disk budget option (`max_gb`) wins over `retention_h` when both set.
-- Clip export: admin API takes {stream, from, to} → concatenates/cuts
-  segments (stream copy) into a downloadable file.
+Recording speaks TAMS (Time Addressable Media Store, BBC R&D open API,
+Apache-2.0): media as immutable, time-addressed segments behind an open
+REST interface. Everything recorded is written to an **embedded TAMS
+store** served by the admin plane — recordings are readable by any TAMS
+client, not just our UI.
+
+Write path (recorder = fan-out tap):
+
+- Channel start → create Source (muxed) + Flow (MPEG-TS; media timeline
+  PTS → TAMS nanosecond flow timeline anchored at wall clock), UUIDs per
+  NMOS IS-04 scheme; label/tags from channel config (Field session
+  metadata rides here).
+- Segments: GOP-aligned TS chunks (`seg_s`, default 600 s — complete
+  decodable units per spec), registered on the timeline with `[start_end)`
+  timeranges. Immutable once written.
+- Index: per-flow JSONL manifest + in-memory timerange index — still no
+  external database; SQLite only if scale ever demands it.
+- Retention: the spec permits erasing timeline regions — hourly pruner
+  erases/deletes beyond `retention_h`; disk budget (`max_gb`) wins if set.
+
+Read path (embedded store on the admin HTTP plane, admin token,
+default 127.0.0.1):
+
+- `GET flows`, `GET flows/<id>/segments?timerange=…` per spec; objects
+  served from `recordings/`. Segments readable the moment they're
+  written → the recordings browser gets **live-tail** (review while
+  recording) for free.
+- Clip export v1: remux cut over the timerange (stream copy — the spec's
+  own `object_timerange` recipe). Later: copy-on-write clips as new Flows
+  referencing existing Media Objects — edit-by-reference, no essence copy.
 
 ## 4. Admin plane specification
 
@@ -133,7 +161,9 @@ GET    /api/channels                  GET one / POST / PATCH / DELETE
 POST   /api/channels/{id}/start|stop  POST /api/config/apply (hot reload)
 GET    /api/channels/{id}/stats       # per-channel SRT stats snapshot
 WS     /api/ws                        # live stats + channel state events
-GET    /api/recordings?stream=&from=&to=   GET /api/recordings/clip (export)
+GET    /api/flows                     # recordings = TAMS flows (§3.3)
+GET    /api/flows/{id}/segments?timerange=   # embedded TAMS read side
+GET    /api/recordings/clip?flow=&from=&to=  # export: remux cut (v1)
 POST   /api/license                   # upload key; returns channels x/y
 GET    /api/ptz/{channel}             POST /api/ptz/{channel}   (Site phase)
 ```
@@ -152,6 +182,8 @@ mechanism. Admin listens 127.0.0.1 by default; LAN opt-in is explicit.
   dev; per-deployment restriction comes later via the license model bitmask.
 - Workspaces per model (§6). Shared components: player tile (embed the wasm
   player), latency setting, stats overlay, uplink traffic-light.
+- Recordings browser talks to the embedded TAMS read API — timeline scrub
+  via timerange queries, live-tail while recording.
 - Talks only to its own origin; zero external requests (fonts bundled).
 
 ### 4.3 Licensing
@@ -205,15 +237,15 @@ Crew/director monitoring on venue Wi-Fi.
   hand-rolled thin client (surface is tiny; lean hand-rolled).
 - Delivery: viewers reach the box by port-forward or tailscale — documented
   pattern; no relay service in this product (non-goal).
-- Recordings browser: timeline scrub over segment scan; event clips.
+- Recordings browser: timeline scrub via TAMS timerange queries; event clips.
 - **Done when:** PTZ control loop (command → see motion) ≤ 400 ms over LAN;
   4 cams × 2 Mbps × 14 d ring stays inside disk budget with margin.
 
 ### M4 — Field (contribution)
 - "Go live": quick-start flow → OBS/laptop publishes SRT to the box over
   hotspot/tailscale; newsroom views via the grid workspace.
-- Metadata per session (reporter, location, GPS pin) recorded with the
-  session; ISO record via the recorder sink.
+- Metadata per session (reporter, location, GPS pin) recorded as TAMS
+  flow tags/label with the session; ISO record via the recorder sink.
 - Resilience v1: session-level failover Wi-Fi↔LTE (auto-reconnect,
   1–3 s gap) — documented honestly. Bonding: parked.
 - **Done when:** 5% loss on LTE keeps newsroom latency pinned at
@@ -237,7 +269,7 @@ Crew/director monitoring on venue Wi-Fi.
 | P0 | Foundations: channel manager skeleton, config schema, admin API CRUD + apply, SolidJS scaffold with 4-model landing, license skeleton (dev banner) | Landing page renders 4 models from /api/models; channel CRUD round-trips through hot reload |
 | P1 | Engine: libav linkage, RTSP pull + file inputs publishing into the broadcaster, channel restart policy | RTSP cam → browser in < 5 min setup; kill -9 style demuxer failure recovers < 1 s |
 | P2 | M1 complete: grid workspace, crew links, per-channel stats WS | M1 acceptance (§6) under netem |
-| P3 | Recorder sink + timeline scan + clip export; M2: hold-slide, schedule, QR/PIN player polish | M2 acceptance incl. WAN-pull test |
+| P3 | Recorder sink → embedded TAMS store (write+read paths, retention); M2: hold-slide, schedule, QR/PIN player polish | M2 acceptance incl. WAN-pull test; a third-party TAMS client reads our recordings |
 | P4 | M3: cam wizard, ONVIF PTZ, recordings browser | M3 acceptance incl. PTZ loop budget |
 | P5 | M4: quick-start, metadata, failover docs | M4 acceptance |
 | P6 | Licensing hardening (keygen, enforcement UX), packaging polish, installer script, release | A clean machine installs via one command and runs a licensed 2-channel M1 box |
@@ -253,6 +285,10 @@ Crew/director monitoring on venue Wi-Fi.
   v1 promise. (Single binary keeps this door open.)
 - **libav ABI churn** — pin builds against distro libav or a bundled,
   versioned .so set; never track master.
+- **TAMS spec churn** — the API is versioned and still evolving; pin the
+  embedded store to the major/minor we implement (track bbc/tams releases)
+  and implement only the subset we exercise: flows, segments query,
+  storage upload, object download.
 
 ## 10. Non-goals
 
@@ -268,3 +304,7 @@ distribution · MoQ egress · DRM · phone-home anything.
    distro keeps CVE updates external).
 4. Admin SPA update cadence — embedded at build (like the player) vs
    `web_root` override for fast iteration during P0–P2.
+5. External TAMS/S3-compatible target for large installs (site-model
+   30-day rings) — embedded-only v1, config option later.
+6. Clip export v1: remux cut (stream copy) vs copy-on-write Flow
+   referencing existing Media Objects (edit-by-reference).
