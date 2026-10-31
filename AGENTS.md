@@ -64,7 +64,9 @@ include paths or link anything the targets don't export.
   (SKIP_RETURN_CODE 77) when none is running — skips are green, not failures.
 - Tests probe-bind preferred ports (4434/9100…) with ephemeral fallback, so
   `--parallel` is safe; `concurrency_test` is RUN_SERIAL (CPU-tight, fails
-  under core contention).
+  under core contention), and so is `srt_initiator_test` (its ~120 ms TSBPD
+  play-out window drops viewer packets when parallel tests starve the loop
+  threads that long).
 - The tsan preset excludes `srt_initiator_test` (TSan slowdown alone blows its
   10 s internal deadline).
 - Golden acceptance commands against the supervised gateway (via the

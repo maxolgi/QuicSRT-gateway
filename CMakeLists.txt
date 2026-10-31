@@ -229,7 +229,13 @@ target_compile_features(srt_initiator_test PRIVATE cxx_std_20)
 set_target_properties(srt_initiator_test PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(srt_initiator_test PRIVATE gateway_warnings QuicSRTgw)
 add_test(NAME srt_initiator_test COMMAND srt_initiator_test)
-set_tests_properties(srt_initiator_test PROPERTIES TIMEOUT 60)
+# RUN_SERIAL: like concurrency_test below — the ~120 ms TSBPD play-out
+# window drops in-flight viewer packets whenever a concurrently running
+# test starves the loop/engine threads longer than that (RCV-DROPPED
+# "delayed for 0.1 ms" -> byte-for-byte gate fails; seen on a 4-vCPU CI
+# runner under `ctest --parallel`). ctest runs it alone even in parallel
+# mode; everything else stays parallel.
+set_tests_properties(srt_initiator_test PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
 # G5: the full gateway loop (admission, ring, first-wins occupancy, waiting
 # viewers) driven by libquicsrt's public Subscriber/Publisher, configured from
