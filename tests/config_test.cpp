@@ -15,6 +15,7 @@ namespace
 using quicsrt::gateway::BuildAllowlistPolicy;
 using quicsrt::gateway::Config;
 using quicsrt::gateway::ConfigError;
+using quicsrt::gateway::ConfigLoadOptions;
 using quicsrt::gateway::Decision;
 using quicsrt::gateway::LoadConfig;
 using quicsrt::gateway::ParseConfig;
@@ -41,11 +42,14 @@ quicsrt::gateway::SessionRequest Req(std::string_view query)
 }
 
 /// Parse must throw; optionally the message must contain `needle`.
-bool CheckThrows(const std::string& text, const char* what, const char* needle = nullptr)
+bool CheckThrows(const std::string&       text,
+                 const char*              what,
+                 const char*              needle  = nullptr,
+                 const ConfigLoadOptions& options = ConfigLoadOptions{})
 {
     try
     {
-        const Config ignored = ParseConfig(text, "test.conf");
+        const Config ignored = ParseConfig(text, "test.conf", options);
         (void)ignored;
     }
     catch (const ConfigError& e)
@@ -207,6 +211,47 @@ bool TestUnknownKeys()
     return true;
 }
 
+bool TestForeignSections()
+{
+    // One file shared with an embedded host: the gateway's sections plus
+    // the host's ([admin], [[channel]]) and a stray top-level scalar.
+    const std::string       shared = R"toml([server]
+wt_port = 9443
+max_viewers = 7
+
+[[stream]]
+name = "live"
+token = "s3cret"
+
+[admin]
+user = "root"
+
+[[channel]]
+id = 1
+
+app_extra = true
+)toml";
+    const ConfigLoadOptions foreign{.allow_foreign_sections = true};
+    {
+        // Flag ON: foreign top-level keys are skipped; the gateway's own
+        // sections parse fully with defaults intact.
+        const Config c = ParseConfig(shared, "app.conf", foreign);
+        Check(c.server.wt_port == 9443, "foreign-sections: server wt_port parsed");
+        Check(c.server.max_viewers == 7, "foreign-sections: server max_viewers parsed");
+        Check(c.server.srt_ingest_port == 9000, "foreign-sections: server defaults intact");
+        Check(c.streams.size() == 1, "foreign-sections: one stream entry");
+        Check(c.streams[0].name == "live", "foreign-sections: stream name parsed");
+        Check(c.streams[0].token.value() == "s3cret", "foreign-sections: stream token parsed");
+        Check(c.webhooks.on_event_url.empty(), "foreign-sections: webhooks off by default");
+    }
+    // Flag OFF (default): the same file is exactly as strict as before.
+    CheckThrows(shared, "foreign-sections: default still rejects foreign sections", "unknown key 'admin'");
+    // Flag ON: unknown keys INSIDE the gateway's sections remain errors.
+    CheckThrows(
+        "[server]\nwt_prot = 4433\n", "foreign-sections: [server] stays strict", "unknown key 'wt_prot'", foreign);
+    return true;
+}
+
 bool TestMissingAndInvalidFields()
 {
     CheckThrows("[[stream]]\npublish = true\n", "missing stream name", "'name' is required");
@@ -315,6 +360,7 @@ int main()
         {.name = "build-policy", .fn = TestBuildPolicy},
         {.name = "invalid-toml", .fn = TestInvalidToml},
         {.name = "unknown-keys", .fn = TestUnknownKeys},
+        {.name = "foreign-sections", .fn = TestForeignSections},
         {.name = "missing-invalid-fields", .fn = TestMissingAndInvalidFields},
         {.name = "webhooks", .fn = TestWebhooks},
         {.name = "load-config-file", .fn = TestLoadConfigFile},

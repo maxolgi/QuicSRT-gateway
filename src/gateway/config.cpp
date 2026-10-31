@@ -285,7 +285,7 @@ WebhooksConfig ParseWebhooks(Table& table)
 
 } // namespace
 
-Config ParseConfig(std::string_view text, const std::string& source)
+Config ParseConfig(std::string_view text, const std::string& source, const ConfigLoadOptions& options)
 {
     toml::table root;
     try
@@ -328,11 +328,13 @@ Config ParseConfig(std::string_view text, const std::string& source)
             }
             config.webhooks = ParseWebhooks(*value.as_table());
         }
-        else
+        else if (!options.allow_foreign_sections)
         {
             throw ConfigError("unknown key '" + std::string(key.str()) + "'" + At(value) +
                               " at top level (expected [server], [[stream]] or [webhooks])");
         }
+        // else: a foreign top-level key the embedded host owns
+        // (ConfigLoadOptions::allow_foreign_sections) - skip it.
     }
 
     std::set<std::string> seen;
@@ -347,7 +349,7 @@ Config ParseConfig(std::string_view text, const std::string& source)
     return config;
 }
 
-Config LoadConfig(const std::string& path)
+Config LoadConfig(const std::string& path, const ConfigLoadOptions& options)
 {
     std::ifstream in(path, std::ios::in | std::ios::binary);
     if (!in.is_open())
@@ -355,7 +357,12 @@ Config LoadConfig(const std::string& path)
         throw ConfigError("cannot open config file '" + path + "'");
     }
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    return ParseConfig(text, path);
+    return ParseConfig(text, path, options);
+}
+
+Config LoadConfig(const std::string& path)
+{
+    return LoadConfig(path, ConfigLoadOptions{});
 }
 
 std::shared_ptr<StreamAllowlistPolicy> BuildAllowlistPolicy(const Config& config)

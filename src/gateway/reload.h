@@ -31,10 +31,15 @@ namespace quicsrt::gateway
 /// under the new settings). Restart-required settings that CHANGED are
 /// logged; unchanged ones keep running as they are. `current` is the
 /// previously applied config (the diff base, and the config that stays
-/// active on failure). Returns the new config on success; nullopt with
-/// *error set on a parse/validation failure.
-[[nodiscard]] std::optional<Config>
-ReloadConfig(const std::string& path, Gateway& gateway, const Config& current, std::string* error);
+/// active on failure). Pass ConfigLoadOptions::allow_foreign_sections via
+/// `options` when the file is shared with an embedded host (foreign
+/// top-level sections belong to it). Returns the new config on success;
+/// nullopt with *error set on a parse/validation failure.
+[[nodiscard]] std::optional<Config> ReloadConfig(const std::string&       path,
+                                                 Gateway&                 gateway,
+                                                 const Config&            current,
+                                                 std::string*             error,
+                                                 const ConfigLoadOptions& options = ConfigLoadOptions{});
 
 } // namespace quicsrt::gateway
 

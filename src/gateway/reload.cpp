@@ -125,12 +125,16 @@ void SetLogLevelOnLoop(Gateway& gateway, const std::string& level)
 
 } // namespace
 
-std::optional<Config> ReloadConfig(const std::string& path, Gateway& gateway, const Config& current, std::string* error)
+std::optional<Config> ReloadConfig(const std::string&       path,
+                                   Gateway&                 gateway,
+                                   const Config&            current,
+                                   std::string*             error,
+                                   const ConfigLoadOptions& options)
 {
     Config next;
     try
     {
-        next = LoadConfig(path);
+        next = LoadConfig(path, options);
     }
     catch (const ConfigError& e)
     {

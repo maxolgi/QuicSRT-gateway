@@ -128,15 +128,28 @@ struct Config
     WebhooksConfig            webhooks;
 };
 
+struct ConfigLoadOptions
+{
+    /// Embedded hosts share ONE config file with the gateway (e.g. an app's
+    /// app.conf carries [admin]/[[channel]] beside the gateway's sections).
+    /// When set, unknown TOP-LEVEL keys are ignored - they belong to the host -
+    /// while unknown keys INSIDE [server], [[stream]] or [webhooks] remain
+    /// errors (typo protection stays where the gateway owns the schema).
+    /// Default: off, exactly as strict as before.
+    bool allow_foreign_sections = false;
+};
+
 /// Parse TOML text (source names errors). Throws ConfigError on invalid
 /// TOML, unknown keys (reported with key and table), wrong types, and
 /// validation failures (port ranges, latency floor, cert requirements,
 /// non-empty name/token, passphrase length, duplicate names).
-[[nodiscard]] Config ParseConfig(std::string_view text, const std::string& source);
+[[nodiscard]] Config
+ParseConfig(std::string_view text, const std::string& source, const ConfigLoadOptions& options = ConfigLoadOptions{});
 
 /// Read + parse a config file. Throws ConfigError (including unreadable
 /// file).
 [[nodiscard]] Config LoadConfig(const std::string& path);
+[[nodiscard]] Config LoadConfig(const std::string& path, const ConfigLoadOptions& options);
 
 /// Build the StreamAllowlistPolicy from the config's [[stream]] entries,
 /// in file order (first matching entry wins at decide time). A config with
