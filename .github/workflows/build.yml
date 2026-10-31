@@ -96,6 +96,14 @@ jobs:
         with:
           submodules: recursive
 
+      # checkout adds the workspace to safe.directory under a TEMPORARY HOME
+      # whose config is removed when the step ends, and container steps run
+      # as root while the workspace bind-mount is owned by the runner user —
+      # build.sh's `git submodule update` then dies with "dubious ownership"
+      # (exit 128). Record it in the container's persistent HOME (/github/home).
+      - name: Mark workspace git-safe (container steps run as root)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # setup: submodule init (idempotent), player dist fetch from the
       # QuicSRT-wasm release, BoringSSL fetch+build, CMake configure
       # (QUICSRT_ENABLE_WT=ON is passed by build.sh).
