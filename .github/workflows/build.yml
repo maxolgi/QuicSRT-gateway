@@ -131,7 +131,10 @@ jobs:
       # <tag>, otherwise <CMake project VERSION>~dev.<short_sha> (sorts
       # below the eventual release); the distro id rides as a +suffix so
       # the two legs' assets never collide.
+      # bash, not the container default sh (dash): the script uses pipefail,
+      # ${VAR:0:7} substrings and [[ ]] - dash dies with "Bad substitution".
       - name: Build .deb package
+        shell: bash
         run: |
           set -euxo pipefail
           short="${GITHUB_SHA:0:7}"
