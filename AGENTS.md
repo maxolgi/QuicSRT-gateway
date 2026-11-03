@@ -23,7 +23,7 @@ Configure fatals if `web/dist/` is missing — it is fetched (gitignored), never
 committed, and the player asset table is generated at **configure** time:
 refreshing `web/dist` requires a re-configure (`build.sh web-dist` does both).
 
-## Submodule pin discipline (two levels)
+## Submodule pin discipline
 
 1. Gateway changes only (`src/`, `tests/`) → `./build.sh gateway`, no submodule work.
 2. libquicsrt changes → work in the sibling `../libquicsrt` checkout, **never edit
@@ -33,6 +33,11 @@ refreshing `web/dist` requires a re-configure (`build.sh web-dist` does both).
    `Bump deps/libquicsrt to <short-sha> (reason)` — see `git log` for examples.
 3. srt fork changes → two hops: the sibling `../srt` checkout per libquicsrt's fork
    discipline, then libquicsrt bumps its `deps/srt` pin, then step 2.
+4. lsquic changes → the fork clone `~/maxolgi/lsquic`, branch `quicsrt`
+   (upstream master + carried patches, see libquicsrt's AGENTS.md), then
+   libquicsrt bumps its `deps/lsquic` pin, then step 2. Beware
+   `fetch.recurseSubmodules=on-demand`: fetch bumps with
+   `--no-recurse-submodules` while the fork commit is unpushed.
 
 A gitlink is only resolvable after the human pushes the submodule — bump and
 commit anyway; resolution follows the push.
