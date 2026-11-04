@@ -1,6 +1,10 @@
 #include "gateway/srt_initiator.h"
 #include "srt_session/negotiate.h"
 
+// The fork's internal C++ bind path carrying the conclusion-first
+// (skip-induction) handshake form - deliberately not public C API.
+#include "core.h"
+
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -41,7 +45,8 @@ SrtInitiator::SrtInitiator(WtServer&                 server,
     // SRTO_INITIAL_RTT bounds are 1..30000 ms; 0 = disabled (unmeasured
     // RTT leaves srt's default estimator). A measured-but-sub-millisecond
     // RTT (loopback) clamps up to 1 ms - the same clamp as libquicsrt's
-    // listener sessions.
+    // listener sessions. The seed rides the transport config (see Setup),
+    // no longer a socket option.
     const long long rtt_us = initial_rtt.count();
     if (rtt_us > 0)
     {
@@ -52,6 +57,14 @@ SrtInitiator::SrtInitiator(WtServer&                 server,
     peer_label_.sin_family      = AF_INET;
     peer_label_.sin_port        = htons(kPeerLabelPortBase + static_cast<std::uint16_t>(handle.Id() & 0x3FFF));
     peer_label_.sin_addr.s_addr = inet_addr(kPeerLabelIp);
+
+    // The caller's bind label: the fake gateway address the browser
+    // sessions report as their peer (the M0 caller label; also what
+    // libquicsrt's receiver core dials toward).
+    std::memset(&local_label_, 0, sizeof local_label_);
+    local_label_.sin_family      = AF_INET;
+    local_label_.sin_port        = htons(5556);
+    local_label_.sin_addr.s_addr = inet_addr("10.220.0.1");
 }
 
 SrtInitiator::~SrtInitiator()
@@ -84,25 +97,31 @@ bool SrtInitiator::Setup(std::string* error)
         ok                = ok && SetOptInt(sock_, SRTO_PEERLATENCY, config_.latency_ms);
         ok                = ok && SetOptInt(sock_, SRTO_SNDBUF, snd_buf);
         ok                = ok && SetOptInt(sock_, SRTO_RCVBUF, rcv_buf);
-        ok                = ok && SetOptInt(sock_, SRTO_SKIP_INDUCTION, 1);
         ok                = ok && SetOptInt(sock_, SRTO_TLPKTDROP, 1);
         ok                = ok && SetOptInt(sock_, SRTO_CONNTIMEO, config_.connect_timeout_ms);
         ok                = ok && SetOptInt(sock_, SRTO_RCVSYN, 0);
         ok                = ok && SetOptInt(sock_, SRTO_SNDTIMEO, 0);
-        if (ok && initial_rtt_ms_ > 0)
-        {
-            ok = ok && SetOptInt(sock_, SRTO_INITIAL_RTT, initial_rtt_ms_);
-        }
         if (!ok)
         {
             *error = std::string("srt socket option: ") + srt_getlasterror_str();
             break;
         }
 
-        vt_ = srt_attach_virtual_transport(sock_, VtSendThunk, this);
-        if (vt_ == nullptr)
+        // Bind the caller to a label address over the virtual transport
+        // BEFORE connecting: the bind wires the queue's callbacks into a
+        // dedicated multiplexer (dispatch by socket id, the label is only
+        // what srt_getsockname reports). The conclusion-first
+        // (skip-induction) handshake form rides the fork's INTERNAL C++
+        // bind path, and the config's initial_rtt_ms carries the QUIC-RTT
+        // seed (mirrors libquicsrt's sessions and the M0 loopback harness).
+        const SRT_VirtualTransportConfig cfg = vt_queue_.getConfig(initial_rtt_ms_);
+        if (srt::CUDT::bind_virtual(sock_,
+                                    reinterpret_cast<const sockaddr*>(&local_label_),
+                                    static_cast<int>(sizeof local_label_),
+                                    &cfg,
+                                    /*conclusion_first=*/true) == SRT_ERROR)
         {
-            *error = std::string("srt_attach_virtual_transport: ") + srt_getlasterror_str();
+            *error = std::string("bind_virtual: ") + srt_getlasterror_str();
             break;
         }
 
@@ -142,17 +161,16 @@ bool SrtInitiator::Setup(std::string* error)
 void SrtInitiator::Inject(const std::uint8_t* data, std::size_t size)
 {
     // Loop thread only (WtServerListener::OnDatagram), serialized with
-    // Teardown on the same thread - a null vt_ can only be observed
-    // between callbacks, never raced.
-    if (vt_ == nullptr || closed_.load(std::memory_order_relaxed))
+    // Teardown on the same thread. The push queue plays the kernel UDP
+    // receive buffer: a full queue drops the datagram (UDP-like loss
+    // that srt retransmits); after Teardown's detach the push fails
+    // harmlessly.
+    if (closed_.load(std::memory_order_relaxed))
     {
         return;
     }
-    srt_virtual_transport_inject(vt_,
-                                 reinterpret_cast<const char*>(data),
-                                 static_cast<int>(size),
-                                 reinterpret_cast<const sockaddr*>(&peer_label_),
-                                 static_cast<int>(sizeof peer_label_));
+    vt_queue_.push(
+        data, size, reinterpret_cast<const sockaddr*>(&peer_label_), static_cast<socklen_t>(sizeof peer_label_));
 }
 
 int SrtInitiator::ReceiveNext(char* buf, int len)
@@ -287,10 +305,10 @@ void SrtInitiator::Teardown()
     // Unregister from the epoll before the close fires its events, park
     // the send callback (it swallows sends and claims success so srt's
     // control machinery stays quiet), close the socket - it sends the SRT
-    // shutdown through the still-attached transport - then release the
-    // transport handle and the epoll (the enforced fork order). The
-    // handle is detached under sock_mutex_ BEFORE the close: a concurrent
-    // off-loop scrape (StatsOut/ConnectionState) either completes on the
+    // shutdown through the still-attached transport - then detach the
+    // transport queue and release the epoll (the enforced fork order; the
+    // queue detach blocks until an in-flight send callback returns). The
+    // socket is nulled under sock_mutex_ BEFORE the close: a concurrent
     // live socket before this or sees SRT_INVALID_SOCK after - the close
     // itself runs outside the mutex so no scrape ever waits on it.
     closed_.store(true, std::memory_order_relaxed);
@@ -308,11 +326,10 @@ void SrtInitiator::Teardown()
     {
         srt_close(sock);
     }
-    if (vt_ != nullptr)
-    {
-        srt_virtual_transport_release(vt_);
-        vt_ = nullptr;
-    }
+    // Only after the close: it sends the SRT shutdown through the still-
+    // attached queue; detach then parks push() and the send callback
+    // (idempotent - every Teardown path may run it).
+    vt_queue_.detach();
     if (epoll_ != SRT_ERROR)
     {
         srt_epoll_release(epoll_);

@@ -35,12 +35,13 @@ namespace quicsrt::gateway
 
 int RunSelftest()
 {
-    // The srt fork under the virtual-transport gate: the enum and the
-    // attach entry point only exist when the define rides the export.
-    static_assert(SRTO_SKIP_INDUCTION == 64,
-                  "SRTO_SKIP_INDUCTION missing: SRT_ENABLE_VIRTUAL_TRANSPORT "
-                  "did not reach the consumer");
-    (void)&srt_attach_virtual_transport;
+    // The srt fork's virtual-transport surface via the export: the
+    // quicsrt-dev fork declares the seam types unconditionally in srt.h
+    // (a non-virtual-transport build only rejects them at runtime).
+    static_assert(SRT_VTWAIT_BROKEN == -1,
+                  "SRT_VTWAIT_BROKEN missing: the quicsrt-dev fork's "
+                  "virtual-transport API did not reach the consumer");
+    (void)&srt_bind_virtual;
     check(srt_startup() == 0, "srt_startup/srt_cleanup");
     srt_cleanup();
 

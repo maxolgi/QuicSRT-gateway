@@ -13,7 +13,7 @@
 // ticker), a publisher session RECEIVES from it (the registry pumps
 // released messages toward the stream sink).
 //
-// Socket options, set BEFORE srt_connect (defaults plus the M0 caller lessons
+// Socket options, set BEFORE the virtual bind (defaults plus the M0 caller lessons
 // (libquicsrt tests/loopback_srt.cpp):
 //   SRTO_TRANSTYPE      SRTT_LIVE (first - it resets the presets)
 //   SRTO_PAYLOADSIZE    1128 (6 x 188 TS packets; HSv5 negotiates
@@ -24,14 +24,16 @@
 //   SRTO_SNDBUF         snd packets x 1472 bytes (SRTO_SNDBUF is in BYTES;
 //                       srt converts with MSS - UDP header = 1500 - 28)
 //   SRTO_RCVBUF         rcv packets x 1472 bytes (same trap)
-//   SRTO_SKIP_INDUCTION 1 (caller, Conclusion-first, cookie 0)
 //   SRTO_TLPKTDROP      1 (too_late_packet_drop)
-//   SRTO_INITIAL_RTT    the WT session's QUIC smoothed RTT, us -> ms
-//                       clamped to 1..30000, skipped when unmeasured
 //   SRTO_CONNTIMEO      params.connect_timeout_ms (bounds the handshake)
 //   SRTO_RCVSYN         0 (ReceiveNext never blocks the loop thread)
 //   SRTO_SNDTIMEO       0 (Send never blocks: a full send buffer surfaces
 //                       as would-block, retried by the ticker)
+// No longer socket options (the quicsrt-dev fork): the caller's
+// Conclusion-first (skip-induction, cookie 0) handshake form rides the
+// fork's INTERNAL C++ bind path, and the WT session's QUIC smoothed RTT
+// (us -> ms clamped to 1..30000, skipped when unmeasured) rides the
+// transport config's initial_rtt_ms.
 //
 // WIRING. The virtual transport's send callback runs on srt's internal
 // threads and touches nothing but the thread-safe WtServer::SendDatagram
@@ -55,7 +57,7 @@
 // the fork's enforced order: mark closed (the send callback swallows
 // further sends), remove the socket from the srt epoll, srt_close the
 // socket (it sends the SRT shutdown through the still-attached transport
-// - the M0 lesson), then release the transport handle, then release the
+// - the M0 lesson), then detach the transport queue, then release the
 // epoll. The handshake completes asynchronously on srt's threads; poll
 // ConnectionState() for the CONNECTED transition (first observation also
 // reads back the negotiated payload cap).
@@ -73,8 +75,12 @@
 
 #include "gateway/wt_server.h"
 
-// The fork's gated API (build with SRT_ENABLE_VIRTUAL_TRANSPORT defined).
+// The fork's public header plus the srttransport push-queue helper (the
+// virtual-transport seam is built with SRT_ENABLE_VIRTUAL_TRANSPORT; the
+// conclusion-first bind path is fork-internal core.h, included from
+// srt_initiator.cpp).
 #include "srt.h"
+#include "srttransport.h"
 
 namespace quicsrt::gateway
 {
@@ -116,7 +122,8 @@ public:
     /// `server` (with `handle`) is the egress path: the virtual transport
     /// send callback hands srt's datagrams to WtServer::SendDatagram.
     /// `initial_rtt` is the WT session's QUIC smoothed RTT used to seed
-    /// SRTO_INITIAL_RTT (0 = unmeasured, leave srt's estimator default).
+    /// the transport config's initial_rtt_ms (0 = unmeasured, leave srt's
+    /// estimator default).
     /// The fake peer label is derived from the handle so every session
     /// pair gets a stable, distinct address.
     SrtInitiator(WtServer&                 server,
@@ -201,16 +208,26 @@ private:
     // from the handle). The address never reaches a network.
     sockaddr_in peer_label_ = {};
 
+    // The caller's own bind label (the fake gateway address the browser
+    // sessions report as their peer - the M0 caller label). Also only a
+    // label: dispatch is by socket id inside the dedicated multiplexer.
+    sockaddr_in local_label_ = {};
+
     // sock_'s lifetime is guarded by sock_mutex_ for the any-thread stats
     // surface: Teardown nulls and srt_closes under it while
     // ConnectionState/StatsOut sample under it, so a racing scrape can
     // never observe a handle being closed (or its id recycled). The
     // loop-only paths (Setup, Send, ReceiveNext) serialize with Teardown
     // on the loop thread.
-    SRTSOCKET            sock_  = SRT_INVALID_SOCK;
-    SRTVirtualTransport* vt_    = nullptr;
-    int                  epoll_ = SRT_ERROR;
-    std::mutex           sock_mutex_;
+    SRTSOCKET sock_ = SRT_INVALID_SOCK;
+    // Push queue over the virtual-transport seam: gathers srt's outgoing
+    // datagrams into the VtSendThunk callback and buffers Inject'ed WT
+    // datagrams for srt's receive worker (the kernel UDP-buffer role).
+    // Wired via getConfig()/srt::CUDT::bind_virtual in Setup; must
+    // outlive the socket - detached only after the srt_close (Teardown).
+    srt::SRTTransportQueue vt_queue_{&VtSendThunk, this};
+    int                    epoll_ = SRT_ERROR;
+    std::mutex             sock_mutex_;
     // Negotiated payload: written once on the loop thread at the first
     // connected ConnectionState() observation, read off-loop - atomics,
     // with the value published before the flag (release/acquire), so an

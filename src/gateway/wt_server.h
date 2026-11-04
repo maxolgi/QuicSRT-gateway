@@ -248,8 +248,8 @@ public:
     [[nodiscard]] int DatagramsDropped() const { return datagrams_dropped_.load(); }
 
     /// The session's QUIC smoothed RTT (lsquic_conn_get_info().lci_rtt,
-    /// microseconds) - the seed the per-session SRT initiator derives its
-    /// SRTO_INITIAL_RTT from. 0 when
+    /// microseconds) - the seed the per-session SRT initiator derives the
+    /// transport config's initial_rtt_ms from. 0 when
     /// unmeasured or the handle is unknown. Loop thread only (called at
     /// session accept).
     [[nodiscard]] std::chrono::microseconds SmoothedRtt(WtSessionHandle handle) const;
