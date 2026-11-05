@@ -249,6 +249,16 @@ target_compile_definitions(gateway_e2e_test PRIVATE
 add_test(NAME gateway_e2e_test COMMAND gateway_e2e_test)
 set_tests_properties(gateway_e2e_test PROPERTIES TIMEOUT 180)
 
+# G9: the burst publisher + mid-join viewer - the no--re file-push shape
+# (publisher outruns the consumer at line rate) that the small-fixture e2e
+# suites never exercise (127.0.0.1:4437, ephemeral fallback inside the test).
+add_executable(burst_join_test tests/burst_join_test.cpp)
+target_compile_features(burst_join_test PRIVATE cxx_std_20)
+set_target_properties(burst_join_test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(burst_join_test PRIVATE gateway_warnings QuicSRTgw_config)
+add_test(NAME burst_join_test COMMAND burst_join_test)
+set_tests_properties(burst_join_test PROPERTIES TIMEOUT 120)
+
 # G6: the SRT/UDP ingest end to end - a stock-libsrt publisher over the real
 # SrtIngest into the real Gateway core, with a libquicsrt Subscriber on the
 # far side (127.0.0.1:9100, ephemeral fallback inside the test).
