@@ -179,7 +179,13 @@ int SrtInitiator::ReceiveNext(char* buf, int len)
     {
         return kRecvInvalidArg;
     }
-    if (!IsConnected())
+    // Connected receives normally; a BROKEN socket still drains its
+    // TSBPD-released tail (the fork's receiveMessage keeps reading from
+    // a broken socket "just for formality" until nothing released
+    // remains), so the pump can deliver the tail and classify the close
+    // in the same terminal receive.
+    const SRT_SOCKSTATUS state = ConnectionState();
+    if (state != SRTS_CONNECTED && state != SRTS_BROKEN)
     {
         return kRecvNotConnected;
     }
@@ -195,9 +201,32 @@ int SrtInitiator::ReceiveNext(char* buf, int len)
     }
     if (err == SRT_ESCLOSED || err == SRT_ECONNLOST || err == SRT_ENOCONN)
     {
-        return kRecvClosed;
+        // The errnos cannot separate a graceful peer shutdown from a
+        // lost connection on live/message sockets: a peer srt_close and
+        // a peer-idle expiry both drain to SRT_ECONNLOST once nothing
+        // TSBPD-released remains (verified against the fork over
+        // virtual transports). The fork's close ledger can.
+        return PeerClosedGracefully() ? kRecvPeerClosed : kRecvClosed;
     }
     return kRecvError;
+}
+
+bool SrtInitiator::PeerClosedGracefully()
+{
+    // Loop thread only (ReceiveNext), so sock_ is alive and not being
+    // torn down. agent = SRT_CLS_PEER is set exclusively by the fork's
+    // UMSG_SHUTDOWN processing (the peer's own reason then rides
+    // info.peer, e.g. SRT_CLS_API for srt_close); a silent death
+    // leaves SRT_CLS_PEERIDLE there instead.
+    srt::CUDT* core = srt::CUDT::getUDTHandle(sock_);
+    if (core == nullptr)
+    {
+        return false;
+    }
+    SRT_CLOSE_INFO info;
+    std::memset(&info, 0, sizeof info);
+    core->copyCloseInfo(info);
+    return info.agent == SRT_CLS_PEER;
 }
 
 int SrtInitiator::Send(const void* data, int len)

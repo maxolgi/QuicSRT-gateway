@@ -25,6 +25,12 @@
 //      SnapshotSessions/SessionInfoFor during the viewer burst and its
 //      teardown sees monotonic counters and sane values (the read side
 //      of the registry's threading contract).
+//   8. Reap reasons: a graceful publisher end (Publisher End ->
+//      srt_close) reaps as "publisher closed the stream", and a
+//      publisher connection lost without an SRT shutdown (client
+//      datagrams dropped while the WT session stays alive; the
+//      initiator peer-idle-expires) reaps as the broken class - never
+//      mislabeled graceful.
 //
 // Client side: the public quicsrt::Subscriber and quicsrt::Publisher each
 // own their EventLoop internally (G3: one engine per loop), so the two
@@ -208,6 +214,53 @@ private:
     std::atomic<bool>                                session_started_{false};
 };
 
+/// WtServerListener decorator forwarding everything to the registry but
+/// able to drop session datagrams on demand: the WT session stays fully
+/// alive while the session's SRT initiator stops hearing the peer - the
+/// staging for a publisher connection lost without an SRT shutdown (a
+/// client-side SRT stall/death), the broken counterpart of the graceful
+/// publisher close.
+class DatagramDropFilter final : public quicsrt::gateway::WtServerListener
+{
+public:
+    // The registry is addressed through its base interface (its own
+    // overrides are private by design) - the same reference WtServer
+    // itself dispatches through.
+    explicit DatagramDropFilter(quicsrt::gateway::WtServerListener& inner)
+        : inner_(inner)
+    {
+    }
+
+    std::atomic<bool> drop{false};
+
+    void OnWtSession(quicsrt::gateway::WtSessionHandle handle, const quicsrt::gateway::WtSessionStart& start) override
+    {
+        inner_.OnWtSession(handle, start);
+    }
+
+    void OnSessionClosed(quicsrt::gateway::WtSessionHandle handle, const std::string& reason) override
+    {
+        inner_.OnSessionClosed(handle, reason);
+    }
+
+    void OnDatagram(quicsrt::gateway::WtSessionHandle handle, const std::uint8_t* data, std::size_t size) override
+    {
+        if (!drop.load(std::memory_order_relaxed))
+        {
+            inner_.OnDatagram(handle, data, size);
+        }
+    }
+
+    void
+    OnSessionStreamData(quicsrt::gateway::WtSessionHandle handle, const std::uint8_t* data, std::size_t size) override
+    {
+        inner_.OnSessionStreamData(handle, data, size);
+    }
+
+private:
+    quicsrt::gateway::WtServerListener& inner_;
+};
+
 /// Scrape-while-active state: the last-seen per-session counters, so
 /// successive off-loop scrapes (the /health read path) can be checked
 /// for monotonicity and sanity while the loop thread writes them.
@@ -279,10 +332,11 @@ int main()
     quicsrt::EventLoop server_loop;
     server_loop.Start();
 
-    RigListener     rig_listener;
-    SessionRegistry registry(server_loop, rig_listener);
-    const auto      policy = std::make_shared<const AcceptAll>();
-    WtServer        server(server_loop, cert, policy, registry);
+    RigListener        rig_listener;
+    SessionRegistry    registry(server_loop, rig_listener);
+    DatagramDropFilter datagram_filter(registry);
+    const auto         policy = std::make_shared<const AcceptAll>();
+    WtServer           server(server_loop, cert, policy, datagram_filter);
     registry.AttachServer(server);
     const std::uint16_t port = ChoosePort();
     if (!Check(server.Bind("127.0.0.1", port), "server binds 127.0.0.1 (4435 or ephemeral fallback)"))
@@ -539,6 +593,10 @@ int main()
         Check(pub_end_ok, "publisher: End completed the graceful stream end");
         Check(WaitUntil([&registry] { return registry.ActiveSessionCount() == 0; }, 5000),
               "publisher: session reaped after the stream ended");
+        Check(WaitUntil([&rig_listener] { return rig_listener.EndedCount() == 2; }, 5000),
+              "publisher: OnSessionEnded notified");
+        Check(rig_listener.LastEndReason().find("publisher closed the stream") != std::string::npos,
+              "publisher: graceful end reaps as 'publisher closed the stream'");
     }
 
     // ---- 6. fd accounting + a second session after the first closed ----
@@ -578,6 +636,48 @@ int main()
         Check(WaitUntil([&fds_clean] { return CountSocketFds() == fds_clean; }, 5000),
               "fds: no leaked sockets after both sessions (initiator sockets are virtual: zero OS fds)");
         std::fprintf(stderr, "srt_initiator_test: fds %d stable after teardown\n", fds_clean);
+    }
+
+    // ---- 8. Publisher connection lost (SRT silenced, WT alive) --------
+    {
+        quicsrt::PublisherConfig cfg;
+        cfg.host            = "127.0.0.1";
+        cfg.port            = port;
+        cfg.stream_name     = "g4lost";
+        cfg.cert_sha256_hex = cert.Sha256Hex();
+
+        quicsrt::Publisher pub;
+        Check(pub.Start(cfg) == quicsrt::kPublishOk, "lost: Publisher Start returns connected");
+        Check(WaitUntil([&registry] { return registry.ActiveSessionCount() == 1; }, 2000), "lost: session registered");
+        const WtSessionHandle lost_handle = rig_listener.LastHandle();
+        Check(WaitUntil([&registry, lost_handle] { return registry.IsConnected(lost_handle); }, 2000),
+              "lost: registry observed the SRT connection");
+
+        // A short burst proves the data plane, then the client's SRT path
+        // is silenced at the gateway (datagrams dropped while the WT
+        // session stays healthy): no shutdown will ever arrive, so the
+        // initiator peer-idle-expires (~5 s) and the session must reap
+        // with the broken-class reason - never the graceful one.
+        std::uint8_t msg[kPayloadSize];
+        for (int i = 0; i < 50; ++i)
+        {
+            FillMessage(5000 + i, msg);
+            if (pub.Write(msg, kPayloadSize, 500) <= 0)
+            {
+                break;
+            }
+        }
+        datagram_filter.drop.store(true, std::memory_order_relaxed);
+        Check(WaitUntil([&registry] { return registry.ActiveSessionCount() == 0; }, 15000),
+              "lost: session reaped after the SRT path went silent");
+        Check(WaitUntil([&rig_listener] { return rig_listener.EndedCount() == 4; }, 5000),
+              "lost: OnSessionEnded notified");
+        const std::string lost_reason = rig_listener.LastEndReason();
+        Check(lost_reason.find("publisher srt connection lost") != std::string::npos,
+              "lost: reap reason is the broken class ('publisher srt connection lost')");
+        Check(lost_reason.find("publisher closed the stream") == std::string::npos,
+              "lost: reap reason is not the graceful label");
+        datagram_filter.drop.store(false, std::memory_order_relaxed);
     }
 
     const auto elapsed_ms =

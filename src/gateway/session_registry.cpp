@@ -281,6 +281,21 @@ void SessionRegistry::Tick()
         }
         if (state != SRTS_CONNECTED)
         {
+            // A publisher that already connected gets one final pump
+            // before the reap reason is built: the broken socket may
+            // still hold TSBPD-released-but-unread messages, and the
+            // pump's terminal receive carries the close class -
+            // graceful shutdown vs lost - which the state sample alone
+            // cannot tell (the fork supersedes the shutdown state with
+            // BROKEN immediately). FinishEntry is compare-exchange
+            // guarded, so a pump finish here simply wins; a pump that
+            // returns without a terminal (budget spent on tail
+            // messages) retries on the next tick.
+            if (entry->publisher_role && state == SRTS_BROKEN && entry->connected_seen.load(std::memory_order_relaxed))
+            {
+                PumpPublisher(entry);
+                continue;
+            }
             std::string reason = std::string("srt connection ") + StateName(state);
             if (const int br = entry->initiator->BreakReason(); br >= 0)
             {
@@ -337,12 +352,20 @@ void SessionRegistry::PumpPublisher(const std::shared_ptr<RegistryEntry>& entry)
         {
             return;
         }
-        if (n == SrtInitiator::kRecvClosed)
+        if (n == SrtInitiator::kRecvPeerClosed)
         {
             // The browser publisher ended the stream (SRT shutdown after
             // its TSBPD window drained).
             // The session ends; G5 releases the stream name from here.
             FinishEntry(entry, "publisher closed the stream");
+            return;
+        }
+        if (n == SrtInitiator::kRecvClosed)
+        {
+            // The connection ended with no peer shutdown behind it
+            // (peer-idle expiry and friends) - a loss, not a graceful
+            // stream end.
+            FinishEntry(entry, "publisher srt connection lost");
             return;
         }
         FinishEntry(entry, "srt receive error");

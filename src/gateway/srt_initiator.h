@@ -114,9 +114,10 @@ public:
     {
         kRecvWouldBlock   = -1, // nothing released yet; retry next tick
         kRecvNotConnected = -2,
-        kRecvClosed       = -3, // peer shut the stream down (or the socket broke)
+        kRecvClosed       = -3, // connection ended with no peer shutdown behind it (broken/lost)
         kRecvError        = -4,
         kRecvInvalidArg   = -5,
+        kRecvPeerClosed   = -6, // peer ended the stream gracefully (SRT shutdown; tail data still drains)
     };
 
     /// `server` (with `handle`) is the egress path: the virtual transport
@@ -148,7 +149,12 @@ public:
     void Inject(const std::uint8_t* data, std::size_t size);
 
     /// Loop thread (ticker). One non-blocking receive of a released
-    /// message (TSBPD has released it); see ReceiveResult.
+    /// message (TSBPD has released it); see ReceiveResult. A socket that
+    /// left CONNECTED as BROKEN is still drained (srt's message-API
+    /// receive keeps handing back already-released messages from a
+    /// broken socket until nothing released remains), so a final pump
+    /// both delivers the tail and observes the terminal receive that
+    /// classifies the close (graceful vs lost).
     int ReceiveNext(char* buf, int len);
 
     /// Loop thread (ticker). One non-blocking send: gated on the socket's
@@ -197,6 +203,12 @@ private:
     // ---- srt send callback (srt internal threads) ----
     static int VtSendThunk(void* opaq, const char* data, int len, const struct sockaddr* dst, int dstlen);
     int        VtSend(const char* data, int len);
+
+    // The fork's close ledger, read out-of-line (the same internal-C++
+    // seam as bind_virtual): true exactly when the connection ended via
+    // a UMSG_SHUTDOWN from the peer - the only signal that separates a
+    // graceful close from a lost connection on live/message sockets.
+    bool PeerClosedGracefully();
 
     WtServer&       server_;
     WtSessionHandle handle_;
