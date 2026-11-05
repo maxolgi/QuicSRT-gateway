@@ -1,13 +1,19 @@
 // Multi-stream registry: maps stream names to broadcasters, owns the
-// first-wins publisher occupancy and the per-stream viewer cap. Two
-// deliberate design points:
+// first-wins publisher occupancy, the per-stream viewer cap and the
+// ended-name tombstones. Three deliberate design points:
 //
 //   - WAITING VIEWERS. A stream with no publisher is an IDLE
 //     (waiting) stream: it is created by the first viewer attach, accepts
 //     subscribers that wait for a publisher to appear, and serves them the
 //     moment media flows (instead of answering 404 until media exists).
-//     Publisher END closes the attached viewers
-//     - after which a reconnecting viewer recreates the idle stream.
+//     Publisher END closes the attached viewers.
+//   - TOMBSTONES. A name whose publisher just ENDED is not a never-live
+//     name: for a short TTL (kStreamTombstoneTtl) it is tombstoned, and a
+//     subscriber of it is answered 404 ("was live, ended recently")
+//     instead of being parked as a waiting viewer that no publisher will
+//     ever feed again. Never-live names keep the waiting semantics above;
+//     a publisher claim clears the tombstone (a restarted stream is live
+//     again immediately); the housekeeping timer sweeps expired entries.
 //   - STREAM LIFETIME. A stream is dropped as soon as it has no publisher
 //     and no viewers, so no ring outlives its last participant.
 //
@@ -22,7 +28,9 @@
 #ifndef QUICSRT_GATEWAY_STREAM_REGISTRY_H
 #define QUICSRT_GATEWAY_STREAM_REGISTRY_H
 
+#include <chrono>
 #include <cstddef>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <string>
@@ -33,6 +41,18 @@
 
 namespace quicsrt::gateway
 {
+
+/// How long a publisher-ended name stays tombstoned. Seconds, not
+/// minutes, on purpose: it must cover the joiners that arrive just
+/// after an end (the ffmpeg-push case: the session closes in ~0.5 s
+/// while viewers keep connecting for seconds more) while staying well
+/// inside the clients' retry windows - the ffmpeg protocol patch
+/// retries a 404 for QUICSRT_OPEN_RETRY_MS = 20 s at 500 ms cadence,
+/// and the browser player reconnects on a 2 s base backoff. Past the
+/// TTL the name reverts to the never-live waiting-viewer semantics, so
+/// a viewer that genuinely waits for a scheduled restart parks at most
+/// this long after the previous broadcast's end.
+inline constexpr std::chrono::milliseconds kStreamTombstoneTtl{5000};
 
 /// Registry-wide knobs.
 struct StreamRegistryConfig
@@ -46,6 +66,10 @@ struct StreamRegistryConfig
     /// broadcast_byte_budget) validates a 4 MiB floor, and code-side
     /// embedders own the value they set.
     std::size_t broadcast_byte_budget = 64 * 1024 * 1024;
+    /// Ended-name tombstone TTL (see kStreamTombstoneTtl); 0 or less
+    /// disables tombstoning. Not clamped: one entry per name,
+    /// overwritten on re-end and swept by the housekeeping timer.
+    std::chrono::milliseconds tombstone_ttl = kStreamTombstoneTtl;
 };
 
 /// Stream name -> Broadcaster, with occupancy and the viewer cap.
@@ -56,6 +80,7 @@ public:
         : config_{.capacity    = config.broadcast_capacity == 0 ? std::size_t{1} : config.broadcast_capacity,
                   .byte_budget = config.broadcast_byte_budget,
                   .max_viewers = config.max_viewers == 0 ? std::size_t{1} : config.max_viewers}
+        , tombstone_ttl_{config.tombstone_ttl}
     {
     }
 
@@ -92,12 +117,34 @@ public:
         return bc == nullptr || bc->ViewerCount() < config_.max_viewers;
     }
 
+    /// Whether `stream`'s publisher ended within the TTL: subscribers of
+    /// such a name are answered 404 ("was live, ended recently") instead
+    /// of parked on a waiting stream that will never be fed. Lazy: an
+    /// expired entry reads as false here and is erased by SweepTombstones.
+    [[nodiscard]] bool Tombstoned(const std::string& stream) const
+    {
+        const auto it = tombstones_.find(stream);
+        return it != tombstones_.end() && std::chrono::steady_clock::now() < it->second;
+    }
+
+    /// Erase expired tombstones - the housekeeping sweep that bounds the
+    /// map (one entry per name, overwritten on re-end).
+    void SweepTombstones()
+    {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = tombstones_.begin(); it != tombstones_.end();)
+        {
+            it = now < it->second ? std::next(it) : tombstones_.erase(it);
+        }
+    }
+
     // ---- lifecycle (claim/detach, called from the session callbacks) ----
 
     /// Claim `stream`'s publisher slot for `handle`, creating the stream when
     /// absent (a first publisher creates a LIVE stream; no waiting viewer
     /// needs to exist first). Forbidden while a publisher holds the name
-    /// (first-wins: the challenger is answered 403).
+    /// (first-wins: the challenger is answered 403). A successful claim
+    /// clears any tombstone: a restarted stream is live again immediately.
     Decision PublishAttempt(const std::string& stream, WtSessionHandle handle)
     {
         Broadcaster& bc = Ensure(stream);
@@ -106,13 +153,21 @@ public:
             return Decision::Forbidden;
         }
         bc.ClaimPublisher(handle);
+        tombstones_.erase(stream);
         return Decision::Accept;
     }
 
     /// Attach a viewer to `stream`, creating an IDLE (waiting) stream when
-    /// absent. TooManyRequests at the per-stream cap.
+    /// absent. Reject (404) while the name is tombstoned - the stream WAS
+    /// live and ended recently, so waiting would hang a reconnecting viewer
+    /// forever; the never-live waiting semantics resume once the TTL
+    /// passes. TooManyRequests at the per-stream cap.
     Decision AttachViewer(const std::string& stream, WtSessionHandle handle, std::size_t max_payload)
     {
+        if (Tombstoned(stream))
+        {
+            return Decision::Reject;
+        }
         Broadcaster& bc = Ensure(stream);
         if (!bc.AttachViewer(handle, max_payload))
         {
@@ -163,6 +218,13 @@ public:
         }
         std::vector<WtSessionHandle> closing = bc->Viewers();
         bc->ReleasePublisher(bc->Publisher());
+        // The name WAS live and just ended: tombstone it so subscribers
+        // arriving next are answered 404 instead of parked as waiting
+        // viewers (never-live names keep the waiting semantics).
+        if (tombstone_ttl_ > std::chrono::milliseconds::zero())
+        {
+            tombstones_[stream] = std::chrono::steady_clock::now() + tombstone_ttl_;
+        }
         MaybeDrop(stream);
         return closing;
     }
@@ -232,7 +294,11 @@ private:
     }
 
     BroadcasterConfig                                   config_;
+    std::chrono::milliseconds                           tombstone_ttl_;
     std::map<std::string, std::unique_ptr<Broadcaster>> streams_;
+    /// Ended-name tombstones: name -> expiry (steady clock). Loop thread,
+    /// like the rest of the registry.
+    std::map<std::string, std::chrono::steady_clock::time_point> tombstones_;
 };
 
 } // namespace quicsrt::gateway

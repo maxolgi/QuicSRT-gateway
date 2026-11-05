@@ -19,6 +19,11 @@
 //      refused (429); closing one frees the slot for a new viewer.
 //   5. PUBLISHER END. Publisher::End() closes every viewer of the stream
 //      with a clean EOF (Read returns kReadEnd), and the name is released.
+//   5b. TOMBSTONE. A NEW subscriber of the just-ended name is refused at
+//      admission (kStartRejected, HTTP 404 - "was live, ended recently")
+//      instead of parked as a waiting viewer; a publisher reclaiming the
+//      name clears the tombstone, and a subscriber then attaches again.
+//      (The never-live waiting semantics of case 2 stay untouched.)
 //   6. ALLOWLIST. An unconfigured publish name -> 403 at admission, an
 //      unconfigured subscribe name -> 404, against this config-loaded
 //      gateway.
@@ -306,7 +311,9 @@ int main()
     Gateway gateway(cert,
                     policy,
                     GatewayConfig{.max_viewers        = config.server.max_viewers,
-                                  .broadcast_capacity = config.server.broadcast_capacity});
+                                  .broadcast_capacity = config.server.broadcast_capacity,
+                                  // generous tombstone: 5b must still land inside it after case 5's drain waits
+                                  .tombstone_ttl = std::chrono::milliseconds{15000}});
     if (!Check(gateway.Start("127.0.0.1", port), "gateway binds 127.0.0.1:4434 (or the ephemeral fallback)"))
     {
         return 1;
@@ -503,6 +510,32 @@ int main()
                   },
                   5000),
               "5: the ended stream is dropped (no publisher, no viewers)");
+    }
+
+    // ---- 5b. the ended name is tombstoned: a NEW subscriber gets 404 ----
+    {
+        // Not a waiting viewer: the name WAS live and ended moments ago,
+        // so the refusal is typed (404) and the client fails fast instead
+        // of hanging on an empty stream.
+        quicsrt::Subscriber late;
+        const auto          status = late.Start(SubCfg(port, hash, "g5-end"));
+        Check(status == quicsrt::kStartRejected, "5b: a subscriber of the just-ended name is refused");
+        Check(ErrorMentions(late.LastError(), "404"), "5b: the refusal carries HTTP 404");
+        std::fprintf(stderr,
+                     "gateway_e2e_test: 5b: late subscriber status=%d last_error='%s'\n",
+                     static_cast<int>(status),
+                     late.LastError().c_str());
+
+        // A returning publisher clears the tombstone: the name is live
+        // again and takes a subscriber immediately.
+        quicsrt::Publisher pub;
+        Check(pub.Start(PubCfg(port, hash, "g5-end")) == quicsrt::kPublishOk,
+              "5b: a returning publisher reclaims the ended name");
+        quicsrt::Subscriber sub;
+        Check(sub.Start(SubCfg(port, hash, "g5-end")) == quicsrt::kStartOk,
+              "5b: a subscriber of the republished name is accepted");
+        const StreamStats live = StreamNamed(gateway.SnapshotStreams(), "g5-end");
+        Check(live.publisher_live && live.viewers == 1, "5b: the reclaimed stream is live with the viewer attached");
     }
 
     // ---- 6. allowlist: 403 publish, 404 subscribe ----

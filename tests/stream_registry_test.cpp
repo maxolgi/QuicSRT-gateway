@@ -15,12 +15,21 @@
 //      reports it for closing and KEEPS the stream: the close re-enters
 //      through DetachViewer, and that last detach drops it - the
 //      re-entrancy ordering the registry's comments document.
+//   4. TOMBSTONE. A publisher end tombstones the name: a subscriber
+//      attach is refused (Reject/404), a publisher claim clears the
+//      tombstone (the attach then succeeds), a never-live name is never
+//      tombstoned, and tombstone_ttl = 0 disables the whole mechanism.
+//   5. TTL EXPIRY. Past the TTL (and the sweep) the name reverts to the
+//      never-live waiting-viewer semantics: the attach is accepted and
+//      creates an idle stream.
 
 #include "gateway/stream_registry.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -99,6 +108,55 @@ bool TestViewerPathStillDropsOnLastDetach()
     return true;
 }
 
+bool TestPublisherEndTombstonesTheName()
+{
+    StreamRegistry reg(StreamRegistryConfig{});
+    Check(reg.PublishAttempt("tomb", Handle(1)) == Decision::Accept, "4: the publish claims the fresh name");
+    Check(reg.OnPublisherEnd("tomb").empty(), "4: the publisher ends with no viewers");
+    Check(reg.Tombstoned("tomb"), "4: the ended name is tombstoned");
+    Check(reg.AttachViewer("tomb", Handle(2), 1128) == Decision::Reject,
+          "4: a subscriber of the tombstoned name is refused (404)");
+    Check(reg.StreamCount() == 0, "4: the refusal does not recreate a waiting stream");
+
+    // A publisher claim clears the tombstone: the attach then succeeds.
+    Check(reg.PublishAttempt("tomb", Handle(3)) == Decision::Accept, "4: a returning publisher reclaims the name");
+    Check(!reg.Tombstoned("tomb"), "4: the claim cleared the tombstone");
+    Check(reg.AttachViewer("tomb", Handle(4), 1128) == Decision::Accept, "4: a subscriber of the live name attaches");
+
+    // A never-live name is never tombstoned (waiting semantics).
+    Check(reg.OnPublisherEnd("never-live").empty(), "4: publisher end on a never-live name is a no-op");
+    Check(!reg.Tombstoned("never-live"), "4: the never-live name is not tombstoned");
+    Check(reg.AttachViewer("never-live", Handle(5), 1128) == Decision::Accept,
+          "4: a subscriber of a never-live name still waits");
+
+    // ttl = 0 disables the mechanism entirely.
+    StreamRegistry off(StreamRegistryConfig{.tombstone_ttl = std::chrono::milliseconds{0}});
+    Check(off.PublishAttempt("off", Handle(1)) == Decision::Accept, "4: the publish claims the name (ttl 0)");
+    off.OnPublisherEnd("off");
+    Check(!off.Tombstoned("off"), "4: ttl 0 writes no tombstone");
+    Check(off.AttachViewer("off", Handle(2), 1128) == Decision::Accept, "4: ttl 0 keeps the waiting semantics");
+    return true;
+}
+
+bool TestTombstoneExpiresBackToWaiting()
+{
+    StreamRegistry reg(StreamRegistryConfig{.tombstone_ttl = std::chrono::milliseconds{30}});
+    Check(reg.PublishAttempt("exp", Handle(1)) == Decision::Accept, "5: the publish claims the fresh name");
+    reg.OnPublisherEnd("exp");
+    Check(reg.Tombstoned("exp"), "5: the name is tombstoned at first");
+    Check(reg.AttachViewer("exp", Handle(2), 1128) == Decision::Reject, "5: the attach is refused inside the TTL");
+
+    // Past the TTL the lazy read already reports false; the sweep erases
+    // the entry and the name reverts to the waiting-viewer semantics.
+    std::this_thread::sleep_for(std::chrono::milliseconds{60});
+    reg.SweepTombstones();
+    Check(!reg.Tombstoned("exp"), "5: the tombstone expired and was swept");
+    Check(reg.AttachViewer("exp", Handle(3), 1128) == Decision::Accept,
+          "5: past the TTL the name takes a waiting viewer again");
+    Check(reg.StreamCount() == 1 && !reg.IsLive("exp"), "5: the recreated stream is idle (no publisher)");
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -113,6 +171,8 @@ int main()
         {.name = "publisher-end-no-viewers", .fn = TestPublisherEndNoViewers},
         {.name = "sequential-fresh-names", .fn = TestSequentialFreshNamesStayBounded},
         {.name = "viewer-path-drops-on-last-detach", .fn = TestViewerPathStillDropsOnLastDetach},
+        {.name = "publisher-end-tombstones-the-name", .fn = TestPublisherEndTombstonesTheName},
+        {.name = "tombstone-expires-back-to-waiting", .fn = TestTombstoneExpiresBackToWaiting},
     };
 
     for (const Section& section : sections)

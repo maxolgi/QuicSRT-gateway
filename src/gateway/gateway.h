@@ -43,6 +43,7 @@
 #ifndef QUICSRT_GATEWAY_GATEWAY_H
 #define QUICSRT_GATEWAY_GATEWAY_H
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -70,6 +71,10 @@ struct GatewayConfig
     /// Per-ring retained-bytes budget (drop-oldest past it, counted in
     /// ring_drops).
     std::size_t broadcast_byte_budget = 64 * 1024 * 1024;
+    /// Ended-name tombstone TTL (see kStreamTombstoneTtl): subscribers of
+    /// a name whose publisher ended within this window are answered 404.
+    /// Code-level only (no TOML key); tests adjust it for determinism.
+    std::chrono::milliseconds tombstone_ttl = kStreamTombstoneTtl;
     /// Ticker/pacing knobs, passed through to the SessionRegistry.
     RegistryConfig registry{};
     /// Webhook delivery (P4.3); an empty URL leaves the feature off.

@@ -15,10 +15,11 @@ namespace quicsrt::gateway
 namespace
 {
 
-// How often the housekeeping timer sweeps for drop_backlog markers. The
-// markers themselves are consumed on the media path (the prime must happen
-// before the next message is handed over); this slow sweep is the backstop
-// for a stream whose publisher has gone quiet mid-handshake.
+// How often the housekeeping timer sweeps for drop_backlog markers and
+// expired tombstones. The markers themselves are consumed on the media
+// path (the prime must happen before the next message is handed over);
+// this slow sweep is the backstop for a stream whose publisher has gone
+// quiet mid-handshake, and the only eraser of tombstones past their TTL.
 constexpr std::chrono::milliseconds kHousekeepingInterval{500};
 
 // Bounded wait for the sessions to finish closing during Shutdown (3 s).
@@ -85,7 +86,8 @@ Gateway::Gateway(const CertProvider& cert, std::shared_ptr<const SessionPolicy> 
     : webhooks_{config.webhooks}
     , streams_{StreamRegistryConfig{.max_viewers           = config.max_viewers,
                                     .broadcast_capacity    = config.broadcast_capacity,
-                                    .broadcast_byte_budget = config.broadcast_byte_budget}}
+                                    .broadcast_byte_budget = config.broadcast_byte_budget,
+                                    .tombstone_ttl         = config.tombstone_ttl}}
     , policy_{std::move(policy)}
     , registry_{loop_, *this, config.registry}
     , server_{loop_, cert, policy_, registry_, [this](const WtSessionStart& start) { return Admit(start); }, config.wt}
@@ -153,7 +155,15 @@ bool Gateway::Start(const std::string& host, std::uint16_t port)
     //   behind the arm, and the inline cancel path only runs after every
     //   accepted job has drained - or Start armed inline below.
     auto arm = [this]
-    { housekeeping_timer_ = loop_.SetTimer(kHousekeepingInterval, true, [this] { PrimePendingViewers(); }); };
+    {
+        housekeeping_timer_ = loop_.SetTimer(kHousekeepingInterval,
+                                             true,
+                                             [this]
+                                             {
+                                                 PrimePendingViewers();
+                                                 streams_.SweepTombstones();
+                                             });
+    };
     // The lambda is copied, not moved: the inline fallback below needs it
     // after a refused Post.
     if (loop_.OnLoopThread() || !loop_.Post(arm))
@@ -369,8 +379,10 @@ void Gateway::EndPublish(const std::string& stream, const std::string& reason)
     //     initiator, which also FINs the (now closing) session stream.
     // Stream drop, both paths: with viewers attached their OnSessionEnded
     // -> DetachViewer drops the now-idle stream (the last detach); with
-    // none attached OnPublisherEnd already dropped it. Either way a
-    // reconnecting viewer recreates it as waiting.
+    // none attached OnPublisherEnd already dropped it. Either way the
+    // name is now tombstoned: a reconnecting viewer is answered 404 until
+    // the TTL passes (or a publisher reclaims the name), after which the
+    // waiting-viewer semantics resume.
     const std::vector<WtSessionHandle> closing = streams_.OnPublisherEnd(stream);
     for (const WtSessionHandle viewer : closing)
     {
@@ -398,6 +410,15 @@ Decision Gateway::Admit(const WtSessionStart& start) const
         // First-wins occupancy: 403 while a live publisher (WT or G6
         // ingest) holds the name.
         return streams_.Publishable(role.stream) ? Decision::Accept : Decision::Forbidden;
+    }
+    // The tombstone precedes the cap: a tombstoned name holds no stream
+    // record (the end closed every viewer and dropped it), so the cap is
+    // vacuous - the honest status for "was live, ended recently" is 404,
+    // not 429. The claim below (AttachViewer) re-checks, so a CONNECT
+    // racing the tombstone write cannot slip through as a waiting viewer.
+    if (streams_.Tombstoned(role.stream))
+    {
+        return Decision::Reject;
     }
     return streams_.ViewerSlotFree(role.stream) ? Decision::Accept : Decision::TooManyRequests;
 }
