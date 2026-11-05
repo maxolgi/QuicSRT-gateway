@@ -122,7 +122,7 @@ std::uint16_t ChoosePort()
     ::inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr);
     if (fd >= 0)
     {
-        sa.sin_port             = htons(4437);
+        sa.sin_port              = htons(4437);
         const bool port4437_free = ::bind(fd, reinterpret_cast<sockaddr*>(&sa), sizeof sa) == 0;
         ::close(fd);
         if (port4437_free)
@@ -174,8 +174,10 @@ int main()
     const auto policy = quicsrt::gateway::Chain(std::make_shared<quicsrt::gateway::PathPolicy>("/wt"),
                                                 quicsrt::gateway::BuildAllowlistPolicy(config));
 
-    Gateway gateway(cert, policy, GatewayConfig{.max_viewers = config.server.max_viewers,
-                                                .broadcast_capacity = config.server.broadcast_capacity});
+    Gateway gateway(cert,
+                    policy,
+                    GatewayConfig{.max_viewers        = config.server.max_viewers,
+                                  .broadcast_capacity = config.server.broadcast_capacity});
     if (!Check(gateway.Start("127.0.0.1", port), "gateway binds 127.0.0.1:4437 (or the ephemeral fallback)"))
     {
         return 1;
@@ -194,9 +196,9 @@ int main()
     // (~25 Mbps) for ~4 s - unpaced within each burst (the file-push
     // shape), sustained across the window so a mid-join viewer lands on a
     // live stream.
-    constexpr std::size_t kBurstBytes = 128 * 1024;
-    constexpr std::size_t kTotal      = 12 * 1024 * 1024;
-    std::vector<std::uint8_t>  chunk(kBurstBytes);
+    constexpr std::size_t     kBurstBytes = 128 * 1024;
+    constexpr std::size_t     kTotal      = 12 * 1024 * 1024;
+    std::vector<std::uint8_t> chunk(kBurstBytes);
     for (std::size_t i = 0; i < chunk.size(); ++i)
     {
         chunk[i] = static_cast<std::uint8_t>((i / 188) ^ (i % 251));
@@ -228,8 +230,8 @@ int main()
         const StreamStats s = StreamNamed(gateway.SnapshotStreams(), "g9-burst");
         if (!s.name.empty() && !s.publisher_live && !publisher_died)
         {
-            publisher_died     = true;
-            msgs_at_death      = s.messages_sent;
+            publisher_died = true;
+            msgs_at_death  = s.messages_sent;
         }
         if (ms % 500 == 0)
         {
