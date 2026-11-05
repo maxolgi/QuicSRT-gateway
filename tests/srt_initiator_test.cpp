@@ -438,7 +438,11 @@ int main()
               "teardown: session reaped after the client closed");
         Check(WaitUntil([&rig_listener] { return rig_listener.EndedCount() == 1; }, 5000),
               "teardown: OnSessionEnded notified");
-        Check(registry.TickCount() > ticks_at_close, "teardown: the loop kept ticking");
+        // The reap usually completes between two 2 ms ticks (the WT close
+        // callback runs on the loop thread without a Tick), so the next
+        // tick is the evidence - not one landing inside the close window.
+        Check(WaitUntil([&registry, ticks_at_close] { return registry.TickCount() > ticks_at_close; }, 1000),
+              "teardown: the loop kept ticking");
 
         scrape_stop.store(true);
         scraper.join();
