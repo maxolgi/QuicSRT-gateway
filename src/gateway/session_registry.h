@@ -124,8 +124,9 @@ public:
     /// test visibility; G5's stream registry decides first-wins here).
     virtual void OnSessionStart(WtSessionHandle /*handle*/, const WtSessionStart& /*start*/) {}
 
-    /// Terminal: the session's SRT initiator was torn down and its WT
-    /// session asked to close (WT close, SRT failure, health reap, EOF).
+    /// Terminal: the session's SRT initiator was parked for teardown (the
+    /// heavy close rides a posted loop job) and its WT session asked to
+    /// close (WT close, SRT failure, health reap, EOF).
     virtual void OnSessionEnded(WtSessionHandle /*handle*/, const std::string& /*reason*/) {}
 };
 

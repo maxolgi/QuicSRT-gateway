@@ -426,7 +426,23 @@ void SessionRegistry::FinishEntry(const std::shared_ptr<RegistryEntry>& entry, c
         return;
     }
 
-    entry->initiator->Teardown();
+    // Park the initiator now and defer its heavy teardown to a loop job.
+    // srt_close joins the fork's per-socket threads and the queue detach
+    // waits out an in-flight send callback - milliseconds each - and a
+    // publisher end closes every viewer inline (listener_.OnSessionEnded
+    // below runs EndPublish, whose CloseSession calls come back here on
+    // the loop thread), so a synchronous Teardown piled 1 + viewers of
+    // them into ONE tick (a 50-viewer stream end measured ~400 ms).
+    // Parked, srt's send callback and Inject stop touching anything
+    // before the job runs; the job's shared_ptr keeps the initiator
+    // alive past this registry, and a refused Post (the loop already
+    // stopped) tears down inline - no thread is left to race it.
+    entry->initiator->Park();
+    const auto teardown = [entry] { entry->initiator->Teardown(); };
+    if (!loop_.Post(teardown))
+    {
+        teardown();
+    }
     {
         const std::lock_guard<std::mutex> lock(entries_mutex_);
         entries_.erase(entry->handle.Id());

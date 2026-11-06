@@ -193,8 +193,18 @@ public:
     /// serializes the sample against Teardown's close.
     bool StatsOut(SRT_TRACEBSTATS* out);
 
+    /// Park the session synchronously without the heavy close: marks it
+    /// closed, so the send callback swallows further sends (claiming
+    /// success) and Inject becomes a no-op. FinishEntry parks here and
+    /// leaves the milliseconds-long remainder (epoll remove, srt_close's
+    /// thread joins, the queue detach) to the loop job it posts - a
+    /// stream end closes every viewer inline, and that many synchronous
+    /// teardowns piled into ONE registry tick.
+    void Park();
+
     /// Idempotent terminal cleanup in the fork's enforced order (see the
-    /// file comment). Safe with the loop still running.
+    /// file comment). Safe with the loop still running; after Park() only
+    /// the heavy remainder is left to do.
     void Teardown();
 
     [[nodiscard]] WtSessionHandle handle() const { return handle_; }

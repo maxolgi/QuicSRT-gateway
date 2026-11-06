@@ -329,6 +329,15 @@ bool SrtInitiator::StatsOut(SRT_TRACEBSTATS* out)
     return srt_bstats(sock_, out, 0) == 0;
 }
 
+void SrtInitiator::Park()
+{
+    // The cheap first step of Teardown alone: from here VtSend swallows
+    // sends and Inject is a no-op, so nothing touches the WtServer or the
+    // socket while the heavy close waits for its loop job. Teardown
+    // stores the same flag again (idempotent).
+    closed_.store(true, std::memory_order_relaxed);
+}
+
 void SrtInitiator::Teardown()
 {
     // Unregister from the epoll before the close fires its events, park
