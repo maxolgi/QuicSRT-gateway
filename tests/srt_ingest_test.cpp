@@ -29,8 +29,10 @@
 // (config -> StreamAllowlistPolicy -> Gateway) on a loopback port, and the
 // ingest is the real SrtIngest wired exactly as src/main.cpp wires it.
 // Ports: 127.0.0.1:9100 (ingest), :4436 (WebTransport), :9101 (the
-// fake-sink ingest), :9102 (the capped fake-sink ingest), each with the
-// probe-bind ephemeral fallback the G5 test uses. Ports
+// fake-sink ingest), :9103 (the capped fake-sink ingest), each with the
+// probe-bind ephemeral fallback the G5 test uses (:9102 is web_server_test's
+// ingest - ctest runs the suite in parallel, so every preferred port has
+// exactly one owner). Ports
 // 4433/9000 are never touched. Deterministic: every wait is bounded and
 // asserted.
 
@@ -338,7 +340,7 @@ int main()
     const std::uint16_t wt_port     = ChoosePort(4436);
     const std::uint16_t ingest_port = ChoosePort(9100);
     const std::uint16_t fake_port   = ChoosePort(9101);
-    const std::uint16_t cap_port    = ChoosePort(9102);
+    const std::uint16_t cap_port    = ChoosePort(9103);
 
     const std::string config_text = std::string{"[server]\n"} + "wt_port = " + std::to_string(wt_port) + "\n" +
                                     "max_viewers = 4\n"
