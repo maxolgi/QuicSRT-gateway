@@ -10,7 +10,7 @@ Commands:
     lib        Build the tree (libquicsrt + srt fork + lsquic)
     gateway    Build the QuicSRT-gateway binary
     test       Run tests via ctest (release)
-    web-dist   Fetch the player dist (latest QuicSRT-wasm release) into web/dist, then re-run cmake configure
+    web-dist   Fetch the player dist (pinned WEB_DIST_TAG; WEB_DIST_TAG=latest tracks the newest release) into web/dist, then re-run cmake configure
 EOF
 }
 
@@ -19,12 +19,15 @@ EOF
 BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 
 # The player (web/dist) is EMBEDDED into the binary at compile time.
-# The dist is never built here: it is fetched from the latest
-# QuicSRT-wasm release artifact — the C++/emscripten player (its ci
-# publishes every master push as dev-<sha> marked latest, v* tags as
-# stable cuts), engineered in the same zip shape. One source of truth
-# for the player, matching what the deployed gateway serves via
-# web_root.
+# The dist is never built here: it is fetched from a QuicSRT-wasm
+# release artifact — the C++/emscripten player (its ci publishes every
+# master push as dev-<sha>, v* tags as stable cuts), engineered in the
+# same zip shape. One source of truth for the player, matching what
+# the deployed gateway serves via web_root.
+# The pin keeps CI reproducible: releases/latest can move between a
+# commit and its CI run, shipping an untested player. Bump it in the
+# commit that refreshes the dist; WEB_DIST_TAG=latest restores tracking.
+WEB_DIST_TAG="${WEB_DIST_TAG:-dev-ad1c3f0}"
 WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/QuicSRT-wasm/releases/latest
 WEB_DIST_ASSET=quicsrt-wasm-dist.zip
 
@@ -33,14 +36,18 @@ fetch_web_dist() {
     command -v curl >/dev/null 2>&1 || { echo "build.sh: curl is required to fetch the player dist" >&2; exit 1; }
     command -v unzip >/dev/null 2>&1 || { echo "build.sh: unzip is required to unpack the player dist" >&2; exit 1; }
     local tag
-    # Resolve the tag WITHOUT the REST API: api.github.com is rate-limited
-    # per IP (60/h unauthenticated; shared CI runner IPs exhaust it - seen
-    # as a curl 22 / HTTP 403 killing ./build.sh setup in tsan runs).
-    # /releases/latest redirects to /releases/tag/<tag> and github.com
-    # serves that redirect freely. The || true matters: with pipefail a
-    # failed curl would abort the script before the friendly error below.
-    tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' "${WEB_DIST_LATEST_RELEASE}" | sed -n 's|.*/tag/||p' || true)
-    [ -n "${tag}" ] || { echo "build.sh: cannot resolve the latest QuicSRT-wasm release" >&2; exit 1; }
+    if [ -n "${WEB_DIST_TAG}" ] && [ "${WEB_DIST_TAG}" != "latest" ]; then
+        tag=${WEB_DIST_TAG}
+    else
+        # Resolve the tag WITHOUT the REST API: api.github.com is rate-limited
+        # per IP (60/h unauthenticated; shared CI runner IPs exhaust it - seen
+        # as a curl 22 / HTTP 403 killing ./build.sh setup in tsan runs).
+        # /releases/latest redirects to /releases/tag/<tag> and github.com
+        # serves that redirect freely. The || true matters: with pipefail a
+        # failed curl would abort the script before the friendly error below.
+        tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' "${WEB_DIST_LATEST_RELEASE}" | sed -n 's|.*/tag/||p' || true)
+        [ -n "${tag}" ] || { echo "build.sh: cannot resolve the latest QuicSRT-wasm release" >&2; exit 1; }
+    fi
     local tmp
     tmp=$(mktemp -d)
     if ! curl -fsSL "https://github.com/maxolgi/QuicSRT-wasm/releases/download/${tag}/${WEB_DIST_ASSET}" -o "${tmp}/dist.zip"; then

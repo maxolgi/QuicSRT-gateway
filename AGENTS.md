@@ -13,7 +13,9 @@ targets. Companion repos (siblings under the QuicSRT-cpp workspace root):
     ./build.sh lib       # build the tree (libquicsrt + srt fork + lsquic)
     ./build.sh gateway   # build only the QuicSRT-gateway binary
     ./build.sh test      # ctest --preset release --parallel
-    ./build.sh web-dist  # refresh the embedded player (latest QuicSRT-wasm release) + re-configure
+    ./build.sh web-dist  # refresh the embedded player (pinned QuicSRT-wasm release,
+                         # WEB_DIST_TAG in build.sh; set WEB_DIST_TAG=latest to track
+                         # the newest release) + re-configure
 
 Toolchain: gcc 13+, CMake ≥ 3.24, ninja, nasm, curl + unzip, **Go + zlib1g-dev**
 (BoringSSL build needs Go — README omits it; CI installs it). `QUICSRT_ENABLE_WT=ON`
