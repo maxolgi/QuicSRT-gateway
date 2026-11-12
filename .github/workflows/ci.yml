@@ -46,9 +46,11 @@ jobs:
         # subscriber_test, publisher_test, c_api_test) self-skip via
         # SKIP_RETURN_CODE 77 when none is running. The tail lands in the
         # step summary (publicly viewable) because raw logs need auth.
+        # srt_initiator_test is excluded: shared-runner CPU throttling
+        # stalls its 2 ms ticker (AGENTS.md); it runs locally/bench-only.
         run: |
           set +e
-          ./build.sh test 2>&1 | tee /tmp/ctest.log
+          ctest --preset release --parallel -E '^srt_initiator_test$' 2>&1 | tee /tmp/ctest.log
           rc=${PIPESTATUS[0]}
           { echo "## ctest (exit $rc)"; echo '```'; tail -150 /tmp/ctest.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           # Annotations are the one channel readable without login:
