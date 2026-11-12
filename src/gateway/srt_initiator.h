@@ -137,10 +137,11 @@ public:
     SrtInitiator& operator=(const SrtInitiator&) = delete;
 
     /// Loop thread (session accept). Creates the socket, sets every option
-    /// above, attaches the virtual transport, registers SRT_EPOLL_OUT |
-    /// SRT_EPOLL_ERR for the writability gate, and starts the asynchronous
-    /// connect toward the fake peer label. Returns false with *error set
-    /// on any setup failure (the object is then inert).
+    /// above, attaches the virtual transport, registers SRT_EPOLL_IN |
+    /// SRT_EPOLL_OUT | SRT_EPOLL_ERR for the receive/send readiness
+    /// gates, and starts the asynchronous connect toward the fake peer
+    /// label. Returns false with *error set on any setup failure (the
+    /// object is then inert).
     [[nodiscard]] bool Setup(std::string* error);
 
     /// Loop thread (WtServerListener::OnDatagram). One WT datagram from
@@ -149,8 +150,11 @@ public:
     void Inject(const std::uint8_t* data, std::size_t size);
 
     /// Loop thread (ticker). One non-blocking receive of a released
-    /// message (TSBPD has released it); see ReceiveResult. A socket that
-    /// left CONNECTED as BROKEN is still drained (srt's message-API
+    /// message (TSBPD has released it); see ReceiveResult. While
+    /// CONNECTED the read is gated on epoll read-readiness
+    /// (SRT_EPOLL_IN, registered per socket in Setup) - status alone
+    /// does not mean released data. A socket that left CONNECTED as
+    /// BROKEN skips the gate and is still drained (srt's message-API
     /// receive keeps handing back already-released messages from a
     /// broken socket until nothing released remains), so a final pump
     /// both delivers the tail and observes the terminal receive that

@@ -125,16 +125,18 @@ bool SrtInitiator::Setup(std::string* error)
             break;
         }
 
-        // Writability gate for Send(): level-triggered SRT_EPOLL_OUT
+        // Readiness gates: level-triggered SRT_EPOLL_OUT for Send()
         // (also fires on connect completion; Send is only called once
-        // connected) plus SRT_EPOLL_ERR for the failure signal.
+        // connected) and SRT_EPOLL_IN for ReceiveNext (a CONNECTED
+        // status alone does not mean TSBPD-released data), plus
+        // SRT_EPOLL_ERR for the failure signal.
         epoll_ = srt_epoll_create();
         if (epoll_ == SRT_ERROR)
         {
             *error = std::string("srt_epoll_create: ") + srt_getlasterror_str();
             break;
         }
-        const int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+        const int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
         if (srt_epoll_add_usock(epoll_, sock_, &events) == SRT_ERROR)
         {
             *error = std::string("srt_epoll_add_usock: ") + srt_getlasterror_str();
@@ -188,6 +190,21 @@ int SrtInitiator::ReceiveNext(char* buf, int len)
     if (state != SRTS_CONNECTED && state != SRTS_BROKEN)
     {
         return kRecvNotConnected;
+    }
+    // Readiness first, the receive twin of Send's writability gate: a
+    // CONNECTED socket is read only while epoll reports SRT_EPOLL_IN
+    // (level-triggered, so a pump drains every released message before
+    // the gate re-engages). A BROKEN socket reads ungated: its terminal
+    // receive must run to drain the released tail and classify the
+    // close (the fork guards a broken socket's empty read itself).
+    if (state == SRTS_CONNECTED)
+    {
+        SRT_EPOLL_EVENT ready;
+        const int       nready = srt_epoll_uwait(epoll_, &ready, 1, 0);
+        if (nready < 1 || (ready.events & SRT_EPOLL_IN) == 0)
+        {
+            return kRecvWouldBlock;
+        }
     }
     const int n = srt_recvmsg(sock_, buf, len);
     if (n > 0)
