@@ -205,8 +205,9 @@ The embedded player ships several pages on the web port:
 Any of the pages can be iframed as-is. The player itself is also an
 embedding SDK — a `<quicsrt-video>` web component, a video.js tech, and a
 programmatic handle — developed in
-[QuicSRT-wasm](https://github.com/maxolgi/QuicSRT-wasm) (its `sdk/` tree);
-the gateway merely serves the built bundles under `/bundle/`.
+[QuicSRT-wasm](https://github.com/maxolgi/QuicSRT-wasm): see its
+`docs/embedding.md` guide and the `@quicsrt/player` / `@quicsrt/videojs`
+packages. The gateway merely serves the built bundles under `/bundle/`.
 
 ## Monitoring
 
