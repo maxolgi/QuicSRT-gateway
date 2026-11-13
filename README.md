@@ -16,8 +16,9 @@ lsquic + srt forks, vendored as the `deps/libquicsrt` submodule.
   page served by the gateway itself; self-signed certificates are pinned
   the way browsers pin them (SHA-256 of the certificate DER).
 - **Publish with what you have** — OBS or any FFmpeg with `libsrt` on the
-  SRT/UDP ingest; FFmpeg's `quicsrt://` protocol or C++/C clients via
-  libquicsrt over WebTransport.
+  SRT/UDP ingest; the browser's own publish page (screen/webcam capture);
+  FFmpeg's `quicsrt://` protocol or C++/C clients via libquicsrt over
+  WebTransport.
 - **One publisher, many viewers** — broadcaster fan-out through a bounded
   per-stream ring: a slow viewer lags and drops, it never blocks the
   publisher.
@@ -30,7 +31,7 @@ lsquic + srt forks, vendored as the `deps/libquicsrt` submodule.
 ## How it works
 
     OBS / ffmpeg ──SRT/UDP──▶┌───────────────────┐──WebTransport──▶ browser player
-    ffmpeg / C++  ──WT──────▶│  QuicSRT-gateway  │──WebTransport──▶ native clients
+    browser / C++ ──WT──────▶│  QuicSRT-gateway  │──WebTransport──▶ native clients
 
 - Every stream has at most one publisher, first-wins: a second publisher
   of the same name is refused. Viewers may attach before any publisher
@@ -149,6 +150,15 @@ The ingest is a stock libsrt listener; publishers connect as callers
 `latency` should match `[server].latency_ms` (default 120). The name must
 match an allowlist entry with publishing allowed (in open mode, any name).
 
+### Browser — the publish page
+
+`https://<web-bind>:<web_port>/publish.html` is a full publisher UI: pick
+screen or webcam capture, set the endpoint (`wt://host:port` shorthand)
+and the stream name in the page, and it publishes over WebTransport —
+through the same allowlist and first-wins occupancy as every other
+publisher. `call.html` is the 1:1-call variant (camera/mic lobby with a
+room name; `?host=`/`?port=` override the endpoint).
+
 ### WebTransport — FFmpeg `quicsrt://`, C++ / C clients
 
 Native clients publish over the WT port via
@@ -182,6 +192,19 @@ does normal PKI validation. The full URL grammar is in
         ffmpeg -f mpegts \
                -i "quicsrt://127.0.0.1:4433?stream=test&cert_hash_file=cert-hash.js" \
                -c copy out.ts
+
+The embedded player ships several pages on the web port:
+
+| Page                     | Purpose                                                       |
+| ------------------------ | ------------------------------------------------------------- |
+| `/` (index.html)         | the viewer — `?stream=NAME[&token=T][&latency=MS]`            |
+| `/publish.html`          | browser publisher — screen/webcam capture, config in the page |
+| `/call.html`             | 1:1 call — camera/mic lobby, room name, PiP self-view         |
+| `/element.html`, `/videojs.html` | player-SDK demos                                       |
+
+The player is also an embedding SDK — a `<quicsrt-video>` web component,
+a video.js tech, and a programmatic handle; any of the pages can be
+iframed as-is. See **[docs/embedding.md](docs/embedding.md)**.
 
 ## Monitoring
 
