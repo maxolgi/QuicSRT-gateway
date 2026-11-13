@@ -30,8 +30,21 @@ lsquic + srt forks, vendored as the `deps/libquicsrt` submodule.
 
 ## How it works
 
-    OBS / ffmpeg ──SRT/UDP──▶┌───────────────────┐──WebTransport──▶ browser player
-    browser / C++ ──WT──────▶│  QuicSRT-gateway  │──WebTransport──▶ native clients
+    ┌───────── QuicSRT-gateway ─────────┐       ┌───────── Browser (viewer) ────────┐
+[OBS/ffmpeg] --SRT/UDP─▶│ srt ingest listener (libsrt)      │       │ JS: WebTransport datagrams        │
+                        │ ↓ TS messages (6×188 B)           │       │ ↓ bytes                           │
+                        │ broadcaster ring (per stream,     │       │ wasm: SRT receiver + TS demux     │
+                        │ drop-oldest; first-wins name)     │       │ ↓ PES / PCM                       │
+[Browser]        ─WT───▶│ SRT initiator (WT publish path)   │──WT──▶│ JS: WebCodecs decode + render     │
+(publisher)             │ ↓ TS messages                     │       │ ↑ ACK/NAK datagrams               │
+                        │ per-viewer SRT sender (srt fork)  │       └───────────────────────────────────┘
+                        │ ↓ SRT packets                     │
+                        │ lsquic WT datagram driver         │
+                        │ ↑ ACK/NAK                         │
+                        └───────────────────────────────────┘
+
+Native viewers (FFmpeg `quicsrt://`, C++ via libquicsrt) ride the same
+WebTransport egress — the right-hand box shows the browser's in-page pipeline.
 
 - Every stream has at most one publisher, first-wins: a second publisher
   of the same name is refused. Viewers may attach before any publisher
