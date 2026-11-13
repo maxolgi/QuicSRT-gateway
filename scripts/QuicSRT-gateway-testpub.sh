@@ -29,8 +29,13 @@ FFMPEG=${FFMPEG:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/libquicsrt
 
 HASH_FILE=$(mktemp /tmp/QuicSRT-gateway-cert-hash.XXXXXX.js)
 trap 'rm -f "$HASH_FILE"' EXIT
+# cert-hash.js: `window.CERT_HASH = "<64 hex>";` (self mode) or `= null`
+# (PKI). The ffmpeg protocol pins via cert_hash=<hex>; a fetch that
+# yields anything but 64 hex chars keeps the retry loop going.
 for _ in $(seq 1 30); do
-    if curl -sk --max-time 3 "$GATEWAY/cert-hash.js" -o "$HASH_FILE" && grep -q CERT_HASH "$HASH_FILE"; then
+    if curl -sk --max-time 3 "$GATEWAY/cert-hash.js" -o "$HASH_FILE" \
+       && HASH=$(sed -n 's/.*"\([0-9a-fA-F]\{64\}\)".*/\1/p' "$HASH_FILE") \
+       && [ "${#HASH}" -eq 64 ]; then
         exec "$FFMPEG" -hide_banner -loglevel error -re \
             -f lavfi -i testsrc2=size=1920x1080:rate=30 \
             -f lavfi -i sine=frequency=440 \
@@ -40,13 +45,13 @@ for _ in $(seq 1 30); do
             -b:v "$SOURCE_BR" -maxrate "$SOURCE_BR" -bufsize 2000k \
             -g 60 -c:a aac \
             -copyts -mpegts_copyts 1 \
-            -f mpegts "quicsrt://127.0.0.1:${WT_PORT}?stream=${STREAM}&cert_hash_file=${HASH_FILE}" \
+            -f mpegts "quicsrt://127.0.0.1:${WT_PORT}?stream=${STREAM}&cert_hash=${HASH}" \
             -map "[v2out]" -map 1:a \
             -c:v h264_nvenc -preset p4 -tune ull -rc cbr \
             -b:v "$REND_BR" -maxrate "$REND_BR" -bufsize 700k \
             -g 60 -c:a aac \
             -copyts -mpegts_copyts 1 \
-            -f mpegts "quicsrt://127.0.0.1:${WT_PORT}?stream=${STREAM}_540p&cert_hash_file=${HASH_FILE}"
+            -f mpegts "quicsrt://127.0.0.1:${WT_PORT}?stream=${STREAM}_540p&cert_hash=${HASH}"
     fi
     sleep 2
 done
