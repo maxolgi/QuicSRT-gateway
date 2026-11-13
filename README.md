@@ -202,9 +202,11 @@ The embedded player ships several pages on the web port:
 | `/call.html`             | 1:1 call — camera/mic lobby, room name, PiP self-view         |
 | `/element.html`, `/videojs.html` | player-SDK demos                                       |
 
-The player is also an embedding SDK — a `<quicsrt-video>` web component,
-a video.js tech, and a programmatic handle; any of the pages can be
-iframed as-is. See **[docs/embedding.md](docs/embedding.md)**.
+Any of the pages can be iframed as-is. The player itself is also an
+embedding SDK — a `<quicsrt-video>` web component, a video.js tech, and a
+programmatic handle — developed in
+[QuicSRT-wasm](https://github.com/maxolgi/QuicSRT-wasm) (its `sdk/` tree);
+the gateway merely serves the built bundles under `/bundle/`.
 
 ## Monitoring
 
