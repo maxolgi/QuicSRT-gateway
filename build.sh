@@ -27,7 +27,7 @@ BORINGSSL_COMMIT=e20e8486554098772673b55ea76bb003d0b330e5
 # The pin keeps CI reproducible: releases/latest can move between a
 # commit and its CI run, shipping an untested player. Bump it in the
 # commit that refreshes the dist; WEB_DIST_TAG=latest restores tracking.
-WEB_DIST_TAG="${WEB_DIST_TAG:-dev-ad1c3f0}"
+WEB_DIST_TAG="${WEB_DIST_TAG:-dev-fbddb8f}"
 WEB_DIST_LATEST_RELEASE=https://github.com/maxolgi/QuicSRT-wasm/releases/latest
 WEB_DIST_ASSET=quicsrt-wasm-dist.zip
 
