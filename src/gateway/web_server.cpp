@@ -834,14 +834,18 @@ bool WebServer::Handle(Wire&              wire,
     {
         // Dynamic on purpose: in self
         // mode the pinned hash changes every boot, so the file must never
-        // be cached across restarts.
+        // be cached across restarts. CORS-open: the pin is public, and
+        // cross-origin pages (SlopShady's) fetch this directly when their
+        // backend can't reach the gateway.
         SendSimple(wire,
                    200,
                    ReasonPhrase(200),
                    "text/javascript; charset=utf-8",
                    config_.cert_hash_js,
                    head,
-                   {{"Cache-Control", "no-store"}});
+                   {{"Cache-Control", "no-store"},
+                    {"Access-Control-Allow-Origin", "*"},
+                    {"Cross-Origin-Resource-Policy", "cross-origin"}});
         return true;
     }
 

@@ -920,6 +920,8 @@ int main()
         Check(client.Exchange("/cert-hash.js", &response), "4: GET /cert-hash.js answered");
         Check(response.status == 200, "4: cert-hash.js is 200");
         Check(response.Header("content-type") == "text/javascript; charset=utf-8", "4: cert-hash.js is a script");
+        Check(response.Header("access-control-allow-origin") == "*", "4: cert-hash.js is CORS-open");
+        Check(response.Header("cross-origin-resource-policy") == "cross-origin", "4: cert-hash.js loadable from COEP pages");
         Check(response.body ==
                   "window.CERT_HASH = \"" + hash + "\";\nwindow.WT_PORT = " + std::to_string(wt_port) + ";",
               "4: cert-hash.js carries the live hash and the WT port");
